@@ -4,6 +4,30 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+type RuntimeFirebaseEnv = Partial<Record<string, string>>;
+
+declare global {
+  interface Window {
+    __APP_ENV__?: RuntimeFirebaseEnv;
+  }
+}
+
+const getFirebaseEnvValue = (key: string): string | undefined => {
+  const viteValue = import.meta.env[key];
+  if (typeof viteValue === 'string' && viteValue.trim().length > 0) {
+    return viteValue;
+  }
+
+  if (typeof window !== 'undefined') {
+    const runtimeValue = window.__APP_ENV__?.[key];
+    if (typeof runtimeValue === 'string' && runtimeValue.trim().length > 0) {
+      return runtimeValue;
+    }
+  }
+
+  return undefined;
+};
+
 const requiredEnvKeys = [
   'VITE_FIREBASE_API_KEY',
   'VITE_FIREBASE_AUTH_DOMAIN',
@@ -16,18 +40,18 @@ const optionalEnvKeys = [
   'VITE_FIREBASE_MESSAGING_SENDER_ID',
 ] as const;
 
-export const missingFirebaseConfigKeys = requiredEnvKeys.filter((key) => !import.meta.env[key]);
-export const missingOptionalFirebaseConfigKeys = optionalEnvKeys.filter((key) => !import.meta.env[key]);
+export const missingFirebaseConfigKeys = requiredEnvKeys.filter((key) => !getFirebaseEnvValue(key));
+export const missingOptionalFirebaseConfigKeys = optionalEnvKeys.filter((key) => !getFirebaseEnvValue(key));
 
 // 1. Try environment variables first (Vercel/GitHub)
 let firebaseConfig: any = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  firestoreDatabaseId: import.meta.env.VITE_FIREBASE_DATABASE_ID || '(default)',
+  apiKey: getFirebaseEnvValue('VITE_FIREBASE_API_KEY'),
+  authDomain: getFirebaseEnvValue('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: getFirebaseEnvValue('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: getFirebaseEnvValue('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: getFirebaseEnvValue('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: getFirebaseEnvValue('VITE_FIREBASE_APP_ID'),
+  firestoreDatabaseId: getFirebaseEnvValue('VITE_FIREBASE_DATABASE_ID') || '(default)',
 };
 let resolvedFromLocalConfig = false;
 

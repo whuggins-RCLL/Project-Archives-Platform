@@ -297,9 +297,9 @@ export default function App() {
     return (
       <div className="min-h-screen bg-surface text-on-surface flex items-center justify-center p-6">
         <div className="w-full max-w-2xl rounded-2xl border border-outline-variant/40 bg-surface-container-lowest shadow-xl p-8 space-y-5">
-          <h1 className="font-headline text-2xl font-bold">Setup required before preview is available</h1>
+          <h1 className="font-headline text-2xl font-bold">Setup required before the app is available</h1>
           <p className="text-on-surface-variant">
-            This preview cannot load yet because Firebase environment variables are missing. Add the keys below in your Vercel Preview Environment Variables, then redeploy.
+            This app cannot load yet because Firebase environment variables are missing. Add the keys below in your Vercel environment variables for this deployment target, then redeploy.
           </p>
           <ul className="list-disc pl-6 text-sm text-on-surface-variant space-y-1">
             {missingFirebaseConfigKeys.map((key) => (

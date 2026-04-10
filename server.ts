@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { readFile } from "node:fs/promises";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -22,6 +23,15 @@ const ADMIN_SETTINGS_TIMEOUT_MS = 8_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_LENGTH = 4_000;
 const MAX_SYSTEM_INSTRUCTION_LENGTH = 2_000;
+const CLIENT_FIREBASE_ENV_KEYS = [
+  "VITE_FIREBASE_API_KEY",
+  "VITE_FIREBASE_AUTH_DOMAIN",
+  "VITE_FIREBASE_PROJECT_ID",
+  "VITE_FIREBASE_APP_ID",
+  "VITE_FIREBASE_STORAGE_BUCKET",
+  "VITE_FIREBASE_MESSAGING_SENDER_ID",
+  "VITE_FIREBASE_DATABASE_ID",
+];
 
 type RateLimitEntry = {
   count: number;
@@ -939,8 +949,29 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
+    const indexPath = path.join(distPath, "index.html");
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      void (async () => {
+        try {
+          const indexHtml = await readFile(indexPath, "utf8");
+          const runtimeEnv = CLIENT_FIREBASE_ENV_KEYS.reduce<Record<string, string>>((acc, key) => {
+            const value = process.env[key];
+            if (value && value.trim().length > 0) {
+              acc[key] = value;
+            }
+            return acc;
+          }, {});
+          const runtimeScript = `<script>window.__APP_ENV__=${JSON.stringify(runtimeEnv)};</script>`;
+          const html = indexHtml.includes("</head>")
+            ? indexHtml.replace("</head>", `${runtimeScript}</head>`)
+            : `${runtimeScript}${indexHtml}`;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.send(html);
+        } catch (error: unknown) {
+          console.error("Failed to render index.html with runtime env", error);
+          res.status(500).send("Unable to load app shell.");
+        }
+      })();
     });
   }
 
