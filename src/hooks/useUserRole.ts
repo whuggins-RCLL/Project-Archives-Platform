@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { onIdTokenChanged } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import {
   AppRole,
@@ -18,7 +18,7 @@ export function useUserRole() {
   const [loadingRole, setLoadingRole] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onIdTokenChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!user) {
         setRole('viewer');
         setLoadingRole(false);
@@ -26,7 +26,7 @@ export function useUserRole() {
       }
 
       try {
-        const tokenResult = await user.getIdTokenResult(true);
+        const tokenResult = await user.getIdTokenResult();
         setRole(normalizeRoleFromClaims(tokenResult?.claims ?? {}));
       } catch {
         console.error('Failed to resolve user role');
