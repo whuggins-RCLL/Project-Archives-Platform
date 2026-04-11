@@ -1,4 +1,4 @@
-import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X } from 'lucide-react';
+import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users } from 'lucide-react';
 import { APP_CONFIG } from '../config';
 import Button from './Button';
 
@@ -6,14 +6,18 @@ export default function Sidebar({
   currentView,
   setCurrentView,
   onNewProject,
-  isAdmin,
+  canEditContent,
+  canManageSettings,
+  canManageRoles,
   isMobileOpen,
   onMobileClose
 }: {
   currentView: string,
   setCurrentView: (v: string) => void,
   onNewProject: () => void,
-  isAdmin: boolean,
+  canEditContent: boolean,
+  canManageSettings: boolean,
+  canManageRoles: boolean,
   isMobileOpen: boolean,
   onMobileClose: () => void
 }) {
@@ -79,7 +83,7 @@ export default function Sidebar({
             onNewProject();
             onMobileClose();
           }}
-          disabled={!isAdmin}
+          disabled={!canEditContent}
           variant="primary"
           className="w-full py-3 rounded-lg"
         >
@@ -94,7 +98,7 @@ export default function Sidebar({
           <HelpCircle className="w-4 h-4" />
           <span>Help</span>
         </button>
-        {isAdmin && (
+        {canManageSettings && (
           <button 
             onClick={() => {
               setCurrentView('settings');
@@ -104,6 +108,18 @@ export default function Sidebar({
           >
             <Settings2 className="w-4 h-4" />
             <span>Archive Settings</span>
+          </button>
+        )}
+        {canManageRoles && (
+          <button
+            onClick={() => {
+              setCurrentView('admin-users');
+              onMobileClose();
+            }}
+            className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-brand-dark text-xs font-medium"
+          >
+            <Users className="w-4 h-4" />
+            <span>Access Management</span>
           </button>
         )}
       </div>

@@ -179,3 +179,31 @@ export interface OperationsDigestReport {
     email: 'sent' | 'skipped' | 'failed';
   };
 }
+
+export type UserStatus = 'active' | 'disabled';
+export type AppRole = 'owner' | 'admin' | 'collaborator' | 'viewer';
+
+export interface ManagedUser {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: AppRole;
+  status: UserStatus;
+  createdAt?: string;
+  updatedAt?: string;
+  lastRoleChangedAt?: string;
+  lastRoleChangedBy?: string;
+}
+
+export interface AdminAuditEntry {
+  id: string;
+  actorUid: string;
+  actorEmail: string;
+  targetUid: string;
+  targetEmail: string;
+  action: string;
+  oldRole?: AppRole;
+  newRole?: AppRole;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}

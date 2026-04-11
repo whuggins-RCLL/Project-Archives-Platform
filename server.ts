@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { readFile } from "node:fs/promises";
+import { createSign, randomUUID } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -53,6 +54,8 @@ type VerifiedUser = {
   email: string | null;
   claims: Record<string, unknown>;
 };
+
+type AppRole = "owner" | "admin" | "collaborator" | "viewer";
 
 type OperationProjectSignal = {
   projectId: string;
@@ -135,6 +138,27 @@ function claimIsTrue(claims: Record<string, unknown>, key: string): boolean {
   return claims[key] === true;
 }
 
+function normalizeRoleFromClaims(claims: Record<string, unknown>): AppRole {
+  const roleClaim = claims.role;
+  if (roleClaim === "owner" || roleClaim === "admin" || roleClaim === "collaborator" || roleClaim === "viewer") {
+    return roleClaim;
+  }
+  if (claims.admin === true) return "admin";
+  return "viewer";
+}
+
+function isOwnerRole(role: AppRole): boolean {
+  return role === "owner";
+}
+
+function isAdminRole(role: AppRole): boolean {
+  return role === "owner" || role === "admin";
+}
+
+function canManageSettings(role: AppRole): boolean {
+  return isAdminRole(role);
+}
+
 function claimIncludesGroup(claims: Record<string, unknown>, allowedGroups: string[]): boolean {
   const groups = claims.groups;
   if (!Array.isArray(groups)) return false;
@@ -154,8 +178,9 @@ function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; s
   if (!isInternalUser(user.claims)) {
     return { ok: false, status: 403, error: "Internal domain/group authorization required" };
   }
-  if (user.claims.admin !== true) {
-    return { ok: false, status: 403, error: "Admin role required" };
+  const role = normalizeRoleFromClaims(user.claims);
+  if (!canManageSettings(role)) {
+    return { ok: false, status: 403, error: "Admin or owner role required" };
   }
   return { ok: true };
 }
@@ -573,6 +598,86 @@ function fromFirestoreFields(
   };
 }
 
+function getFirebaseProjectId(): string {
+  const value = process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.VITE_FIREBASE_PROJECT_ID;
+  if (!value) throw new Error("Firebase project id is not configured");
+  return value;
+}
+
+function getServiceAccount(): { clientEmail: string; privateKey: string } {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is required for role administration");
+  const parsed = JSON.parse(raw) as { client_email?: string; private_key?: string };
+  if (!parsed.client_email || !parsed.private_key) {
+    throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is missing client_email/private_key");
+  }
+  return {
+    clientEmail: parsed.client_email,
+    privateKey: parsed.private_key.replace(/\\n/g, "\n"),
+  };
+}
+
+async function getGoogleAccessToken(scope = "https://www.googleapis.com/auth/cloud-platform"): Promise<string> {
+  const { clientEmail, privateKey } = getServiceAccount();
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({
+    iss: clientEmail,
+    scope,
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  })).toString("base64url");
+  const unsigned = `${header}.${payload}`;
+  const signature = createSign("RSA-SHA256").update(unsigned).sign(privateKey, "base64url");
+  const assertion = `${unsigned}.${signature}`;
+
+  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+      assertion,
+    }),
+  });
+  if (!tokenRes.ok) throw new Error("Unable to fetch Google access token");
+  const tokenData = await tokenRes.json() as { access_token?: string };
+  if (!tokenData.access_token) throw new Error("Google access token missing");
+  return tokenData.access_token;
+}
+
+async function identityToolkitCall(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/identitytoolkit");
+  const projectId = getFirebaseProjectId();
+  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${projectId}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message || "Identity Toolkit call failed");
+  return data as Record<string, unknown>;
+}
+
+async function firestoreCall(path: string, options: { method?: string; body?: unknown } = {}): Promise<Record<string, unknown>> {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
+  const projectId = getFirebaseProjectId();
+  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`, {
+    method: options.method || "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message || "Firestore admin call failed");
+  return data as Record<string, unknown>;
+}
+
 async function fetchFirestoreSettings(idToken: string): Promise<Partial<AppSettings>> {
   const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
   if (!projectId) throw new Error("VITE_FIREBASE_PROJECT_ID is not configured on the server");
@@ -609,6 +714,92 @@ async function saveFirestoreSettings(idToken: string, settings: AppSettings): Pr
 
   if (!response.ok) {
     throw new Error("Unable to write settings document");
+  }
+}
+
+function validateRole(input: unknown): AppRole | null {
+  return input === "owner" || input === "admin" || input === "collaborator" || input === "viewer" ? input : null;
+}
+
+async function countOwnersFromUsersMirror(): Promise<number> {
+  const result = await firestoreCall("users?pageSize=500");
+  const documents = (result.documents as Array<{ fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+  return documents.filter((doc) => parseFirestoreValue(doc.fields?.role) === "owner").length;
+}
+
+function toFirestoreUserFields(input: {
+  email: string;
+  displayName: string;
+  role: AppRole;
+  status: "active" | "disabled";
+  actorUid?: string;
+}): Record<string, Record<string, unknown>> {
+  const now = new Date().toISOString();
+  return {
+    email: { stringValue: input.email },
+    displayName: { stringValue: input.displayName || "" },
+    role: { stringValue: input.role },
+    status: { stringValue: input.status },
+    updatedAt: { timestampValue: now },
+    createdAt: { timestampValue: now },
+    lastRoleChangedAt: { timestampValue: now },
+    lastRoleChangedBy: { stringValue: input.actorUid || "" },
+  };
+}
+
+async function writeAuditLog(entry: {
+  actorUid: string;
+  actorEmail: string;
+  targetUid: string;
+  targetEmail: string;
+  action: string;
+  oldRole?: AppRole;
+  newRole?: AppRole;
+}): Promise<void> {
+  const fields: Record<string, Record<string, unknown>> = {
+    actorUid: { stringValue: entry.actorUid },
+    actorEmail: { stringValue: entry.actorEmail },
+    targetUid: { stringValue: entry.targetUid },
+    targetEmail: { stringValue: entry.targetEmail },
+    action: { stringValue: entry.action },
+    timestamp: { timestampValue: new Date().toISOString() },
+  };
+  if (entry.oldRole) fields.oldRole = { stringValue: entry.oldRole };
+  if (entry.newRole) fields.newRole = { stringValue: entry.newRole };
+  await firestoreCall("adminAudit", { method: "POST", body: { fields } });
+}
+
+async function bootstrapOwnersFromEnv(): Promise<void> {
+  const ownerEmails = (process.env.OWNER_EMAILS || "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  if (ownerEmails.length === 0) return;
+
+  for (const email of ownerEmails) {
+    try {
+      const lookup = await identityToolkitCall("/accounts:lookup", { email: [email] });
+      const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
+      if (!authUser || typeof authUser.localId !== "string") continue;
+      const uid = authUser.localId;
+      const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
+      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: "owner", admin: true };
+      await identityToolkitCall("/accounts:update", { localId: uid, customAttributes: JSON.stringify(nextClaims) });
+      await firestoreCall(`users/${uid}`, {
+        method: "PATCH",
+        body: {
+          fields: toFirestoreUserFields({
+            email,
+            displayName: String(authUser.displayName || ""),
+            role: "owner",
+            status: "active",
+          }),
+        },
+      });
+      auditLog("owner_bootstrap_applied", { email, uid });
+    } catch (error) {
+      auditLog("owner_bootstrap_failed", { email, message: error instanceof Error ? error.message : "unknown" }, "error");
+    }
   }
 }
 
@@ -651,12 +842,14 @@ async function startServer() {
     console.warn("Upstash Redis credentials missing; using in-memory AI rate limiting for non-production only.");
   }
 
+  await bootstrapOwnersFromEnv();
+
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
   app.post("/api/ai/generate", async (req, res) => {
-    const requestId = crypto.randomUUID();
+    const requestId = randomUUID();
     const clientIp = getClientIp(req);
 
     try {
@@ -803,7 +996,7 @@ async function startServer() {
   });
 
   app.post("/api/admin/settings", async (req, res) => {
-    const requestId = crypto.randomUUID();
+    const requestId = randomUUID();
     const clientIp = getClientIp(req);
 
     try {
@@ -875,7 +1068,7 @@ async function startServer() {
   });
 
   app.post("/api/admin/operations/run", async (req, res) => {
-    const requestId = crypto.randomUUID();
+    const requestId = randomUUID();
     const clientIp = getClientIp(req);
 
     try {
@@ -942,6 +1135,145 @@ async function startServer() {
         ip: clientIp,
       }, "error");
       res.status(500).json({ error: "Unable to run operations digest right now. Please try again later." });
+    }
+  });
+
+  app.get("/api/admin/users/list", async (req, res) => {
+    try {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) return res.status(401).json({ error: "Authentication required" });
+      const verifiedUser = await verifyFirebaseUser(token);
+      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+
+      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+      if (!isAdminRole(callerRole)) return res.status(403).json({ error: "Admin or owner role required" });
+
+      const result = await firestoreCall("users?pageSize=500");
+      const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+      const users = documents.map((doc) => {
+        const parsed = parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+        return {
+          uid: parsed.id,
+          email: String(parsed.email || ""),
+          displayName: String(parsed.displayName || ""),
+          role: validateRole(parsed.role) || "viewer",
+          status: parsed.status === "disabled" ? "disabled" : "active",
+          createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
+          updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
+          lastRoleChangedAt: typeof parsed.lastRoleChangedAt === "string" ? parsed.lastRoleChangedAt : undefined,
+          lastRoleChangedBy: typeof parsed.lastRoleChangedBy === "string" ? parsed.lastRoleChangedBy : undefined,
+        };
+      });
+      return res.json({ users });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to list users" });
+    }
+  });
+
+  app.get("/api/admin/users/audit", async (req, res) => {
+    try {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) return res.status(401).json({ error: "Authentication required" });
+      const verifiedUser = await verifyFirebaseUser(token);
+      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+      if (!isOwnerRole(callerRole)) return res.status(403).json({ error: "Owner role required" });
+      const result = await firestoreCall("adminAudit?pageSize=100");
+      const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+      const audit = documents.map((doc) => parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> }));
+      return res.json({ audit });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to list audit logs" });
+    }
+  });
+
+  app.post("/api/admin/users/set-role", async (req, res) => {
+    try {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) return res.status(401).json({ error: "Authentication required" });
+      const verifiedUser = await verifyFirebaseUser(token);
+      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+      if (!isOwnerRole(callerRole)) return res.status(403).json({ error: "Only owners can change roles" });
+
+      const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+      const nextRole = validateRole(req.body?.role);
+      if (!targetUid || !nextRole) return res.status(400).json({ error: "uid and valid role are required" });
+      if (targetUid === verifiedUser.uid && nextRole !== "owner") {
+        const owners = await countOwnersFromUsersMirror();
+        if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
+      }
+
+      const lookup = await identityToolkitCall("/accounts:lookup", { localId: [targetUid] });
+      const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
+      if (!authUser) return res.status(404).json({ error: "Target user not found" });
+      const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
+      const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
+      if (oldRole === "owner" && nextRole !== "owner") {
+        const owners = await countOwnersFromUsersMirror();
+        if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
+      }
+
+      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: nextRole };
+      nextClaims.admin = nextRole === "owner" || nextRole === "admin";
+      await identityToolkitCall("/accounts:update", { localId: targetUid, customAttributes: JSON.stringify(nextClaims) });
+
+      const email = String(authUser.email || "");
+      const displayName = String(authUser.displayName || "");
+      await firestoreCall(`users/${targetUid}`, {
+        method: "PATCH",
+        body: { fields: toFirestoreUserFields({ email, displayName, role: nextRole, status: "active", actorUid: verifiedUser.uid }) },
+      });
+      await writeAuditLog({
+        actorUid: verifiedUser.uid,
+        actorEmail: verifiedUser.email || "",
+        targetUid,
+        targetEmail: email,
+        action: "set-role",
+        oldRole,
+        newRole: nextRole,
+      });
+      return res.json({ success: true, message: "Role updated. Ask the user to refresh their token (sign out/sign in)." });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to set role" });
+    }
+  });
+
+  app.post("/api/admin/users/:action(enable|disable)", async (req, res) => {
+    try {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) return res.status(401).json({ error: "Authentication required" });
+      const verifiedUser = await verifyFirebaseUser(token);
+      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+      if (!isOwnerRole(callerRole)) return res.status(403).json({ error: "Only owners can enable/disable users" });
+      const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+      if (!targetUid) return res.status(400).json({ error: "uid is required" });
+      const disableUser = req.params.action === "disable";
+
+      const lookup = await identityToolkitCall("/accounts:lookup", { localId: [targetUid] });
+      const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
+      if (!authUser) return res.status(404).json({ error: "Target user not found" });
+      await identityToolkitCall("/accounts:update", { localId: targetUid, disableUser });
+
+      const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
+      const role = normalizeRoleFromClaims(oldClaimsRaw);
+      const email = String(authUser.email || "");
+      const displayName = String(authUser.displayName || "");
+      await firestoreCall(`users/${targetUid}`, {
+        method: "PATCH",
+        body: { fields: toFirestoreUserFields({ email, displayName, role, status: disableUser ? "disabled" : "active", actorUid: verifiedUser.uid }) },
+      });
+      await writeAuditLog({
+        actorUid: verifiedUser.uid,
+        actorEmail: verifiedUser.email || "",
+        targetUid,
+        targetEmail: email,
+        action: disableUser ? "disable-user" : "enable-user",
+      });
+      return res.json({ success: true, message: `User ${disableUser ? "disabled" : "enabled"}. User should sign in again.` });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update user status" });
     }
   });
 

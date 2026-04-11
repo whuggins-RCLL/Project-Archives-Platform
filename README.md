@@ -294,3 +294,49 @@ If your organization needs private projects, change `allow read: if true` in `fi
 ## License
 
 SPDX-License-Identifier: Apache-2.0
+
+## Role & Access Management (Owner/Admin/Collaborator/Viewer)
+
+Authorization is enforced by Firebase custom claims using `role` as the source of truth:
+
+- `owner`: super admin, can manage roles and all admin actions.
+- `admin`: operational admin (settings, workflow, content), cannot change roles.
+- `collaborator`: can create/edit project and collaboration content, cannot manage global settings or roles.
+- `viewer`: read-only internal access.
+
+Backward compatibility: users that still only have `admin: true` and no `role` claim are treated as `admin` during migration.
+
+### Bootstrap the first owner
+
+Use either approach:
+
+1. **Automatic bootstrap via env var**
+   - Set `OWNER_EMAILS=user1@example.com,user2@example.com`.
+   - Set `FIREBASE_SERVICE_ACCOUNT_JSON` (service-account JSON string).
+   - On server start, matching users are granted owner claims.
+
+2. **One-time script**
+   - Run: `node scripts/grant-owner-by-email.mjs user@example.com`
+   - Requires `FIREBASE_SERVICE_ACCOUNT_JSON` and `FIREBASE_PROJECT_ID` (or `VITE_FIREBASE_PROJECT_ID`).
+
+### Owner admin panel
+
+Owners can open **Access Management** (`/app` -> sidebar -> Access Management) to:
+
+- Search/filter users by role.
+- Promote/demote between owner/admin/collaborator/viewer.
+- Disable/enable users.
+- Review role-audit history.
+
+The backend blocks non-owner role mutations and prevents demoting/removing the last remaining owner.
+
+### Testing role changes
+
+1. Log in as owner.
+2. Open Access Management and change a target user role.
+3. Verify success toast and audit log entry.
+4. Sign out/sign in (or refresh ID token) as the target user to observe updated permissions.
+
+### Token refresh behavior
+
+Firebase custom claims are embedded in ID tokens. After role updates, users should sign out/sign in (or force token refresh) before new permissions apply.

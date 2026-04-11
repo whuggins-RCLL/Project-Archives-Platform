@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { Project, Comment, CommentAttachment, Metrics, OperationsDigestReport } from '../types';
+import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole } from '../types';
 import { buildPortfolioMetrics } from './portfolioAnalytics';
 
 enum OperationType {
@@ -366,5 +366,71 @@ export const api = {
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'admin/operations/run');
     }
+  },
+
+  listManagedUsers: async (): Promise<ManagedUser[]> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to list users.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/users/list', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to list users');
+    }
+    const data = await response.json() as { users: ManagedUser[] };
+    return data.users;
+  },
+
+  listRoleAuditLogs: async (): Promise<AdminAuditEntry[]> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to view audit logs.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/users/audit', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Failed to list audit logs');
+    }
+    const data = await response.json() as { audit: AdminAuditEntry[] };
+    return data.audit;
+  },
+
+  setUserRole: async (uid: string, role: AppRole): Promise<string> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to manage roles.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/users/set-role', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ uid, role }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Failed to set role');
+    return payload.message || 'Role updated';
+  },
+
+  setUserStatus: async (uid: string, action: 'disable' | 'enable'): Promise<string> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to manage users.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/admin/users/${action}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ uid }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `Failed to ${action} user`);
+    return payload.message || `User ${action}d`;
   }
 };

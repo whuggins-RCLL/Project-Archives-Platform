@@ -17,6 +17,7 @@ import RecordView from './views/RecordView';
 import PublicView from './views/PublicView';
 import LoginView from './views/LoginView';
 import SettingsView from './views/SettingsView';
+import AdminUsersView from './views/AdminUsersView';
 import { api } from './lib/api';
 import { useUserRole } from './hooks/useUserRole';
 import { buildDefaultApprovalCheckpoints, buildDefaultMilestones } from './lib/projectGovernance';
@@ -31,7 +32,7 @@ function InternalApp() {
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
-  const { isAdmin, loadingRole, roleLabel } = useUserRole();
+  const { canEditContent, canManageRoles, canManageSettings, loadingRole, roleLabel } = useUserRole();
   const modalRef = useRef<HTMLDivElement | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
@@ -122,7 +123,7 @@ function InternalApp() {
   };
 
   const openNewProjectModal = () => {
-    if (!isAdmin) return;
+    if (!canEditContent) return;
     setIsNewProjectModalOpen(true);
   };
 
@@ -159,17 +160,19 @@ function InternalApp() {
   const renderView = () => {
     switch (currentView) {
       case 'kanban':
-        return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={isAdmin} />;
+        return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={canEditContent} />;
       case 'priority':
         return <PriorityView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} />;
       case 'portfolio':
         return <PortfolioView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onProjectsRefreshed={handleProjectsRefreshed} />;
       case 'record':
-        return <RecordView projects={projects} loading={loadingProjects} projectId={selectedProjectId} onBack={() => setCurrentView('kanban')} isAdmin={isAdmin} />;
+        return <RecordView projects={projects} loading={loadingProjects} projectId={selectedProjectId} onBack={() => setCurrentView('kanban')} isAdmin={canEditContent} />;
       case 'settings':
-        return <SettingsView isAdmin={isAdmin} loadingRole={loadingRole} />;
+        return <SettingsView isAdmin={canManageSettings} loadingRole={loadingRole} />;
+      case 'admin-users':
+        return <AdminUsersView canManageRoles={canManageRoles} />;
       default:
-        return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={isAdmin} />;
+        return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={canEditContent} />;
     }
   };
 
@@ -179,7 +182,9 @@ function InternalApp() {
         currentView={currentView}
         setCurrentView={setCurrentView}
         onNewProject={openNewProjectModal}
-        isAdmin={isAdmin}
+        canEditContent={canEditContent}
+        canManageSettings={canManageSettings}
+        canManageRoles={canManageRoles}
         isMobileOpen={isSidebarMobileOpen}
         onMobileClose={() => setIsSidebarMobileOpen(false)}
       />
@@ -243,7 +248,7 @@ function InternalApp() {
               </button>
               <button 
                 onClick={handleNewProject}
-                disabled={!isAdmin || !newProjectTitle.trim()}
+                disabled={!canEditContent || !newProjectTitle.trim()}
                 className="px-6 py-2 text-sm font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Create Project

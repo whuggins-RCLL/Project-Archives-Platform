@@ -2,68 +2,46 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ===============================================================
-    // Assumed Data Model
-    // ===============================================================
-    //
-    // Collection: projects
-    // Publicly readable dashboard-safe metadata only.
-    //
-    // Collection: users
-    // User profile + role metadata managed by admins.
-    //
-    // Collection: settings
-    // Global AI settings (admin write).
-    //
-    // Collection: comments
-    // Internal project collaboration comments.
-    //
-    // ===============================================================
-
-    // ===============================================================
-    // Helper Functions
-    // ===============================================================
-
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-
-    function isAdmin() {
+    function hasLegacyAdminClaim() {
       return isAuthenticated() && request.auth.token.admin == true;
     }
 
-    function hasGroup(groupName) {
-      return isAuthenticated() &&
-             request.auth.token.groups is list &&
-             request.auth.token.groups.hasAny([groupName]);
+    function role() {
+      return isAuthenticated() && request.auth.token.role is string
+        ? request.auth.token.role
+        : (hasLegacyAdminClaim() ? 'admin' : 'viewer');
     }
 
-    function hasAnyGroup(groupNames) {
-      return isAuthenticated() &&
-             request.auth.token.groups is list &&
-             request.auth.token.groups.hasAny(groupNames);
+    function isOwnerRole() {
+      return role() == 'owner';
+    }
+
+    function isAdminRole() {
+      return role() in ['owner', 'admin'];
+    }
+
+    function canEditContent() {
+      return role() in ['owner', 'admin', 'collaborator'];
+    }
+
+    function canViewInternal() {
+      return isAuthenticated() && role() in ['owner', 'admin', 'collaborator', 'viewer'];
     }
 
     function hasAllowedDomainClaim() {
-      return isAuthenticated() &&
-             (
-               request.auth.token.domain_authorized == true ||
-               request.auth.token.org_member == true
-             );
+      return isAuthenticated() && (request.auth.token.domain_authorized == true || request.auth.token.org_member == true);
+    }
+
+    function hasAnyGroup(groupNames) {
+      return isAuthenticated() && request.auth.token.groups is list && request.auth.token.groups.hasAny(groupNames);
     }
 
     function isInternalUser() {
-      // Rule-level enforcement for internal access:
-      // - admins are always internal
-      // - domain authorization must come from trusted custom claims
-      // - group-based access can be granted through token.groups
-      return isAdmin() ||
-             hasAllowedDomainClaim() ||
-             hasAnyGroup(['internal', 'staff', 'team', 'employee']);
+      return canViewInternal() || hasAllowedDomainClaim() || hasAnyGroup(['internal', 'staff', 'team', 'employee']);
     }
 
     function hasRequiredFields(fields) {
@@ -74,14 +52,6 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly(fields);
     }
 
-    function isValidEmail(email) {
-      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
-    }
-
-    function areImmutableFieldsUnchanged(fields) {
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
-    }
-
     function isValidString(val, minLen, maxLen) {
       return val is string && val.size() >= minLen && val.size() <= maxLen;
     }
@@ -90,13 +60,15 @@ service cloud.firestore {
       return !(field in request.resource.data) || isValidString(request.resource.data[field], minLen, maxLen);
     }
 
-    // ===============================================================
-    // Domain Validators
-    // ===============================================================
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
 
     function isValidProject(data) {
-      // NOTE: Keep this allow-list tight. Public reads depend on this schema
-      // not including sensitive fields.
       let allowedFields = [
         'title', 'description', 'status', 'priority', 'tags', 'dueDate',
         'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'progress',
@@ -123,46 +95,7 @@ service cloud.firestore {
              data.progress is number && data.progress >= 0 && data.progress <= 100 &&
              isValidString(data.department, 1, 100) &&
              data.preservationScore is number &&
-             isValidString(data.riskFactor, 1, 50) &&
-             (!('aiDrafts' in data) || (canPersistAIDrafts() && data.aiDrafts is list && data.aiDrafts.size() <= 30));
-    }
-
-    function isValidUser(data) {
-      let allowedFields = ['email', 'role', 'createdAt'];
-      return hasRequiredFields(allowedFields) &&
-             hasOnlyAllowedFields(allowedFields) &&
-             isValidEmail(data.email) &&
-             data.role in ['admin', 'user'] &&
-             data.createdAt is timestamp;
-    }
-
-    function isValidSettings(data) {
-      let allowedFields = ['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode'];
-      return hasRequiredFields(allowedFields) &&
-             hasOnlyAllowedFields(allowedFields) &&
-             data.aiEnabled is bool &&
-             data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma'] &&
-             (!('aiNextBestActionEnabled' in data) || data.aiNextBestActionEnabled is bool) &&
-             (!('aiRiskNarrativeEnabled' in data) || data.aiRiskNarrativeEnabled is bool) &&
-             (!('aiDuplicateDetectionEnabled' in data) || data.aiDuplicateDetectionEnabled is bool) &&
-             (!('aiRequireHumanApproval' in data) || data.aiRequireHumanApproval is bool) &&
-             data.privacyMode in ['public-read', 'private-read'];
-    }
-
-    function currentPrivacyMode() {
-      return get(/databases/$(database)/documents/settings/global).data.privacyMode;
-    }
-
-    function canPersistAIDrafts() {
-      return exists(/databases/$(database)/documents/settings/global) &&
-             currentPrivacyMode() == 'private-read';
-    }
-
-    function canReadProjects() {
-      // Defaults to public-read if setting is missing.
-      return !exists(/databases/$(database)/documents/settings/global) ||
-             currentPrivacyMode() == 'public-read' ||
-             isAuthenticated();
+             isValidString(data.riskFactor, 1, 50);
     }
 
     function isValidComment(data) {
@@ -189,57 +122,67 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
-    // ===============================================================
-    // Rules
-    // ===============================================================
+    function isValidSettings(data) {
+      return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode']) &&
+             data.aiEnabled is bool &&
+             data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma'] &&
+             data.aiNextBestActionEnabled is bool &&
+             data.aiRiskNarrativeEnabled is bool &&
+             data.aiDuplicateDetectionEnabled is bool &&
+             data.aiRequireHumanApproval is bool &&
+             data.privacyMode in ['public-read', 'private-read'];
+    }
+
+    function currentPrivacyMode() {
+      return get(/databases/$(database)/documents/settings/global).data.privacyMode;
+    }
+
+    function canReadProjects() {
+      return !exists(/databases/$(database)/documents/settings/global) ||
+             currentPrivacyMode() == 'public-read' ||
+             isAuthenticated();
+    }
+
+    function isValidUserMirror(data) {
+      return hasRequiredFields(['email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt', 'lastRoleChangedAt', 'lastRoleChangedBy']) &&
+             hasOnlyAllowedFields(['email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt', 'lastRoleChangedAt', 'lastRoleChangedBy']) &&
+             isValidEmail(data.email) &&
+             isValidString(data.displayName, 0, 200) &&
+             data.role in ['owner', 'admin', 'collaborator', 'viewer'] &&
+             data.status in ['active', 'disabled'] &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             data.lastRoleChangedAt is timestamp &&
+             data.lastRoleChangedBy is string;
+    }
 
     match /settings/{settingId} {
       allow read: if isInternalUser();
-      allow write: if isAdmin() && isValidSettings(request.resource.data);
+      allow write: if isInternalUser() && isAdminRole() && isValidSettings(request.resource.data);
     }
 
     match /projects/{projectId} {
-      // Read access can be toggled by settings/global.privacyMode.
       allow read: if canReadProjects() && (!isAuthenticated() || isInternalUser());
-
-      allow create: if isInternalUser() && isAdmin() && isValidProject(request.resource.data);
-      allow update: if isInternalUser() && isAdmin() && isValidProject(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
-      allow delete: if isInternalUser() && isAdmin();
+      allow create: if isInternalUser() && canEditContent() && isValidProject(request.resource.data);
+      allow update: if isInternalUser() && canEditContent() && isValidProject(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+      allow delete: if isInternalUser() && isAdminRole();
     }
 
     match /comments/{commentId} {
-      // Comments are internal collaboration data.
       allow read: if isInternalUser();
-      allow create: if isInternalUser() &&
-                    isValidComment(request.resource.data) &&
-                    request.resource.data.authorId == request.auth.uid;
-      allow update: if isInternalUser() &&
-                    isValidComment(request.resource.data) &&
-                    areImmutableFieldsUnchanged(['projectId', 'authorId', 'createdAt', 'timestamp']) &&
-                    (isAdmin() || resource.data.authorId == request.auth.uid);
-      allow delete: if isInternalUser() &&
-                    (isAdmin() || resource.data.authorId == request.auth.uid);
+      allow create: if isInternalUser() && canEditContent() && isValidComment(request.resource.data) && request.resource.data.authorId == request.auth.uid;
+      allow update: if isInternalUser() && canEditContent() && isValidComment(request.resource.data) && areImmutableFieldsUnchanged(['projectId', 'authorId', 'createdAt', 'timestamp']) && (isAdminRole() || resource.data.authorId == request.auth.uid);
+      allow delete: if isInternalUser() && (isAdminRole() || resource.data.authorId == request.auth.uid);
     }
 
     match /users/{userId} {
-      allow read: if isInternalUser() && (isOwner(userId) || isAdmin());
+      allow read: if isInternalUser();
+      allow write: if isInternalUser() && isOwnerRole() && isValidUserMirror(request.resource.data);
+    }
 
-      // User can create their own base profile as role=user only.
-      allow create: if isInternalUser() &&
-                    isOwner(userId) &&
-                    isValidUser(request.resource.data) &&
-                    request.resource.data.role == 'user';
-
-      // User may update their own profile but cannot elevate role or alter createdAt.
-      allow update: if isInternalUser() &&
-                    isOwner(userId) &&
-                    isValidUser(request.resource.data) &&
-                    areImmutableFieldsUnchanged(['role', 'createdAt']);
-
-      // Admin override for lifecycle management.
-      allow create: if isInternalUser() && isAdmin() && isValidUser(request.resource.data);
-      allow update: if isInternalUser() && isAdmin() && isValidUser(request.resource.data);
-      allow delete: if isInternalUser() && isAdmin();
+    match /adminAudit/{entryId} {
+      allow read, write: if isInternalUser() && isOwnerRole();
     }
   }
 }
