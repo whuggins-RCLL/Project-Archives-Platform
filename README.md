@@ -209,6 +209,16 @@ The Digital Archivist includes optional AI features (Auto-Tagging, Summarization
 3. Toggle "Enable AI Features" and select your preferred AI Provider.
 4. Optionally control AI workflow capabilities (next-best action, risk narrative, duplicate detection) and require human approval before AI outputs are treated as approved.
 
+### Multi-Model Chat Setup (for future clones)
+Use this checklist if you are re-implementing model selection in a fresh clone:
+
+1. Define a shared `AIModelOption` type in `src/types.ts` with `id`, `label`, `description`, and `provider`.
+2. Add a shared `AI_MODEL_OPTIONS` list in `src/constants.tsx` (model ID + human label + short description).
+3. In the AI interaction UI (record/chat workflows), add `selectedModel` state and a `<select>` bound to the options for the active provider.
+4. Pass `selectedModel` into every AI send/generate call on the client.
+5. Update `api.generateAI(...)` (or equivalent client API helper) to accept `model: string` and include it in the `/api/ai/generate` POST body.
+6. Update the server route (`/api/ai/generate`) to require `model` and forward it into the provider SDK request body (`model` field) so the chosen model is actually used.
+
 ### Secure API Key Configuration
 **CRITICAL SECURITY NOTICE:** Never put your AI API keys (OpenAI, Anthropic, etc.) in frontend code or prefix them with `VITE_`. Doing so will expose your keys publicly.
 

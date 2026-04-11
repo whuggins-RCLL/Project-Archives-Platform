@@ -127,7 +127,7 @@ export const api = {
     }
   },
 
-  generateAI: async (prompt: string, provider: string, systemInstruction?: string): Promise<string> => {
+  generateAI: async (prompt: string, provider: string, model: string, systemInstruction?: string): Promise<string> => {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
@@ -141,7 +141,7 @@ export const api = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ prompt, provider, systemInstruction })
+        body: JSON.stringify({ prompt, provider, model, systemInstruction })
       });
 
       if (!response.ok) {
