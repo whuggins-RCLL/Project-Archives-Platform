@@ -4,6 +4,7 @@ import { api, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate } from '../types';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
+import { AI_MODEL_OPTIONS } from '../constants';
 
 export default function RecordView({ projects, loading: projectsLoading, projectId, onBack, isAdmin }: { projects: Project[], loading: boolean, projectId: string | null, onBack: () => void, isAdmin: boolean }) {
   const [project, setProject] = useState<Project | null>(null);
@@ -30,6 +31,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -57,6 +59,14 @@ export default function RecordView({ projects, loading: projectsLoading, project
     );
     return () => unsubscribe();
   }, [projectId]);
+
+  useEffect(() => {
+    if (!settings?.activeProvider) return;
+    const providerOptions = AI_MODEL_OPTIONS.filter((option) => option.provider === settings.activeProvider);
+    if (providerOptions.length > 0) {
+      setSelectedModel(providerOptions[0].id);
+    }
+  }, [settings?.activeProvider]);
 
   const handleSave = async () => {
     if (!isAdmin) return;
@@ -216,7 +226,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
     setGeneratingTags(true);
     try {
       const prompt = `Based on the following project description, generate 3-5 relevant tags. Return ONLY a comma-separated list of tags, nothing else. Description: ${project.description}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, "You are an expert project manager. Generate concise, relevant tags.");
+      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, "You are an expert project manager. Generate concise, relevant tags.");
       const newTags = response.split(',').map(t => t.trim()).filter(t => t && !project.tags.includes(t));
       if (newTags.length > 0) {
         setProject({ ...project, tags: [...project.tags, ...newTags].slice(0, 20) });
@@ -239,7 +249,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
     try {
       const commentsText = comments.map(c => `${c.author.name}: ${c.text}`).join('\n');
       const prompt = `Summarize the following project and its recent comments into a concise executive summary (2-3 sentences max). \n\nProject Title: ${project.title}\nCurrent Description: ${project.description}\n\nRecent Comments:\n${commentsText}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, "You are an executive assistant. Provide a concise, professional summary.");
+      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, "You are an executive assistant. Provide a concise, professional summary.");
       setProject({ ...project, description: response.trim() });
     } catch (error) {
       console.error(error);
@@ -288,7 +298,7 @@ Status: ${project.status}
 Priority: ${project.priority}
 Risk: ${project.riskFactor}
 Description: ${project.description}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, 'You are a PMO copilot. Return strict JSON only.');
+      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, 'You are a PMO copilot. Return strict JSON only.');
       const parsed = parseJsonBlock<{ confidence?: number; explanation?: string; actions?: AIDraftRecommendation[] }>(response, {});
       const actions = (parsed.actions ?? []).slice(0, 4).map((item, index) => ({
         id: `act-${Date.now()}-${index}`,
@@ -327,7 +337,7 @@ Status: ${project.status}
 Risk: ${project.riskFactor}
 Dependencies: ${(project.dependencies ?? []).map((d) => `${d.description} (${d.status})`).join('; ') || 'none'}
 Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.required && !c.approved).length}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, 'You are an enterprise risk analyst. Return strict JSON only.');
+      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, 'You are an enterprise risk analyst. Return strict JSON only.');
       const parsed = parseJsonBlock<{ confidence?: number; explanation?: string; riskNarrative?: string }>(response, {});
 
       applyDraft({
@@ -719,6 +729,27 @@ Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.require
               <Sparkles className="w-6 h-6 text-primary" />
               AI Decision Support Workflow
             </h2>
+            {settings?.aiEnabled && isAdmin && (
+              <div className="mb-4 max-w-xl">
+                <label htmlFor="ai-model-select" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                  AI Model
+                </label>
+                <select
+                  id="ai-model-select"
+                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary outline-none"
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                >
+                  {AI_MODEL_OPTIONS
+                    .filter((option) => option.provider === settings.activeProvider)
+                    .map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label} — {option.description}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
             <div className="flex flex-wrap gap-2 mb-4">
               {settings?.aiEnabled && settings.aiNextBestActionEnabled && isAdmin && (
                 <button onClick={handleGenerateNextActions} disabled={generatingActions} className="px-3 py-2 text-xs font-bold rounded-md bg-primary/10 text-primary disabled:opacity-60 flex items-center gap-2">

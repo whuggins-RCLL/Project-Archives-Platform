@@ -693,7 +693,7 @@ async function startServer() {
         return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
       }
 
-      const { prompt, provider, systemInstruction } = req.body;
+      const { prompt, provider, model, systemInstruction } = req.body;
 
       if (typeof prompt !== "string" || prompt.trim().length === 0) {
         return res.status(400).json({ error: "Prompt is required" });
@@ -714,12 +714,16 @@ async function startServer() {
       if (typeof provider !== "string" || !ALLOWED_PROVIDERS.has(provider)) {
         return res.status(400).json({ error: "Invalid provider" });
       }
+      if (typeof model !== "string" || model.trim().length === 0) {
+        return res.status(400).json({ error: "Model is required" });
+      }
 
       auditLog("admin_ai_usage_started", {
         requestId,
         actorUid: verifiedUser.uid,
         actorEmail: verifiedUser.email,
         provider,
+        model,
         promptLength: prompt.length,
         hasSystemInstruction: typeof systemInstruction === "string" && systemInstruction.length > 0,
         ip: clientIp,
@@ -731,7 +735,7 @@ async function startServer() {
         if (!process.env.GEMINI_API_KEY) throw new Error("Gemini provider is not configured");
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         const response = await ai.models.generateContent({
-          model: "gemini-2.5-pro",
+          model,
           contents: prompt,
           config: { systemInstruction }
         });
@@ -744,7 +748,7 @@ async function startServer() {
         messages.push({ role: "user", content: prompt });
 
         const response = await openai.chat.completions.create({
-          model: "gpt-4o",
+          model,
           messages
         });
         responseText = response.choices[0]?.message?.content || "";
@@ -752,7 +756,7 @@ async function startServer() {
         if (!process.env.ANTHROPIC_API_KEY) throw new Error("Anthropic provider is not configured");
         const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
         const response = await anthropic.messages.create({
-          model: "claude-3-7-sonnet-20250219",
+          model,
           max_tokens: 1024,
           system: systemInstruction,
           messages: [{ role: "user", content: prompt }]
@@ -771,7 +775,7 @@ async function startServer() {
         messages.push({ role: "user", content: prompt });
 
         const response = await openai.chat.completions.create({
-          model: process.env.GEMMA_MODEL_NAME || "gemma-7b-it",
+          model,
           messages
         });
         responseText = response.choices[0]?.message?.content || "";
@@ -782,6 +786,7 @@ async function startServer() {
         actorUid: verifiedUser.uid,
         actorEmail: verifiedUser.email,
         provider,
+        model,
         responseLength: responseText.length,
         ip: clientIp,
       });

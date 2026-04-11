@@ -33,6 +33,13 @@ export interface Dependency {
   targetDate?: string;
 }
 
+export interface AIModelOption {
+  id: string;
+  label: string;
+  description: string;
+  provider: 'gemini' | 'openai' | 'anthropic' | 'gemma';
+}
+
 export interface ApprovalCheckpoint {
   id: string;
   stage: ProjectStatus;
