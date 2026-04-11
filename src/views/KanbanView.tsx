@@ -152,6 +152,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
             <Button
               onClick={onNewProject}
               disabled={!isAdmin}
+              title={isAdmin ? 'Create a new project' : 'You need editor access to create projects'}
               variant="primary"
               className="px-6 py-2.5"
             >

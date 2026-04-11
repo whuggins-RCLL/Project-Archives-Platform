@@ -196,7 +196,11 @@ function InternalApp() {
         >
           {isSidebarMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
         </button>
-        <Topbar roleLabel={roleLabel} />
+        <Topbar
+          roleLabel={roleLabel}
+          onOpenSettings={() => setCurrentView('settings')}
+          canManageSettings={canManageSettings}
+        />
         <main
           ref={mainContentRef}
           tabIndex={-1}

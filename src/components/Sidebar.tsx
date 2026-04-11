@@ -84,6 +84,7 @@ export default function Sidebar({
             onMobileClose();
           }}
           disabled={!canEditContent}
+          title={canEditContent ? 'Create a new project' : 'You need editor access to create projects'}
           variant="primary"
           className="w-full py-3 rounded-lg"
         >
