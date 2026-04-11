@@ -4,7 +4,15 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { APP_CONFIG } from '../config';
 
-export default function Topbar({ roleLabel }: { roleLabel: string }) {
+export default function Topbar({
+  roleLabel,
+  onOpenSettings,
+  canManageSettings,
+}: {
+  roleLabel: string,
+  onOpenSettings: () => void,
+  canManageSettings: boolean,
+}) {
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -58,7 +66,9 @@ export default function Topbar({ roleLabel }: { roleLabel: string }) {
           <button
             aria-label="Open settings"
             title="Settings"
-              className="p-2 text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
+            onClick={onOpenSettings}
+            disabled={!canManageSettings}
+            className="p-2 text-slate-700 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Settings className="w-5 h-5" />
           </button>
