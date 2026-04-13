@@ -65,10 +65,13 @@ export default function Topbar({
           </button>
           <button
             aria-label="Open settings"
-            title="Settings"
+            title={canManageSettings ? 'Settings' : 'Settings (view-only access)'}
             onClick={onOpenSettings}
-            disabled={!canManageSettings}
-            className="p-2 text-slate-700 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className={`p-2 rounded-full transition-colors ${
+              canManageSettings
+                ? 'text-slate-700 hover:bg-slate-100'
+                : 'text-slate-400 hover:bg-slate-100'
+            }`}
           >
             <Settings className="w-5 h-5" />
           </button>
