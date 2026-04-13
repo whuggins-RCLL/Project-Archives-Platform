@@ -150,10 +150,16 @@ service cloud.firestore {
 
     function isValidUserMirror(data) {
       return hasRequiredFields(['email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt', 'lastRoleChangedAt', 'lastRoleChangedBy']) &&
-             hasOnlyAllowedFields(['email', 'displayName', 'role', 'status', 'createdAt', 'updatedAt', 'lastRoleChangedAt', 'lastRoleChangedBy']) &&
+             hasOnlyAllowedFields(['email', 'displayName', 'role', 'permissions', 'status', 'createdAt', 'updatedAt', 'lastRoleChangedAt', 'lastRoleChangedBy']) &&
              isValidEmail(data.email) &&
              isValidString(data.displayName, 0, 200) &&
              data.role in ['owner', 'admin', 'collaborator', 'viewer'] &&
+             (!('permissions' in data) || (data.permissions is map &&
+                data.permissions.keys().hasOnly(['canManageRoles', 'canManageSettings', 'canEditContent', 'canViewInternalStats']) &&
+                data.permissions.canManageRoles is bool &&
+                data.permissions.canManageSettings is bool &&
+                data.permissions.canEditContent is bool &&
+                data.permissions.canViewInternalStats is bool)) &&
              data.status in ['active', 'disabled'] &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp &&
@@ -182,11 +188,11 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isInternalUser();
-      allow write: if isInternalUser() && isOwnerRole() && isValidUserMirror(request.resource.data);
+      allow write: if isInternalUser() && isAdminRole() && isValidUserMirror(request.resource.data);
     }
 
     match /adminAudit/{entryId} {
-      allow read, write: if isInternalUser() && isOwnerRole();
+      allow read, write: if isInternalUser() && isAdminRole();
     }
   }
 }

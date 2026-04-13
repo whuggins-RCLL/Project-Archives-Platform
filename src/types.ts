@@ -182,12 +182,21 @@ export interface OperationsDigestReport {
 
 export type UserStatus = 'active' | 'disabled';
 export type AppRole = 'owner' | 'admin' | 'collaborator' | 'viewer';
+export type UserPermissionKey = 'canManageRoles' | 'canManageSettings' | 'canEditContent' | 'canViewInternalStats';
+
+export interface UserPermissionSet {
+  canManageRoles: boolean;
+  canManageSettings: boolean;
+  canEditContent: boolean;
+  canViewInternalStats: boolean;
+}
 
 export interface ManagedUser {
   uid: string;
   email: string;
   displayName: string;
   role: AppRole;
+  permissions?: UserPermissionSet;
   status: UserStatus;
   createdAt?: string;
   updatedAt?: string;

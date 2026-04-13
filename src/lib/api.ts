@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole } from '../types';
+import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
 import { buildPortfolioMetrics } from './portfolioAnalytics';
 
 enum OperationType {
@@ -450,6 +450,23 @@ export const api = {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || `Failed to ${action} user`);
     return payload.message || `User ${action}d`;
+  },
+
+  setUserPermissions: async (uid: string, permissions: UserPermissionSet): Promise<string> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to manage permissions.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/users/set-permissions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ uid, permissions }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Failed to update permissions');
+    return payload.message || 'Permissions updated';
   },
 
   getOwnerBootstrapStatus: async (): Promise<{ ownerCount: number; configured: boolean; eligible: boolean }> => {

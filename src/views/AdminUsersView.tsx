@@ -2,9 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { Shield, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { auth } from '../lib/firebase';
-import { AdminAuditEntry, AppRole, ManagedUser } from '../types';
+import { AdminAuditEntry, AppRole, ManagedUser, UserPermissionKey } from '../types';
+import { defaultPermissionsForRole } from '../lib/roles';
 
 const ROLE_FILTERS: Array<AppRole | 'all'> = ['all', 'owner', 'admin', 'collaborator', 'viewer'];
+const PERMISSION_COLUMNS: Array<{ key: UserPermissionKey; label: string }> = [
+  { key: 'canManageRoles', label: 'Manage roles' },
+  { key: 'canManageSettings', label: 'Manage settings' },
+  { key: 'canEditContent', label: 'Edit content' },
+  { key: 'canViewInternalStats', label: 'View internal' },
+];
 
 function badgeClass(role: AppRole): string {
   if (role === 'owner') return 'bg-purple-100 text-purple-700';
@@ -30,6 +37,7 @@ export default function AdminUsersView({
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshingClaims, setRefreshingClaims] = useState(false);
+  const [savingPermissionKey, setSavingPermissionKey] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -83,6 +91,23 @@ export default function AdminUsersView({
     }
   };
 
+  const mutatePermission = async (user: ManagedUser, key: UserPermissionKey, checked: boolean) => {
+    const basePermissions = user.permissions ?? defaultPermissionsForRole(user.role);
+    const nextPermissions = { ...basePermissions, [key]: checked };
+    setSavingPermissionKey(`${user.uid}:${key}`);
+    try {
+      const message = await api.setUserPermissions(user.uid, nextPermissions);
+      setToast(message);
+      setUsers((prev) => prev.map((candidate) => (
+        candidate.uid === user.uid ? { ...candidate, permissions: nextPermissions } : candidate
+      )));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Permissions update failed');
+    } finally {
+      setSavingPermissionKey(null);
+    }
+  };
+
   const refreshMyAccess = async () => {
     setRefreshingClaims(true);
     try {
@@ -103,7 +128,7 @@ export default function AdminUsersView({
   const roleMismatch = Boolean(currentUserMirrorRole && currentUserMirrorRole !== currentRole);
 
   if (!canManageRoles) {
-    return <div className="p-10 text-center"><Shield className="mx-auto w-14 h-14 text-error" /><h2 className="text-2xl font-bold mt-2">Access Denied</h2><p className="text-on-surface-variant">Only owners can manage roles.</p></div>;
+    return <div className="p-10 text-center"><Shield className="mx-auto w-14 h-14 text-error" /><h2 className="text-2xl font-bold mt-2">Access Denied</h2><p className="text-on-surface-variant">Only owners and admins can manage users.</p></div>;
   }
 
   return (
@@ -135,7 +160,7 @@ export default function AdminUsersView({
       {loading ? <div>Loading users...</div> : (
         <div className="bg-white rounded-xl border overflow-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50"><tr><th className="p-3 text-left">Name</th><th className="p-3 text-left">Email</th><th className="p-3 text-left">Role</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">UID</th><th className="p-3 text-left">Last Updated</th><th className="p-3 text-left">Actions</th></tr></thead>
+            <thead className="bg-slate-50"><tr><th className="p-3 text-left">Name</th><th className="p-3 text-left">Email</th><th className="p-3 text-left">Role</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">UID</th><th className="p-3 text-left">Last Updated</th><th className="p-3 text-left">Role/Status</th>{PERMISSION_COLUMNS.map((permission) => <th key={permission.key} className="p-3 text-left">{permission.label}</th>)}</tr></thead>
             <tbody>
             {visible.map((user) => (
               <tr key={user.uid} className="border-t align-top">
@@ -155,6 +180,24 @@ export default function AdminUsersView({
                       : <button className="px-2 py-1 border rounded text-xs" onClick={() => void mutateStatus(user.uid, 'enable')}>enable</button>}
                   </div>
                 </td>
+                {PERMISSION_COLUMNS.map((permission) => {
+                  const activePermissions = user.permissions ?? defaultPermissionsForRole(user.role);
+                  const checked = Boolean(activePermissions[permission.key]);
+                  const key = `${user.uid}:${permission.key}`;
+                  return (
+                    <td key={permission.key} className="p-3">
+                      <label className="inline-flex items-center gap-2 text-xs">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={savingPermissionKey === key}
+                          onChange={(event) => void mutatePermission(user, permission.key, event.target.checked)}
+                        />
+                        {savingPermissionKey === key ? 'Saving...' : 'Allow'}
+                      </label>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             </tbody>

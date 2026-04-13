@@ -86,6 +86,8 @@ type VerifiedUser = {
 };
 
 type AppRole = "owner" | "admin" | "collaborator" | "viewer";
+type UserPermissionKey = "canManageRoles" | "canManageSettings" | "canEditContent" | "canViewInternalStats";
+type UserPermissionSet = Record<UserPermissionKey, boolean>;
 
 type OperationProjectSignal = {
   projectId: string;
@@ -189,6 +191,27 @@ function canManageSettings(role: AppRole): boolean {
   return isAdminRole(role);
 }
 
+function defaultPermissionsForRole(role: AppRole): UserPermissionSet {
+  return {
+    canManageRoles: isAdminRole(role),
+    canManageSettings: canManageSettings(role),
+    canEditContent: role === "owner" || role === "admin" || role === "collaborator",
+    canViewInternalStats: true,
+  };
+}
+
+function sanitizePermissionSet(input: unknown, role: AppRole): UserPermissionSet {
+  const fallback = defaultPermissionsForRole(role);
+  if (!input || typeof input !== "object") return fallback;
+  const source = input as Record<string, unknown>;
+  return {
+    canManageRoles: source.canManageRoles === true,
+    canManageSettings: source.canManageSettings === true,
+    canEditContent: source.canEditContent === true,
+    canViewInternalStats: source.canViewInternalStats === true,
+  };
+}
+
 function claimIncludesGroup(claims: Record<string, unknown>, allowedGroups: string[]): boolean {
   const groups = claims.groups;
   if (!Array.isArray(groups)) return false;
@@ -220,7 +243,8 @@ function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; s
     return { ok: false, status: 403, error: "Internal domain/group authorization required" };
   }
   const role = normalizeRoleFromClaims(user.claims);
-  if (!canManageSettings(role)) {
+  const permissions = sanitizePermissionSet(user.claims.permissions, role);
+  if (!permissions.canManageSettings) {
     return { ok: false, status: 403, error: "Admin or owner role required" };
   }
   return { ok: true };
@@ -746,14 +770,26 @@ function toFirestoreUserFields(input: {
   displayName: string;
   role: AppRole;
   status: "active" | "disabled";
+  permissions?: UserPermissionSet;
   actorUid?: string;
 }): Record<string, Record<string, unknown>> {
   const now = new Date().toISOString();
+  const permissions = input.permissions || defaultPermissionsForRole(input.role);
   return {
     email: { stringValue: input.email },
     displayName: { stringValue: input.displayName || "" },
     role: { stringValue: input.role },
     status: { stringValue: input.status },
+    permissions: {
+      mapValue: {
+        fields: {
+          canManageRoles: { booleanValue: permissions.canManageRoles },
+          canManageSettings: { booleanValue: permissions.canManageSettings },
+          canEditContent: { booleanValue: permissions.canEditContent },
+          canViewInternalStats: { booleanValue: permissions.canViewInternalStats },
+        },
+      },
+    },
     updatedAt: { timestampValue: now },
     createdAt: { timestampValue: now },
     lastRoleChangedAt: { timestampValue: now },
@@ -769,6 +805,7 @@ async function writeAuditLog(entry: {
   action: string;
   oldRole?: AppRole;
   newRole?: AppRole;
+  metadata?: Record<string, unknown>;
 }): Promise<void> {
   const fields: Record<string, Record<string, unknown>> = {
     actorUid: { stringValue: entry.actorUid },
@@ -780,6 +817,15 @@ async function writeAuditLog(entry: {
   };
   if (entry.oldRole) fields.oldRole = { stringValue: entry.oldRole };
   if (entry.newRole) fields.newRole = { stringValue: entry.newRole };
+  if (entry.metadata) {
+    fields.metadata = {
+      mapValue: {
+        fields: Object.fromEntries(
+          Object.entries(entry.metadata).map(([key, value]) => [key, { stringValue: JSON.stringify(value) }]),
+        ),
+      },
+    };
+  }
   await firestoreCall("adminAudit", { method: "POST", body: { fields } });
 }
 
@@ -802,7 +848,8 @@ async function applyOwnerRoleToUid(input: { uid: string; email: string; displayN
   const authUser = await auth.getUser(input.uid);
   const oldClaimsRaw = authUser.customClaims || {};
   const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
-  const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: "owner", admin: true };
+  const nextPermissions = defaultPermissionsForRole("owner");
+  const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: "owner", admin: true, permissions: nextPermissions };
 
   await auth.setCustomUserClaims(input.uid, nextClaims);
   await auth.revokeRefreshTokens(input.uid);
@@ -813,6 +860,7 @@ async function applyOwnerRoleToUid(input: { uid: string; email: string; displayN
         email: input.email,
         displayName: input.displayName || authUser.displayName || "",
         role: "owner",
+        permissions: nextPermissions,
         status: "active",
         actorUid: input.actorUid,
       }),
@@ -1234,7 +1282,8 @@ async function startServer() {
       if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
 
       const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      if (!isAdminRole(callerRole)) return res.status(403).json({ error: "Admin or owner role required" });
+      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
       const result = await firestoreCall("users?pageSize=500");
       const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
@@ -1245,6 +1294,7 @@ async function startServer() {
           email: String(parsed.email || ""),
           displayName: String(parsed.displayName || ""),
           role: validateRole(parsed.role) || "viewer",
+          permissions: sanitizePermissionSet(parsed.permissions, validateRole(parsed.role) || "viewer"),
           status: parsed.status === "disabled" ? "disabled" : "active",
           createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
           updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
@@ -1319,7 +1369,8 @@ async function startServer() {
       const verifiedUser = await verifyFirebaseUser(token);
       if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
       const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      if (!isOwnerRole(callerRole)) return res.status(403).json({ error: "Owner role required" });
+      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
       const result = await firestoreCall("adminAudit?pageSize=100");
       const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
       const audit = documents.map((doc) => parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> }));
@@ -1336,11 +1387,15 @@ async function startServer() {
       const verifiedUser = await verifyFirebaseUser(token);
       if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
       const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      if (!isOwnerRole(callerRole)) return res.status(403).json({ error: "Only owners can change roles" });
+      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
       const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
       const nextRole = validateRole(req.body?.role);
       if (!targetUid || !nextRole) return res.status(400).json({ error: "uid and valid role are required" });
+      if (callerRole !== "owner" && nextRole === "owner") {
+        return res.status(403).json({ error: "Only owners can grant owner role" });
+      }
       console.log(`[admin/set-role] requested actorUid=${verifiedUser.uid} targetUid=${targetUid} role=${nextRole}`);
       if (targetUid === verifiedUser.uid && nextRole !== "owner") {
         const owners = await countOwnersFromUsersMirror();
@@ -1351,12 +1406,17 @@ async function startServer() {
       const authUser = await auth.getUser(targetUid);
       const oldClaimsRaw = authUser.customClaims || {};
       const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
+      const oldPermissions = sanitizePermissionSet(oldClaimsRaw.permissions, oldRole);
+      const nextPermissions = defaultPermissionsForRole(nextRole);
       if (oldRole === "owner" && nextRole !== "owner") {
         const owners = await countOwnersFromUsersMirror();
         if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
       }
+      if (callerRole !== "owner" && oldRole === "owner") {
+        return res.status(403).json({ error: "Only owners can modify owner accounts" });
+      }
 
-      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: nextRole };
+      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: nextRole, permissions: nextPermissions };
       nextClaims.admin = nextRole === "owner" || nextRole === "admin";
       await auth.setCustomUserClaims(targetUid, nextClaims);
       await auth.revokeRefreshTokens(targetUid);
@@ -1365,7 +1425,7 @@ async function startServer() {
       const displayName = authUser.displayName || "";
       await firestoreCall(`users/${targetUid}`, {
         method: "PATCH",
-        body: { fields: toFirestoreUserFields({ email, displayName, role: nextRole, status: "active", actorUid: verifiedUser.uid }) },
+        body: { fields: toFirestoreUserFields({ email, displayName, role: nextRole, permissions: nextPermissions, status: "active", actorUid: verifiedUser.uid }) },
       });
       await writeAuditLog({
         actorUid: verifiedUser.uid,
@@ -1375,6 +1435,7 @@ async function startServer() {
         action: "set-role",
         oldRole,
         newRole: nextRole,
+        metadata: { oldPermissions, nextPermissions },
       });
       await pause(120);
       console.log(`[admin/set-role] success actorUid=${verifiedUser.uid} targetUid=${targetUid} oldRole=${oldRole} newRole=${nextRole}`);
@@ -1393,7 +1454,8 @@ async function startServer() {
       const verifiedUser = await verifyFirebaseUser(token);
       if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
       const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      if (!isOwnerRole(callerRole)) return res.status(403).json({ error: "Only owners can enable/disable users" });
+      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
       const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
       if (!targetUid) return res.status(400).json({ error: "uid is required" });
       const disableUser = req.params.action === "disable";
@@ -1405,11 +1467,15 @@ async function startServer() {
 
       const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
       const role = normalizeRoleFromClaims(oldClaimsRaw);
+      if (callerRole !== "owner" && role === "owner") {
+        return res.status(403).json({ error: "Only owners can modify owner accounts" });
+      }
+      const permissions = sanitizePermissionSet(oldClaimsRaw.permissions, role);
       const email = String(authUser.email || "");
       const displayName = String(authUser.displayName || "");
       await firestoreCall(`users/${targetUid}`, {
         method: "PATCH",
-        body: { fields: toFirestoreUserFields({ email, displayName, role, status: disableUser ? "disabled" : "active", actorUid: verifiedUser.uid }) },
+        body: { fields: toFirestoreUserFields({ email, displayName, role, permissions, status: disableUser ? "disabled" : "active", actorUid: verifiedUser.uid }) },
       });
       await writeAuditLog({
         actorUid: verifiedUser.uid,
@@ -1421,6 +1487,52 @@ async function startServer() {
       return res.json({ success: true, message: `User ${disableUser ? "disabled" : "enabled"}. User should sign in again.` });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update user status" });
+    }
+  });
+
+  app.post("/api/admin/users/set-permissions", async (req, res) => {
+    try {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) return res.status(401).json({ error: "Authentication required" });
+      const verifiedUser = await verifyFirebaseUser(token);
+      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+
+      const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+      if (!targetUid) return res.status(400).json({ error: "uid is required" });
+
+      const auth = getAdminAuth();
+      const authUser = await auth.getUser(targetUid);
+      const oldClaimsRaw = authUser.customClaims || {};
+      const targetRole = normalizeRoleFromClaims(oldClaimsRaw);
+      if (callerRole !== "owner" && targetRole === "owner") {
+        return res.status(403).json({ error: "Only owners can modify owner accounts" });
+      }
+      const nextPermissions = sanitizePermissionSet(req.body?.permissions, targetRole);
+      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, permissions: nextPermissions };
+      await auth.setCustomUserClaims(targetUid, nextClaims);
+      await auth.revokeRefreshTokens(targetUid);
+
+      const email = authUser.email || "";
+      const displayName = authUser.displayName || "";
+      await firestoreCall(`users/${targetUid}`, {
+        method: "PATCH",
+        body: { fields: toFirestoreUserFields({ email, displayName, role: targetRole, permissions: nextPermissions, status: "active", actorUid: verifiedUser.uid }) },
+      });
+      await writeAuditLog({
+        actorUid: verifiedUser.uid,
+        actorEmail: verifiedUser.email || "",
+        targetUid,
+        targetEmail: email,
+        action: "set-permissions",
+        metadata: { nextPermissions },
+      });
+
+      return res.json({ success: true, message: "Permissions updated. User should refresh access claims." });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
     }
   });
 

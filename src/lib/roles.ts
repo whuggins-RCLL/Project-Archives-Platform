@@ -1,4 +1,6 @@
 export type AppRole = 'owner' | 'admin' | 'collaborator' | 'viewer';
+export type UserPermissionKey = 'canManageRoles' | 'canManageSettings' | 'canEditContent' | 'canViewInternalStats';
+export type UserPermissionSet = Record<UserPermissionKey, boolean>;
 
 const ROLE_PRIORITY: Record<AppRole, number> = {
   owner: 4,
@@ -33,7 +35,7 @@ export function isAdminRole(role: AppRole): boolean {
 }
 
 export function canManageRoles(role: AppRole): boolean {
-  return role === 'owner';
+  return role === 'owner' || role === 'admin';
 }
 
 export function canManageSettings(role: AppRole): boolean {
@@ -50,6 +52,15 @@ export function canEditContent(role: AppRole): boolean {
 
 export function canViewInternalStats(role: AppRole): boolean {
   return role === 'owner' || role === 'admin' || role === 'collaborator' || role === 'viewer';
+}
+
+export function defaultPermissionsForRole(role: AppRole): UserPermissionSet {
+  return {
+    canManageRoles: canManageRoles(role),
+    canManageSettings: canManageSettings(role),
+    canEditContent: canEditContent(role),
+    canViewInternalStats: canViewInternalStats(role),
+  };
 }
 
 export function roleLabel(role: AppRole): string {
