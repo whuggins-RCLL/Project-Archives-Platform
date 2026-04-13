@@ -519,7 +519,7 @@ async function verifyFirebaseUser(idToken: string): Promise<VerifiedUser | null>
   }
 
   const data = await response.json() as {
-    users?: Array<{ localId?: string; email?: string; customAttributes?: string }>;
+    users?: Array<{ localId?: string; email?: string }>;
   };
 
   const user = data.users?.[0];
@@ -528,13 +528,16 @@ async function verifyFirebaseUser(idToken: string): Promise<VerifiedUser | null>
   }
 
   let claims: Record<string, unknown> = {};
-  if (user.customAttributes) {
-    try {
-      claims = JSON.parse(user.customAttributes);
-    } catch {
-      claims = {};
+  try {
+    const lookup = await identityToolkitCall("/accounts:lookup", { localId: [user.localId] });
+    const adminUser = (lookup.users as Array<{ customAttributes?: string }> | undefined)?.[0];
+    if (typeof adminUser?.customAttributes === "string") {
+      claims = JSON.parse(adminUser.customAttributes) as Record<string, unknown>;
     }
+  } catch {
+    claims = {};
   }
+
 
   return {
     uid: user.localId,
