@@ -73,8 +73,20 @@ export interface AddCommentOptions {
 export const api = {
   refreshCurrentUserClaims: async (forceRefresh = true): Promise<void> => {
     if (!auth.currentUser) throw new Error('You must be logged in to refresh claims.');
-    await auth.currentUser.getIdToken(forceRefresh);
     await auth.currentUser.getIdTokenResult(forceRefresh);
+  },
+
+  reconcileRole: async (): Promise<{ role: string; reconciled: boolean }> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to reconcile role.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/auth/reconcile-role', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Failed to reconcile role');
+    return { role: payload.role || 'viewer', reconciled: payload.reconciled === true };
   },
 
   getSettings: async (): Promise<Settings> => {

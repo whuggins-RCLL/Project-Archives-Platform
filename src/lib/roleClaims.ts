@@ -22,9 +22,6 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function fetchRoleFromUserClaims(user: ClaimsUser, forceRefresh = false): Promise<AppRole> {
-  if (forceRefresh) {
-    await user.getIdToken(true);
-  }
   const tokenResult = await user.getIdTokenResult(forceRefresh);
   return normalizeRoleFromClaims(tokenResult?.claims ?? {});
 }

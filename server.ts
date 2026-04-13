@@ -888,6 +888,33 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.post("/api/auth/reconcile-role", async (req, res) => {
+    try {
+      const token = getBearerToken(req.headers.authorization);
+      if (!token) return res.status(401).json({ error: "Authentication required" });
+      const verifiedUser = await verifyFirebaseUser(token);
+      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+
+      const currentRole = normalizeRoleFromClaims(verifiedUser.claims);
+
+      if (currentRole !== "owner" && isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
+        await applyOwnerRoleToUid({
+          uid: verifiedUser.uid,
+          email: verifiedUser.email || "",
+          displayName: "",
+          actorUid: verifiedUser.uid,
+          actorEmail: verifiedUser.email || "",
+          action: "reconcile-role-refresh",
+        });
+        return res.json({ role: "owner", reconciled: true });
+      }
+
+      return res.json({ role: currentRole, reconciled: false });
+    } catch (error) {
+      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to reconcile role" });
+    }
+  });
+
   app.post("/api/ai/generate", async (req, res) => {
     const requestId = randomUUID();
     const clientIp = getClientIp(req);

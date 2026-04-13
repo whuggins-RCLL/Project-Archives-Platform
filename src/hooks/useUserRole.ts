@@ -13,6 +13,7 @@ import {
   roleLabel,
 } from '../lib/roles';
 import { fetchRoleFromUserClaims, refreshRoleWithRetry } from '../lib/roleClaims';
+import { api } from '../lib/api';
 
 export function useUserRole() {
   const [role, setRole] = useState<AppRole>('viewer');
@@ -30,6 +31,13 @@ export function useUserRole() {
     }
 
     try {
+      if (forceRefresh) {
+        try {
+          await api.reconcileRole();
+        } catch {
+          // Server reconciliation is best-effort; proceed with token refresh
+        }
+      }
       const nextRole = forceRefresh
         ? await refreshRoleWithRetry(user)
         : await fetchRoleFromUserClaims(user, false);
