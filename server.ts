@@ -8,8 +8,38 @@ import { createSign, randomUUID } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import admin from "firebase-admin";
 
 dotenv.config();
+
+let adminAuth: admin.auth.Auth | null = null;
+if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  console.warn("FIREBASE_SERVICE_ACCOUNT_JSON not set; Firebase Admin SDK disabled.");
+} else {
+  try {
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) as {
+      project_id?: string;
+      client_email?: string;
+      private_key?: string;
+    };
+    if (!sa.project_id || !sa.client_email || !sa.private_key) {
+      throw new Error("Service account JSON is missing required project_id/client_email/private_key fields");
+    }
+    if (admin.apps.length === 0) {
+      admin.initializeApp({
+        credential: admin.credential.cert({
+          projectId: sa.project_id,
+          clientEmail: sa.client_email,
+          privateKey: sa.private_key.replace(/\\n/g, "\n"),
+        }),
+      });
+    }
+    adminAuth = admin.auth();
+    console.log("Firebase Admin SDK initialized");
+  } catch (error) {
+    console.error("Failed to initialize Firebase Admin SDK:", error);
+  }
+}
 
 const ALLOWED_PROVIDERS = new Set(["gemini", "openai", "anthropic", "gemma"]);
 const AI_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -163,6 +193,17 @@ function claimIncludesGroup(claims: Record<string, unknown>, allowedGroups: stri
   const groups = claims.groups;
   if (!Array.isArray(groups)) return false;
   return groups.some((group) => typeof group === "string" && allowedGroups.includes(group));
+}
+
+function getAdminAuth(): admin.auth.Auth {
+  if (!adminAuth) {
+    throw new Error("Firebase Admin SDK is not initialized");
+  }
+  return adminAuth;
+}
+
+async function pause(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isInternalUser(claims: Record<string, unknown>): boolean {
@@ -502,48 +543,18 @@ async function deliverDigest(report: OperationsDigestReport): Promise<Operations
 }
 
 async function verifyFirebaseUser(idToken: string): Promise<VerifiedUser | null> {
-  const webApiKey = process.env.FIREBASE_WEB_API_KEY || process.env.VITE_FIREBASE_API_KEY;
-  if (!webApiKey) {
-    throw new Error("Firebase Web API key is not configured on the server");
-  }
-
-  const url = `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${webApiKey}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ idToken }),
-  });
-
-  if (!response.ok) {
-    return null;
-  }
-
-  const data = await response.json() as {
-    users?: Array<{ localId?: string; email?: string }>;
-  };
-
-  const user = data.users?.[0];
-  if (!user?.localId) {
-    return null;
-  }
-
-  let claims: Record<string, unknown> = {};
   try {
-    const lookup = await identityToolkitCall("/accounts:lookup", { localId: [user.localId] });
-    const adminUser = (lookup.users as Array<{ customAttributes?: string }> | undefined)?.[0];
-    if (typeof adminUser?.customAttributes === "string") {
-      claims = JSON.parse(adminUser.customAttributes) as Record<string, unknown>;
-    }
+    const auth = getAdminAuth();
+    const decoded = await auth.verifyIdToken(idToken);
+    const userRecord = await auth.getUser(decoded.uid);
+    return {
+      uid: decoded.uid,
+      email: userRecord.email || null,
+      claims: decoded as unknown as Record<string, unknown>,
+    };
   } catch {
-    claims = {};
+    return null;
   }
-
-
-  return {
-    uid: user.localId,
-    email: user.email || null,
-    claims,
-  };
 }
 
 function validateSettings(input: unknown): AppSettings | null {
@@ -787,22 +798,20 @@ function isEmailEligibleForOwnerBootstrap(email: string | null | undefined): boo
 }
 
 async function applyOwnerRoleToUid(input: { uid: string; email: string; displayName: string; actorUid?: string; actorEmail?: string; action: string }): Promise<void> {
-  const lookup = await identityToolkitCall("/accounts:lookup", { localId: [input.uid] });
-  const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
-  if (!authUser) {
-    throw new Error("Target user not found for owner bootstrap");
-  }
-  const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
+  const auth = getAdminAuth();
+  const authUser = await auth.getUser(input.uid);
+  const oldClaimsRaw = authUser.customClaims || {};
   const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
   const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: "owner", admin: true };
 
-  await identityToolkitCall("/accounts:update", { localId: input.uid, customAttributes: JSON.stringify(nextClaims) });
+  await auth.setCustomUserClaims(input.uid, nextClaims);
+  await auth.revokeRefreshTokens(input.uid);
   await firestoreCall(`users/${input.uid}`, {
     method: "PATCH",
     body: {
       fields: toFirestoreUserFields({
         email: input.email,
-        displayName: input.displayName || String(authUser.displayName || ""),
+        displayName: input.displayName || authUser.displayName || "",
         role: "owner",
         status: "active",
         actorUid: input.actorUid,
@@ -826,20 +835,22 @@ async function applyOwnerRoleToUid(input: { uid: string; email: string; displayN
 async function bootstrapOwnersFromEnv(): Promise<void> {
   const ownerEmails = configuredOwnerEmails();
   if (ownerEmails.length === 0) return;
+  if (!adminAuth) {
+    auditLog("owner_bootstrap_skipped", { reason: "firebase_admin_uninitialized" }, "error");
+    return;
+  }
+  const auth = adminAuth;
 
   for (const email of ownerEmails) {
     try {
-      const lookup = await identityToolkitCall("/accounts:lookup", { email: [email] });
-      const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
-      if (!authUser || typeof authUser.localId !== "string") continue;
-      const uid = authUser.localId;
+      const authUser = await auth.getUserByEmail(email);
       await applyOwnerRoleToUid({
-        uid,
+        uid: authUser.uid,
         email,
-        displayName: String(authUser.displayName || ""),
+        displayName: authUser.displayName || "",
         action: "bootstrap-owner-env",
       });
-      auditLog("owner_bootstrap_applied", { email, uid });
+      auditLog("owner_bootstrap_applied", { email, uid: authUser.uid });
     } catch (error) {
       auditLog("owner_bootstrap_failed", { email, message: error instanceof Error ? error.message : "unknown" }, "error");
     }
@@ -897,6 +908,7 @@ async function startServer() {
       if (!token) return res.status(401).json({ error: "Authentication required" });
       const verifiedUser = await verifyFirebaseUser(token);
       if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+      console.log(`[auth/reconcile-role] started uid=${verifiedUser.uid} email=${verifiedUser.email || "unknown"}`);
 
       const currentRole = normalizeRoleFromClaims(verifiedUser.claims);
 
@@ -909,11 +921,17 @@ async function startServer() {
           actorEmail: verifiedUser.email || "",
           action: "reconcile-role-refresh",
         });
+        await pause(120);
+        console.log(`[auth/reconcile-role] promoted to owner uid=${verifiedUser.uid}`);
         return res.json({ role: "owner", reconciled: true });
       }
 
+      await pause(120);
+      console.log(`[auth/reconcile-role] no-op uid=${verifiedUser.uid} role=${currentRole}`);
       return res.json({ role: currentRole, reconciled: false });
     } catch (error) {
+      console.error("[auth/reconcile-role] failed", error);
+      await pause(120);
       return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to reconcile role" });
     }
   });
@@ -1260,7 +1278,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/bootstrap/claim", async (req, res) => {
+  const handleBootstrapOwnerClaim = async (req: express.Request, res: express.Response) => {
     try {
       const token = getBearerToken(req.headers.authorization);
       if (!token) return res.status(401).json({ error: "Authentication required" });
@@ -1289,7 +1307,10 @@ async function startServer() {
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to claim owner access" });
     }
-  });
+  };
+
+  app.post("/api/admin/bootstrap/claim", handleBootstrapOwnerClaim);
+  app.post("/api/auth/bootstrap-owner", handleBootstrapOwnerClaim);
 
   app.get("/api/admin/users/audit", async (req, res) => {
     try {
@@ -1320,15 +1341,15 @@ async function startServer() {
       const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
       const nextRole = validateRole(req.body?.role);
       if (!targetUid || !nextRole) return res.status(400).json({ error: "uid and valid role are required" });
+      console.log(`[admin/set-role] requested actorUid=${verifiedUser.uid} targetUid=${targetUid} role=${nextRole}`);
       if (targetUid === verifiedUser.uid && nextRole !== "owner") {
         const owners = await countOwnersFromUsersMirror();
         if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
       }
 
-      const lookup = await identityToolkitCall("/accounts:lookup", { localId: [targetUid] });
-      const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
-      if (!authUser) return res.status(404).json({ error: "Target user not found" });
-      const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
+      const auth = getAdminAuth();
+      const authUser = await auth.getUser(targetUid);
+      const oldClaimsRaw = authUser.customClaims || {};
       const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
       if (oldRole === "owner" && nextRole !== "owner") {
         const owners = await countOwnersFromUsersMirror();
@@ -1337,10 +1358,11 @@ async function startServer() {
 
       const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: nextRole };
       nextClaims.admin = nextRole === "owner" || nextRole === "admin";
-      await identityToolkitCall("/accounts:update", { localId: targetUid, customAttributes: JSON.stringify(nextClaims) });
+      await auth.setCustomUserClaims(targetUid, nextClaims);
+      await auth.revokeRefreshTokens(targetUid);
 
-      const email = String(authUser.email || "");
-      const displayName = String(authUser.displayName || "");
+      const email = authUser.email || "";
+      const displayName = authUser.displayName || "";
       await firestoreCall(`users/${targetUid}`, {
         method: "PATCH",
         body: { fields: toFirestoreUserFields({ email, displayName, role: nextRole, status: "active", actorUid: verifiedUser.uid }) },
@@ -1354,8 +1376,12 @@ async function startServer() {
         oldRole,
         newRole: nextRole,
       });
+      await pause(120);
+      console.log(`[admin/set-role] success actorUid=${verifiedUser.uid} targetUid=${targetUid} oldRole=${oldRole} newRole=${nextRole}`);
       return res.json({ success: true, message: "Role updated. Ask the user to refresh their token (sign out/sign in)." });
     } catch (error) {
+      console.error("[admin/set-role] failed", error);
+      await pause(120);
       return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to set role" });
     }
   });
