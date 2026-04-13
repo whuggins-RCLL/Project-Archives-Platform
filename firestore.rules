@@ -72,7 +72,8 @@ service cloud.firestore {
       let allowedFields = [
         'title', 'description', 'status', 'priority', 'tags', 'dueDate',
         'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'progress',
-        'department', 'preservationScore', 'riskFactor', 'aiDrafts'
+        'department', 'preservationScore', 'riskFactor', 'aiDrafts',
+        'milestones', 'dependencies', 'approvalCheckpoints'
       ];
 
       return hasRequiredFields([
@@ -95,7 +96,10 @@ service cloud.firestore {
              data.progress is number && data.progress >= 0 && data.progress <= 100 &&
              isValidString(data.department, 1, 100) &&
              data.preservationScore is number &&
-             isValidString(data.riskFactor, 1, 50);
+             isValidString(data.riskFactor, 1, 50) &&
+             (!('milestones' in data) || data.milestones is list) &&
+             (!('dependencies' in data) || data.dependencies is list) &&
+             (!('approvalCheckpoints' in data) || data.approvalCheckpoints is list);
     }
 
     function isValidComment(data) {
