@@ -856,48 +856,63 @@ async function bootstrapOwnersFromEnv(): Promise<void> {
   }
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
-  const allowedOrigins = getAllowedCorsOrigins();
-  const isProduction = process.env.NODE_ENV === "production";
-  const devOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+const isProduction = process.env.NODE_ENV === "production";
+const isVercel = Boolean(process.env.VERCEL);
 
-  app.use(
-    cors({
-      origin(origin, callback) {
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
+const PORT = 3000;
+const allowedOrigins = getAllowedCorsOrigins();
+const devOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
 
-        const isAllowedByConfig = allowedOrigins.includes(origin);
-        const isAllowedDevOrigin = !isProduction && devOrigins.includes(origin);
+const app = express();
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
 
-        if (isAllowedByConfig || isAllowedDevOrigin) {
-          callback(null, true);
-          return;
-        }
+      const isAllowedByConfig = allowedOrigins.includes(origin);
+      const isAllowedDevOrigin = !isProduction && devOrigins.includes(origin);
 
-        callback(new Error("CORS origin denied"));
-      },
-    }),
+      if (isAllowedByConfig || isAllowedDevOrigin) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error("CORS origin denied"));
+    },
+  }),
+);
+app.use(express.json({ limit: "16kb" }));
+app.set("trust proxy", getTrustProxySetting());
+
+if (!hasUpstash) {
+  console.warn(
+    isProduction
+      ? "Upstash Redis credentials missing; distributed rate limiting unavailable. Falling back to per-instance in-memory rate limiting."
+      : "Upstash Redis credentials missing; using in-memory AI rate limiting for non-production only.",
   );
-  app.use(express.json({ limit: "16kb" }));
-  app.set("trust proxy", getTrustProxySetting());
+}
 
-  if (!hasUpstash) {
-    if (isProduction) {
-      throw new Error(
-        "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production for distributed AI rate limiting.",
-      );
-    }
-    console.warn("Upstash Redis credentials missing; using in-memory AI rate limiting for non-production only.");
+// Lazy bootstrap: ensure owner claims are applied once per process / cold start
+let bootstrapPromise: Promise<void> | null = null;
+function ensureBootstrap(): Promise<void> {
+  if (!bootstrapPromise) {
+    bootstrapPromise = bootstrapOwnersFromEnv().catch((err: unknown) => {
+      console.error("Owner bootstrap failed:", err instanceof Error ? err.message : "unknown");
+      bootstrapPromise = null;
+    }) as Promise<void>;
   }
+  return bootstrapPromise as Promise<void>;
+}
 
-  await bootstrapOwnersFromEnv();
+// Run owner bootstrap before handling any API request
+app.use("/api", (_req, _res, next) => {
+  void ensureBootstrap().then(() => next(), next);
+});
 
-  app.get("/api/health", (req, res) => {
+app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
@@ -1408,44 +1423,47 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    const indexPath = path.join(distPath, "index.html");
-    app.get("*", (req, res) => {
-      void (async () => {
-        try {
-          const indexHtml = await readFile(indexPath, "utf8");
-          const runtimeEnv = CLIENT_FIREBASE_ENV_KEYS.reduce<Record<string, string>>((acc, key) => {
-            const value = process.env[key];
-            if (value && value.trim().length > 0) {
-              acc[key] = value;
-            }
-            return acc;
-          }, {});
-          const runtimeScript = `<script>window.__APP_ENV__=${JSON.stringify(runtimeEnv)};</script>`;
-          const html = indexHtml.includes("</head>")
-            ? indexHtml.replace("</head>", `${runtimeScript}</head>`)
-            : `${runtimeScript}${indexHtml}`;
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.send(html);
-        } catch (error: unknown) {
-          console.error("Failed to render index.html with runtime env", error);
-          res.status(500).send("Unable to load app shell.");
-        }
-      })();
-    });
-  }
+export default app;
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+if (!isVercel) {
+  void (async () => {
+    if (process.env.NODE_ENV !== "production") {
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      const indexPath = path.join(distPath, "index.html");
+      app.get("*", (req, res) => {
+        void (async () => {
+          try {
+            const indexHtml = await readFile(indexPath, "utf8");
+            const runtimeEnv = CLIENT_FIREBASE_ENV_KEYS.reduce<Record<string, string>>((acc, key) => {
+              const value = process.env[key];
+              if (value && value.trim().length > 0) {
+                acc[key] = value;
+              }
+              return acc;
+            }, {});
+            const runtimeScript = `<script>window.__APP_ENV__=${JSON.stringify(runtimeEnv)};</script>`;
+            const html = indexHtml.includes("</head>")
+              ? indexHtml.replace("</head>", `${runtimeScript}</head>`)
+              : `${runtimeScript}${indexHtml}`;
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.send(html);
+          } catch (error: unknown) {
+            console.error("Failed to render index.html with runtime env", error);
+            res.status(500).send("Unable to load app shell.");
+          }
+        })();
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  })();
 }
-
-startServer();
