@@ -76,7 +76,7 @@ export const api = {
     await auth.currentUser.getIdTokenResult(forceRefresh);
   },
 
-  reconcileRole: async (): Promise<{ role: string; reconciled: boolean }> => {
+  reconcileRole: async (): Promise<{ role: AppRole; reconciled: boolean }> => {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('You must be logged in to reconcile role.');
     const idToken = await currentUser.getIdToken();
@@ -86,7 +86,10 @@ export const api = {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Failed to reconcile role');
-    return { role: payload.role || 'viewer', reconciled: payload.reconciled === true };
+    const role = payload.role === 'owner' || payload.role === 'admin' || payload.role === 'collaborator' || payload.role === 'viewer'
+      ? payload.role
+      : 'viewer';
+    return { role, reconciled: payload.reconciled === true };
   },
 
   getSettings: async (): Promise<Settings> => {
