@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { onIdTokenChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import {
@@ -10,6 +10,7 @@ import {
   canViewInternalStats,
   isAdminRole,
   isOwnerRole,
+  hasMinimumRole,
   roleLabel,
 } from '../lib/roles';
 import { fetchRoleFromUserClaims, refreshRoleWithRetry } from '../lib/roleClaims';
@@ -20,6 +21,7 @@ export function useUserRole() {
   const [loadingRole, setLoadingRole] = useState(true);
   const [refreshingRole, setRefreshingRole] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const serverRoleRef = useRef<AppRole | null>(null);
 
   const resolveRole = useCallback(async (forceRefresh = false) => {
     const user = auth.currentUser;
@@ -33,15 +35,28 @@ export function useUserRole() {
     try {
       if (forceRefresh) {
         try {
-          await api.reconcileRole();
+          const reconcileResult = await api.reconcileRole();
+          const reconciledRole = reconcileResult.role as AppRole;
+          if (reconciledRole === 'owner' || reconciledRole === 'admin' || reconciledRole === 'collaborator' || reconciledRole === 'viewer') {
+            serverRoleRef.current = reconciledRole;
+            setRole(reconciledRole);
+          }
         } catch {
           // Server reconciliation is best-effort; proceed with token refresh
         }
       }
-      const nextRole = forceRefresh
+      const tokenRole = forceRefresh
         ? await refreshRoleWithRetry(user)
         : await fetchRoleFromUserClaims(user, false);
-      setRole(nextRole);
+      const authoritativeRole = serverRoleRef.current;
+      if (authoritativeRole && !hasMinimumRole(tokenRole, authoritativeRole)) {
+        setRole(authoritativeRole);
+      } else {
+        setRole(tokenRole);
+        if (authoritativeRole && hasMinimumRole(tokenRole, authoritativeRole)) {
+          serverRoleRef.current = null;
+        }
+      }
       setRoleError(null);
     } catch {
       console.error('Failed to resolve user role');
@@ -59,6 +74,7 @@ export function useUserRole() {
 
   const refreshRoleClaims = useCallback(async () => {
     setRefreshingRole(true);
+    void auth.currentUser?.getIdTokenResult(true).catch(() => {});
     await resolveRole(true);
   }, [resolveRole]);
 
