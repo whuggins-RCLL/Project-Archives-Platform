@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { onIdTokenChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import {
@@ -8,6 +8,7 @@ import {
   canManageSettings,
   canViewSettings,
   canViewInternalStats,
+  hasMinimumRole,
   isAdminRole,
   isOwnerRole,
   roleLabel,
@@ -15,16 +16,24 @@ import {
 import { fetchRoleFromUserClaims, refreshRoleWithRetry } from '../lib/roleClaims';
 import { api } from '../lib/api';
 
+const VALID_ROLES: AppRole[] = ['owner', 'admin', 'collaborator', 'viewer'];
+
 export function useUserRole() {
   const [role, setRole] = useState<AppRole>('viewer');
   const [loadingRole, setLoadingRole] = useState(true);
   const [refreshingRole, setRefreshingRole] = useState(false);
   const [roleError, setRoleError] = useState<string | null>(null);
 
+  // Track the last role returned by the server's reconcile endpoint so that
+  // background token refreshes (via onIdTokenChanged) don't downgrade the
+  // displayed role before Firebase propagates the updated custom claims.
+  const serverRoleRef = useRef<AppRole | null>(null);
+
   const resolveRole = useCallback(async (forceRefresh = false) => {
     const user = auth.currentUser;
     if (!user) {
       setRole('viewer');
+      serverRoleRef.current = null;
       setLoadingRole(false);
       setRoleError(null);
       return;
@@ -32,16 +41,42 @@ export function useUserRole() {
 
     try {
       if (forceRefresh) {
+        // Ask the server for the authoritative role. The server reads custom
+        // claims via the Identity Toolkit admin API and applies owner bootstrap
+        // if the signed-in email is in OWNER_EMAILS but claims are stale.
         try {
-          await api.reconcileRole();
+          const result = await api.reconcileRole();
+          if (VALID_ROLES.includes(result.role as AppRole)) {
+            const authoritative = result.role as AppRole;
+            serverRoleRef.current = authoritative;
+            setRole(authoritative);
+            setRoleError(null);
+            // Kick off a background token refresh so the ID-token claims
+            // eventually catch up; don't await—the server response is already
+            // authoritative and we don't want to re-read stale claims.
+            user.getIdTokenResult(true).catch(() => {});
+            return;
+          }
         } catch {
-          // Server reconciliation is best-effort; proceed with token refresh
+          // Server reconciliation failed; fall through to token-based refresh
         }
       }
-      const nextRole = forceRefresh
+
+      // Read role from the Firebase ID token claims (local).
+      const tokenRole = forceRefresh
         ? await refreshRoleWithRetry(user)
         : await fetchRoleFromUserClaims(user, false);
-      setRole(nextRole);
+
+      // Guard against downgrade: if the server previously confirmed a higher
+      // role, keep it until the token claims catch up.
+      const authoritative = serverRoleRef.current;
+      if (authoritative && !hasMinimumRole(tokenRole, authoritative)) {
+        setRole(authoritative);
+      } else {
+        // Token role has caught up (or exceeded); clear the override.
+        serverRoleRef.current = null;
+        setRole(tokenRole);
+      }
       setRoleError(null);
     } catch {
       console.error('Failed to resolve user role');

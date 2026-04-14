@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { readFile } from "node:fs/promises";
 import { createSign, randomUUID } from "node:crypto";
@@ -1428,6 +1427,7 @@ export default app;
 if (!isVercel) {
   void (async () => {
     if (process.env.NODE_ENV !== "production") {
+      const { createServer: createViteServer } = await import("vite");
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
