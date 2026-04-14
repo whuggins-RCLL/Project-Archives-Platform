@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { readFile } from "node:fs/promises";
 import { createSign, randomUUID } from "node:crypto";
@@ -11,6 +10,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import admin from "firebase-admin";
 
 dotenv.config();
+
+const isProduction = process.env.NODE_ENV === "production";
+const isVercel = Boolean(process.env.VERCEL);
+const PORT = 3000;
+const app = express();
 
 let adminAuth: admin.auth.Auth | null = null;
 if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
@@ -44,6 +48,8 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
 const ALLOWED_PROVIDERS = new Set(["gemini", "openai", "anthropic", "gemma"]);
 const AI_RATE_LIMIT_WINDOW_MS = 60_000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 20;
+const allowedOrigins = getAllowedCorsOrigins();
+const devOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
 const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS = 15;
 const ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -568,13 +574,38 @@ async function deliverDigest(report: OperationsDigestReport): Promise<Operations
 
 async function verifyFirebaseUser(idToken: string): Promise<VerifiedUser | null> {
   try {
-    const auth = getAdminAuth();
-    const decoded = await auth.verifyIdToken(idToken);
-    const userRecord = await auth.getUser(decoded.uid);
+    const apiKey = process.env.VITE_FIREBASE_API_KEY;
+    if (!apiKey) return null;
+    const lookupResponse = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    if (!lookupResponse.ok) return null;
+    const lookupData = await lookupResponse.json() as {
+      users?: Array<{ localId?: string; email?: string; customAttributes?: string }>;
+    };
+    const user = lookupData.users?.[0];
+    if (!user?.localId) return null;
+
+    let claims: Record<string, unknown> = {};
+    if (typeof user.customAttributes === "string" && user.customAttributes.trim().length > 0) {
+      claims = JSON.parse(user.customAttributes) as Record<string, unknown>;
+    }
+    try {
+      const adminLookup = await identityToolkitCall("/accounts:lookup", { localId: [user.localId] });
+      const adminUser = (adminLookup.users as Array<{ customAttributes?: string }> | undefined)?.[0];
+      if (typeof adminUser?.customAttributes === "string" && adminUser.customAttributes.trim().length > 0) {
+        claims = JSON.parse(adminUser.customAttributes) as Record<string, unknown>;
+      }
+    } catch {
+      // Fall back to claims returned from the public lookup response.
+    }
+
     return {
-      uid: decoded.uid,
-      email: userRecord.email || null,
-      claims: decoded as unknown as Record<string, unknown>,
+      uid: user.localId,
+      email: user.email || null,
+      claims,
     };
   } catch {
     return null;
@@ -905,675 +936,686 @@ async function bootstrapOwnersFromEnv(): Promise<void> {
   }
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
-  const allowedOrigins = getAllowedCorsOrigins();
-  const isProduction = process.env.NODE_ENV === "production";
-  const devOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
 
-  app.use(
-    cors({
-      origin(origin, callback) {
-        if (!origin) {
-          callback(null, true);
-          return;
-        }
+      const isAllowedByConfig = allowedOrigins.includes(origin);
+      const isAllowedDevOrigin = !isProduction && devOrigins.includes(origin);
 
-        const isAllowedByConfig = allowedOrigins.includes(origin);
-        const isAllowedDevOrigin = !isProduction && devOrigins.includes(origin);
+      if (isAllowedByConfig || isAllowedDevOrigin) {
+        callback(null, true);
+        return;
+      }
 
-        if (isAllowedByConfig || isAllowedDevOrigin) {
-          callback(null, true);
-          return;
-        }
+      callback(new Error("CORS origin denied"));
+    },
+  }),
+);
+app.use(express.json({ limit: "16kb" }));
+app.set("trust proxy", getTrustProxySetting());
 
-        callback(new Error("CORS origin denied"));
-      },
-    }),
-  );
-  app.use(express.json({ limit: "16kb" }));
-  app.set("trust proxy", getTrustProxySetting());
-
-  if (!hasUpstash) {
-    if (isProduction) {
-      throw new Error(
-        "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production for distributed AI rate limiting.",
-      );
-    }
+if (!hasUpstash) {
+  if (isProduction) {
+    console.warn(
+      "UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN are required in production for distributed AI rate limiting.",
+    );
+  } else {
     console.warn("Upstash Redis credentials missing; using in-memory AI rate limiting for non-production only.");
   }
+}
+let bootstrapPromise: Promise<void> | null = null;
+function ensureBootstrap(): Promise<void> {
+  if (!bootstrapPromise) {
+    bootstrapPromise = bootstrapOwnersFromEnv();
+  }
+  return bootstrapPromise;
+}
+app.use("/api", (_req, _res, next) => {
+  void ensureBootstrap()
+    .then(() => next())
+    .catch((error) => {
+      console.error("Failed to bootstrap owners from env", error);
+      next();
+    });
+});
 
-  await bootstrapOwnersFromEnv();
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
 
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
-  });
+app.post("/api/auth/reconcile-role", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    console.log(`[auth/reconcile-role] started uid=${verifiedUser.uid} email=${verifiedUser.email || "unknown"}`);
 
-  app.post("/api/auth/reconcile-role", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-      console.log(`[auth/reconcile-role] started uid=${verifiedUser.uid} email=${verifiedUser.email || "unknown"}`);
+    const currentRole = normalizeRoleFromClaims(verifiedUser.claims);
 
-      const currentRole = normalizeRoleFromClaims(verifiedUser.claims);
-
-      if (currentRole !== "owner" && isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
-        await applyOwnerRoleToUid({
-          uid: verifiedUser.uid,
-          email: verifiedUser.email || "",
-          displayName: "",
-          actorUid: verifiedUser.uid,
-          actorEmail: verifiedUser.email || "",
-          action: "reconcile-role-refresh",
-        });
-        await pause(120);
-        console.log(`[auth/reconcile-role] promoted to owner uid=${verifiedUser.uid}`);
-        return res.json({ role: "owner", reconciled: true });
-      }
-
-      await pause(120);
-      console.log(`[auth/reconcile-role] no-op uid=${verifiedUser.uid} role=${currentRole}`);
-      return res.json({ role: currentRole, reconciled: false });
-    } catch (error) {
-      console.error("[auth/reconcile-role] failed", error);
-      await pause(120);
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to reconcile role" });
-    }
-  });
-
-  app.post("/api/ai/generate", async (req, res) => {
-    const requestId = randomUUID();
-    const clientIp = getClientIp(req);
-
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) {
-        return res.status(401).json({ error: "Authentication required" });
-      }
-
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) {
-        return res.status(401).json({ error: "Invalid or expired auth token" });
-      }
-
-      const adminGate = requireInternalAdmin(verifiedUser);
-      if (adminGate.ok === false) {
-        return res.status(adminGate.status).json({ error: adminGate.error });
-      }
-
-      const rateLimitKey = `${verifiedUser.uid}:${clientIp}`;
-      const rateLimitResult = await checkRateLimitDistributed(rateLimitKey, {
-        maxRequests: AI_RATE_LIMIT_MAX_REQUESTS,
-        windowMs: AI_RATE_LIMIT_WINDOW_MS,
-        namespace: "ai-rate-limit",
-      });
-      if (!rateLimitResult.allowed) {
-        auditLog("admin_ai_usage_blocked", {
-          requestId,
-          actorUid: verifiedUser.uid,
-          actorEmail: verifiedUser.email,
-          provider: req.body?.provider ?? "unknown",
-          ip: clientIp,
-          reason: "rate_limit_exceeded",
-        });
-        return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
-      }
-
-      const { prompt, provider, model, systemInstruction } = req.body;
-
-      if (typeof prompt !== "string" || prompt.trim().length === 0) {
-        return res.status(400).json({ error: "Prompt is required" });
-      }
-
-      if (prompt.length > MAX_PROMPT_LENGTH) {
-        return res.status(400).json({ error: `Prompt exceeds max length of ${MAX_PROMPT_LENGTH}` });
-      }
-
-      if (systemInstruction && typeof systemInstruction !== "string") {
-        return res.status(400).json({ error: "System instruction must be a string" });
-      }
-
-      if (typeof systemInstruction === "string" && systemInstruction.length > MAX_SYSTEM_INSTRUCTION_LENGTH) {
-        return res.status(400).json({ error: `System instruction exceeds max length of ${MAX_SYSTEM_INSTRUCTION_LENGTH}` });
-      }
-
-      if (typeof provider !== "string" || !ALLOWED_PROVIDERS.has(provider)) {
-        return res.status(400).json({ error: "Invalid provider" });
-      }
-      if (typeof model !== "string" || model.trim().length === 0) {
-        return res.status(400).json({ error: "Model is required" });
-      }
-
-      auditLog("admin_ai_usage_started", {
-        requestId,
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email,
-        provider,
-        model,
-        promptLength: prompt.length,
-        hasSystemInstruction: typeof systemInstruction === "string" && systemInstruction.length > 0,
-        ip: clientIp,
-      });
-
-      let responseText = "";
-
-      if (provider === "gemini") {
-        if (!process.env.GEMINI_API_KEY) throw new Error("Gemini provider is not configured");
-        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-        const response = await ai.models.generateContent({
-          model,
-          contents: prompt,
-          config: { systemInstruction }
-        });
-        responseText = response.text || "";
-      } else if (provider === "openai") {
-        if (!process.env.OPENAI_API_KEY) throw new Error("OpenAI provider is not configured");
-        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-        const messages: Array<{ role: "system" | "user"; content: string }> = [];
-        if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-        messages.push({ role: "user", content: prompt });
-
-        const response = await openai.chat.completions.create({
-          model,
-          messages
-        });
-        responseText = response.choices[0]?.message?.content || "";
-      } else if (provider === "anthropic") {
-        if (!process.env.ANTHROPIC_API_KEY) throw new Error("Anthropic provider is not configured");
-        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-        const response = await anthropic.messages.create({
-          model,
-          max_tokens: 1024,
-          system: systemInstruction,
-          messages: [{ role: "user", content: prompt }]
-        });
-        responseText = response.content[0].type === "text" ? response.content[0].text : "";
-      } else if (provider === "gemma") {
-        if (!process.env.GEMMA_API_KEY || !process.env.GEMMA_BASE_URL) {
-          throw new Error("Gemma provider is not configured");
-        }
-        const openai = new OpenAI({
-          apiKey: process.env.GEMMA_API_KEY,
-          baseURL: process.env.GEMMA_BASE_URL
-        });
-        const messages: Array<{ role: "system" | "user"; content: string }> = [];
-        if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-        messages.push({ role: "user", content: prompt });
-
-        const response = await openai.chat.completions.create({
-          model,
-          messages
-        });
-        responseText = response.choices[0]?.message?.content || "";
-      }
-
-      auditLog("admin_ai_usage_succeeded", {
-        requestId,
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email,
-        provider,
-        model,
-        responseLength: responseText.length,
-        ip: clientIp,
-      });
-      res.json({ text: responseText });
-    } catch (error: unknown) {
-      auditLog("admin_ai_usage_failed", {
-        requestId,
-        message: error instanceof Error ? error.message : "Unknown server error",
-        ip: clientIp,
-      }, "error");
-      const message = sanitizeServerError(error);
-      res.status(500).json({ error: message });
-    }
-  });
-
-  app.post("/api/admin/settings", async (req, res) => {
-    const requestId = randomUUID();
-    const clientIp = getClientIp(req);
-
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) {
-        return res.status(401).json({ error: "Authentication required" });
-      }
-
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) {
-        return res.status(401).json({ error: "Invalid or expired auth token" });
-      }
-      const adminGate = requireInternalAdmin(verifiedUser);
-      if (adminGate.ok === false) {
-        return res.status(adminGate.status).json({ error: adminGate.error });
-      }
-
-      if (!enforceRequestSizeLimit(req, ADMIN_SETTINGS_MAX_BODY_BYTES)) {
-        return res.status(413).json({ error: "Settings payload too large" });
-      }
-
-      const settingsRateLimitKey = `${verifiedUser.uid}:${clientIp}`;
-      const settingsRateLimitResult = await checkRateLimitDistributed(settingsRateLimitKey, {
-        maxRequests: ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS,
-        windowMs: ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS,
-        namespace: "admin-settings-rate-limit",
-      });
-      if (!settingsRateLimitResult.allowed) {
-        return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
-      }
-
-      const nextSettings = validateSettings(req.body);
-      if (!nextSettings) {
-        return res.status(400).json({ error: "Invalid settings payload" });
-      }
-
-      const previousSettings = await withTimeout(
-        fetchFirestoreSettings(token),
-        ADMIN_SETTINGS_TIMEOUT_MS,
-        "Settings request timed out",
-      );
-      await withTimeout(
-        saveFirestoreSettings(token, nextSettings),
-        ADMIN_SETTINGS_TIMEOUT_MS,
-        "Settings request timed out",
-      );
-
-      auditLog("admin_settings_updated", {
-        requestId,
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email,
-        ip: clientIp,
-        previousSettings,
-        nextSettings,
-      });
-
-      res.json({ success: true });
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message === "Settings request timed out") {
-        return res.status(408).json({ error: "Settings request timed out. Please retry." });
-      }
-      auditLog("admin_settings_update_failed", {
-        requestId,
-        message: error instanceof Error ? error.message : "Unknown server error",
-        ip: clientIp,
-      }, "error");
-      res.status(500).json({ error: "Unable to save settings right now. Please try again later." });
-    }
-  });
-
-  app.post("/api/admin/operations/run", async (req, res) => {
-    const requestId = randomUUID();
-    const clientIp = getClientIp(req);
-
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) {
-        return res.status(401).json({ error: "Authentication required" });
-      }
-
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) {
-        return res.status(401).json({ error: "Invalid or expired auth token" });
-      }
-
-      const adminGate = requireInternalAdmin(verifiedUser);
-      if (adminGate.ok === false) {
-        return res.status(adminGate.status).json({ error: adminGate.error });
-      }
-
-      if (!enforceRequestSizeLimit(req, ADMIN_OPERATIONS_MAX_BODY_BYTES)) {
-        return res.status(413).json({ error: "Operations payload too large" });
-      }
-
-      const operationsRateLimitKey = `${verifiedUser.uid}:${clientIp}`;
-      const operationsRateLimitResult = await checkRateLimitDistributed(operationsRateLimitKey, {
-        maxRequests: ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS,
-        windowMs: ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS,
-        namespace: "admin-operations-rate-limit",
-      });
-      if (!operationsRateLimitResult.allowed) {
-        return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
-      }
-
-      const projects = await withTimeout(
-        fetchProjectsForOps(token),
-        ADMIN_OPERATIONS_TIMEOUT_MS,
-        "Operations request timed out",
-      );
-      const report = buildOperationsDigest(projects);
-      const delivery = await withTimeout(
-        deliverDigest(report),
-        ADMIN_OPERATIONS_TIMEOUT_MS,
-        "Operations request timed out",
-      );
-      report.delivery = delivery;
-
-      auditLog("admin_operations_digest_run", {
-        requestId,
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email,
-        ip: clientIp,
-        channel: req.body?.channel ?? "manual",
-        totals: report.totals,
-        delivery,
-      });
-
-      res.json(report);
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message === "Operations request timed out") {
-        return res.status(408).json({ error: "Operations request timed out. Please retry." });
-      }
-      auditLog("admin_operations_digest_failed", {
-        requestId,
-        message: error instanceof Error ? error.message : "Unknown server error",
-        ip: clientIp,
-      }, "error");
-      res.status(500).json({ error: "Unable to run operations digest right now. Please try again later." });
-    }
-  });
-
-  app.get("/api/admin/users/list", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-
-      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
-      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
-
-      const result = await firestoreCall("users?pageSize=500");
-      const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
-      const users = documents.map((doc) => {
-        const parsed = parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> });
-        return {
-          uid: parsed.id,
-          email: String(parsed.email || ""),
-          displayName: String(parsed.displayName || ""),
-          role: validateRole(parsed.role) || "viewer",
-          permissions: sanitizePermissionSet(parsed.permissions, validateRole(parsed.role) || "viewer"),
-          status: parsed.status === "disabled" ? "disabled" : "active",
-          createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
-          updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
-          lastRoleChangedAt: typeof parsed.lastRoleChangedAt === "string" ? parsed.lastRoleChangedAt : undefined,
-          lastRoleChangedBy: typeof parsed.lastRoleChangedBy === "string" ? parsed.lastRoleChangedBy : undefined,
-        };
-      });
-      return res.json({ users });
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to list users" });
-    }
-  });
-
-  app.get("/api/admin/bootstrap/status", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-
-      const ownerCount = await countOwnersFromUsersMirror();
-      const ownerEmails = configuredOwnerEmails();
-      const eligible = ownerCount === 0 && isEmailEligibleForOwnerBootstrap(verifiedUser.email);
-      return res.json({
-        ownerCount,
-        configured: ownerEmails.length > 0,
-        eligible,
-      });
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to get bootstrap status" });
-    }
-  });
-
-  const handleBootstrapOwnerClaim = async (req: express.Request, res: express.Response) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-
-      if (!isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
-        return res.status(403).json({ error: "Signed-in email is not configured for owner bootstrap" });
-      }
-
-      const ownerCount = await countOwnersFromUsersMirror();
-      if (ownerCount > 0) {
-        return res.status(409).json({ error: "Owner already exists. Use Access Management for role changes." });
-      }
-
+    if (currentRole !== "owner" && isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
       await applyOwnerRoleToUid({
         uid: verifiedUser.uid,
         email: verifiedUser.email || "",
         displayName: "",
         actorUid: verifiedUser.uid,
         actorEmail: verifiedUser.email || "",
-        action: "bootstrap-owner-self-service",
-      });
-
-      return res.json({ success: true, message: "Owner access granted. Refresh your token to continue." });
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to claim owner access" });
-    }
-  };
-
-  app.post("/api/admin/bootstrap/claim", handleBootstrapOwnerClaim);
-  app.post("/api/auth/bootstrap-owner", handleBootstrapOwnerClaim);
-
-  app.get("/api/admin/users/audit", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
-      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
-      const result = await firestoreCall("adminAudit?pageSize=100");
-      const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
-      const audit = documents.map((doc) => parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> }));
-      return res.json({ audit });
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to list audit logs" });
-    }
-  });
-
-  app.post("/api/admin/users/set-role", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
-      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
-
-      const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
-      const nextRole = validateRole(req.body?.role);
-      if (!targetUid || !nextRole) return res.status(400).json({ error: "uid and valid role are required" });
-      if (callerRole !== "owner" && nextRole === "owner") {
-        return res.status(403).json({ error: "Only owners can grant owner role" });
-      }
-      console.log(`[admin/set-role] requested actorUid=${verifiedUser.uid} targetUid=${targetUid} role=${nextRole}`);
-      if (targetUid === verifiedUser.uid && nextRole !== "owner") {
-        const owners = await countOwnersFromUsersMirror();
-        if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
-      }
-
-      const auth = getAdminAuth();
-      const authUser = await auth.getUser(targetUid);
-      const oldClaimsRaw = authUser.customClaims || {};
-      const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
-      const oldPermissions = sanitizePermissionSet(oldClaimsRaw.permissions, oldRole);
-      const nextPermissions = defaultPermissionsForRole(nextRole);
-      if (oldRole === "owner" && nextRole !== "owner") {
-        const owners = await countOwnersFromUsersMirror();
-        if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
-      }
-      if (callerRole !== "owner" && oldRole === "owner") {
-        return res.status(403).json({ error: "Only owners can modify owner accounts" });
-      }
-
-      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: nextRole, permissions: nextPermissions };
-      nextClaims.admin = nextRole === "owner" || nextRole === "admin";
-      await auth.setCustomUserClaims(targetUid, nextClaims);
-      await auth.revokeRefreshTokens(targetUid);
-
-      const email = authUser.email || "";
-      const displayName = authUser.displayName || "";
-      await firestoreCall(`users/${targetUid}`, {
-        method: "PATCH",
-        body: { fields: toFirestoreUserFields({ email, displayName, role: nextRole, permissions: nextPermissions, status: "active", actorUid: verifiedUser.uid }) },
-      });
-      await writeAuditLog({
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email || "",
-        targetUid,
-        targetEmail: email,
-        action: "set-role",
-        oldRole,
-        newRole: nextRole,
-        metadata: { oldPermissions, nextPermissions },
+        action: "reconcile-role-refresh",
       });
       await pause(120);
-      console.log(`[admin/set-role] success actorUid=${verifiedUser.uid} targetUid=${targetUid} oldRole=${oldRole} newRole=${nextRole}`);
-      return res.json({ success: true, message: "Role updated. Ask the user to refresh their token (sign out/sign in)." });
-    } catch (error) {
-      console.error("[admin/set-role] failed", error);
-      await pause(120);
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to set role" });
+      console.log(`[auth/reconcile-role] promoted to owner uid=${verifiedUser.uid}`);
+      return res.json({ role: "owner", reconciled: true });
     }
-  });
 
-  app.post("/api/admin/users/:action(enable|disable)", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
-      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
-      const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
-      if (!targetUid) return res.status(400).json({ error: "uid is required" });
-      const disableUser = req.params.action === "disable";
-
-      const lookup = await identityToolkitCall("/accounts:lookup", { localId: [targetUid] });
-      const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
-      if (!authUser) return res.status(404).json({ error: "Target user not found" });
-      await identityToolkitCall("/accounts:update", { localId: targetUid, disableUser });
-
-      const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
-      const role = normalizeRoleFromClaims(oldClaimsRaw);
-      if (callerRole !== "owner" && role === "owner") {
-        return res.status(403).json({ error: "Only owners can modify owner accounts" });
-      }
-      const permissions = sanitizePermissionSet(oldClaimsRaw.permissions, role);
-      const email = String(authUser.email || "");
-      const displayName = String(authUser.displayName || "");
-      await firestoreCall(`users/${targetUid}`, {
-        method: "PATCH",
-        body: { fields: toFirestoreUserFields({ email, displayName, role, permissions, status: disableUser ? "disabled" : "active", actorUid: verifiedUser.uid }) },
-      });
-      await writeAuditLog({
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email || "",
-        targetUid,
-        targetEmail: email,
-        action: disableUser ? "disable-user" : "enable-user",
-      });
-      return res.json({ success: true, message: `User ${disableUser ? "disabled" : "enabled"}. User should sign in again.` });
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update user status" });
-    }
-  });
-
-  app.post("/api/admin/users/set-permissions", async (req, res) => {
-    try {
-      const token = getBearerToken(req.headers.authorization);
-      if (!token) return res.status(401).json({ error: "Authentication required" });
-      const verifiedUser = await verifyFirebaseUser(token);
-      if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-      const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-      const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
-      if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
-
-      const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
-      if (!targetUid) return res.status(400).json({ error: "uid is required" });
-
-      const auth = getAdminAuth();
-      const authUser = await auth.getUser(targetUid);
-      const oldClaimsRaw = authUser.customClaims || {};
-      const targetRole = normalizeRoleFromClaims(oldClaimsRaw);
-      if (callerRole !== "owner" && targetRole === "owner") {
-        return res.status(403).json({ error: "Only owners can modify owner accounts" });
-      }
-      const nextPermissions = sanitizePermissionSet(req.body?.permissions, targetRole);
-      const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, permissions: nextPermissions };
-      await auth.setCustomUserClaims(targetUid, nextClaims);
-      await auth.revokeRefreshTokens(targetUid);
-
-      const email = authUser.email || "";
-      const displayName = authUser.displayName || "";
-      await firestoreCall(`users/${targetUid}`, {
-        method: "PATCH",
-        body: { fields: toFirestoreUserFields({ email, displayName, role: targetRole, permissions: nextPermissions, status: "active", actorUid: verifiedUser.uid }) },
-      });
-      await writeAuditLog({
-        actorUid: verifiedUser.uid,
-        actorEmail: verifiedUser.email || "",
-        targetUid,
-        targetEmail: email,
-        action: "set-permissions",
-        metadata: { nextPermissions },
-      });
-
-      return res.json({ success: true, message: "Permissions updated. User should refresh access claims." });
-    } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
-    }
-  });
-
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    const indexPath = path.join(distPath, "index.html");
-    app.get("*", (req, res) => {
-      void (async () => {
-        try {
-          const indexHtml = await readFile(indexPath, "utf8");
-          const runtimeEnv = CLIENT_FIREBASE_ENV_KEYS.reduce<Record<string, string>>((acc, key) => {
-            const value = process.env[key];
-            if (value && value.trim().length > 0) {
-              acc[key] = value;
-            }
-            return acc;
-          }, {});
-          const runtimeScript = `<script>window.__APP_ENV__=${JSON.stringify(runtimeEnv)};</script>`;
-          const html = indexHtml.includes("</head>")
-            ? indexHtml.replace("</head>", `${runtimeScript}</head>`)
-            : `${runtimeScript}${indexHtml}`;
-          res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.send(html);
-        } catch (error: unknown) {
-          console.error("Failed to render index.html with runtime env", error);
-          res.status(500).send("Unable to load app shell.");
-        }
-      })();
-    });
+    await pause(120);
+    console.log(`[auth/reconcile-role] no-op uid=${verifiedUser.uid} role=${currentRole}`);
+    return res.json({ role: currentRole, reconciled: false });
+  } catch (error) {
+    console.error("[auth/reconcile-role] failed", error);
+    await pause(120);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to reconcile role" });
   }
+});
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+app.post("/api/ai/generate", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Invalid or expired auth token" });
+    }
+
+    const adminGate = requireInternalAdmin(verifiedUser);
+    if (adminGate.ok === false) {
+      return res.status(adminGate.status).json({ error: adminGate.error });
+    }
+
+    const rateLimitKey = `${verifiedUser.uid}:${clientIp}`;
+    const rateLimitResult = await checkRateLimitDistributed(rateLimitKey, {
+      maxRequests: AI_RATE_LIMIT_MAX_REQUESTS,
+      windowMs: AI_RATE_LIMIT_WINDOW_MS,
+      namespace: "ai-rate-limit",
+    });
+    if (!rateLimitResult.allowed) {
+      auditLog("admin_ai_usage_blocked", {
+        requestId,
+        actorUid: verifiedUser.uid,
+        actorEmail: verifiedUser.email,
+        provider: req.body?.provider ?? "unknown",
+        ip: clientIp,
+        reason: "rate_limit_exceeded",
+      });
+      return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
+    }
+
+    const { prompt, provider, model, systemInstruction } = req.body;
+
+    if (typeof prompt !== "string" || prompt.trim().length === 0) {
+      return res.status(400).json({ error: "Prompt is required" });
+    }
+
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      return res.status(400).json({ error: `Prompt exceeds max length of ${MAX_PROMPT_LENGTH}` });
+    }
+
+    if (systemInstruction && typeof systemInstruction !== "string") {
+      return res.status(400).json({ error: "System instruction must be a string" });
+    }
+
+    if (typeof systemInstruction === "string" && systemInstruction.length > MAX_SYSTEM_INSTRUCTION_LENGTH) {
+      return res.status(400).json({ error: `System instruction exceeds max length of ${MAX_SYSTEM_INSTRUCTION_LENGTH}` });
+    }
+
+    if (typeof provider !== "string" || !ALLOWED_PROVIDERS.has(provider)) {
+      return res.status(400).json({ error: "Invalid provider" });
+    }
+    if (typeof model !== "string" || model.trim().length === 0) {
+      return res.status(400).json({ error: "Model is required" });
+    }
+
+    auditLog("admin_ai_usage_started", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      provider,
+      model,
+      promptLength: prompt.length,
+      hasSystemInstruction: typeof systemInstruction === "string" && systemInstruction.length > 0,
+      ip: clientIp,
+    });
+
+    let responseText = "";
+
+    if (provider === "gemini") {
+      if (!process.env.GEMINI_API_KEY) throw new Error("Gemini provider is not configured");
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const response = await ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: { systemInstruction }
+      });
+      responseText = response.text || "";
+    } else if (provider === "openai") {
+      if (!process.env.OPENAI_API_KEY) throw new Error("OpenAI provider is not configured");
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const messages: Array<{ role: "system" | "user"; content: string }> = [];
+      if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+      messages.push({ role: "user", content: prompt });
+
+      const response = await openai.chat.completions.create({
+        model,
+        messages
+      });
+      responseText = response.choices[0]?.message?.content || "";
+    } else if (provider === "anthropic") {
+      if (!process.env.ANTHROPIC_API_KEY) throw new Error("Anthropic provider is not configured");
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: 1024,
+        system: systemInstruction,
+        messages: [{ role: "user", content: prompt }]
+      });
+      responseText = response.content[0].type === "text" ? response.content[0].text : "";
+    } else if (provider === "gemma") {
+      if (!process.env.GEMMA_API_KEY || !process.env.GEMMA_BASE_URL) {
+        throw new Error("Gemma provider is not configured");
+      }
+      const openai = new OpenAI({
+        apiKey: process.env.GEMMA_API_KEY,
+        baseURL: process.env.GEMMA_BASE_URL
+      });
+      const messages: Array<{ role: "system" | "user"; content: string }> = [];
+      if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+      messages.push({ role: "user", content: prompt });
+
+      const response = await openai.chat.completions.create({
+        model,
+        messages
+      });
+      responseText = response.choices[0]?.message?.content || "";
+    }
+
+    auditLog("admin_ai_usage_succeeded", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      provider,
+      model,
+      responseLength: responseText.length,
+      ip: clientIp,
+    });
+    res.json({ text: responseText });
+  } catch (error: unknown) {
+    auditLog("admin_ai_usage_failed", {
+      requestId,
+      message: error instanceof Error ? error.message : "Unknown server error",
+      ip: clientIp,
+    }, "error");
+    const message = sanitizeServerError(error);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.post("/api/admin/settings", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Invalid or expired auth token" });
+    }
+    const adminGate = requireInternalAdmin(verifiedUser);
+    if (adminGate.ok === false) {
+      return res.status(adminGate.status).json({ error: adminGate.error });
+    }
+
+    if (!enforceRequestSizeLimit(req, ADMIN_SETTINGS_MAX_BODY_BYTES)) {
+      return res.status(413).json({ error: "Settings payload too large" });
+    }
+
+    const settingsRateLimitKey = `${verifiedUser.uid}:${clientIp}`;
+    const settingsRateLimitResult = await checkRateLimitDistributed(settingsRateLimitKey, {
+      maxRequests: ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS,
+      windowMs: ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS,
+      namespace: "admin-settings-rate-limit",
+    });
+    if (!settingsRateLimitResult.allowed) {
+      return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
+    }
+
+    const nextSettings = validateSettings(req.body);
+    if (!nextSettings) {
+      return res.status(400).json({ error: "Invalid settings payload" });
+    }
+
+    const previousSettings = await withTimeout(
+      fetchFirestoreSettings(token),
+      ADMIN_SETTINGS_TIMEOUT_MS,
+      "Settings request timed out",
+    );
+    await withTimeout(
+      saveFirestoreSettings(token, nextSettings),
+      ADMIN_SETTINGS_TIMEOUT_MS,
+      "Settings request timed out",
+    );
+
+    auditLog("admin_settings_updated", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      ip: clientIp,
+      previousSettings,
+      nextSettings,
+    });
+
+    res.json({ success: true });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Settings request timed out") {
+      return res.status(408).json({ error: "Settings request timed out. Please retry." });
+    }
+    auditLog("admin_settings_update_failed", {
+      requestId,
+      message: error instanceof Error ? error.message : "Unknown server error",
+      ip: clientIp,
+    }, "error");
+    res.status(500).json({ error: "Unable to save settings right now. Please try again later." });
+  }
+});
+
+app.post("/api/admin/operations/run", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) {
+      return res.status(401).json({ error: "Authentication required" });
+    }
+
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) {
+      return res.status(401).json({ error: "Invalid or expired auth token" });
+    }
+
+    const adminGate = requireInternalAdmin(verifiedUser);
+    if (adminGate.ok === false) {
+      return res.status(adminGate.status).json({ error: adminGate.error });
+    }
+
+    if (!enforceRequestSizeLimit(req, ADMIN_OPERATIONS_MAX_BODY_BYTES)) {
+      return res.status(413).json({ error: "Operations payload too large" });
+    }
+
+    const operationsRateLimitKey = `${verifiedUser.uid}:${clientIp}`;
+    const operationsRateLimitResult = await checkRateLimitDistributed(operationsRateLimitKey, {
+      maxRequests: ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS,
+      windowMs: ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS,
+      namespace: "admin-operations-rate-limit",
+    });
+    if (!operationsRateLimitResult.allowed) {
+      return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
+    }
+
+    const projects = await withTimeout(
+      fetchProjectsForOps(token),
+      ADMIN_OPERATIONS_TIMEOUT_MS,
+      "Operations request timed out",
+    );
+    const report = buildOperationsDigest(projects);
+    const delivery = await withTimeout(
+      deliverDigest(report),
+      ADMIN_OPERATIONS_TIMEOUT_MS,
+      "Operations request timed out",
+    );
+    report.delivery = delivery;
+
+    auditLog("admin_operations_digest_run", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      ip: clientIp,
+      channel: req.body?.channel ?? "manual",
+      totals: report.totals,
+      delivery,
+    });
+
+    res.json(report);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Operations request timed out") {
+      return res.status(408).json({ error: "Operations request timed out. Please retry." });
+    }
+    auditLog("admin_operations_digest_failed", {
+      requestId,
+      message: error instanceof Error ? error.message : "Unknown server error",
+      ip: clientIp,
+    }, "error");
+    res.status(500).json({ error: "Unable to run operations digest right now. Please try again later." });
+  }
+});
+
+app.get("/api/admin/users/list", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+
+    const result = await firestoreCall("users?pageSize=500");
+    const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+    const users = documents.map((doc) => {
+      const parsed = parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+      return {
+        uid: parsed.id,
+        email: String(parsed.email || ""),
+        displayName: String(parsed.displayName || ""),
+        role: validateRole(parsed.role) || "viewer",
+        permissions: sanitizePermissionSet(parsed.permissions, validateRole(parsed.role) || "viewer"),
+        status: parsed.status === "disabled" ? "disabled" : "active",
+        createdAt: typeof parsed.createdAt === "string" ? parsed.createdAt : undefined,
+        updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : undefined,
+        lastRoleChangedAt: typeof parsed.lastRoleChangedAt === "string" ? parsed.lastRoleChangedAt : undefined,
+        lastRoleChangedBy: typeof parsed.lastRoleChangedBy === "string" ? parsed.lastRoleChangedBy : undefined,
+      };
+    });
+    return res.json({ users });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to list users" });
+  }
+});
+
+app.get("/api/admin/bootstrap/status", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+
+    const ownerCount = await countOwnersFromUsersMirror();
+    const ownerEmails = configuredOwnerEmails();
+    const eligible = ownerCount === 0 && isEmailEligibleForOwnerBootstrap(verifiedUser.email);
+    return res.json({
+      ownerCount,
+      configured: ownerEmails.length > 0,
+      eligible,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to get bootstrap status" });
+  }
+});
+
+const handleBootstrapOwnerClaim = async (req: express.Request, res: express.Response) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+
+    if (!isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
+      return res.status(403).json({ error: "Signed-in email is not configured for owner bootstrap" });
+    }
+
+    const ownerCount = await countOwnersFromUsersMirror();
+    if (ownerCount > 0) {
+      return res.status(409).json({ error: "Owner already exists. Use Access Management for role changes." });
+    }
+
+    await applyOwnerRoleToUid({
+      uid: verifiedUser.uid,
+      email: verifiedUser.email || "",
+      displayName: "",
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email || "",
+      action: "bootstrap-owner-self-service",
+    });
+
+    return res.json({ success: true, message: "Owner access granted. Refresh your token to continue." });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to claim owner access" });
+  }
+};
+
+app.post("/api/admin/bootstrap/claim", handleBootstrapOwnerClaim);
+app.post("/api/auth/bootstrap-owner", handleBootstrapOwnerClaim);
+
+app.get("/api/admin/users/audit", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+    const result = await firestoreCall("adminAudit?pageSize=100");
+    const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+    const audit = documents.map((doc) => parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> }));
+    return res.json({ audit });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to list audit logs" });
+  }
+});
+
+app.post("/api/admin/users/set-role", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+
+    const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+    const nextRole = validateRole(req.body?.role);
+    if (!targetUid || !nextRole) return res.status(400).json({ error: "uid and valid role are required" });
+    if (callerRole !== "owner" && nextRole === "owner") {
+      return res.status(403).json({ error: "Only owners can grant owner role" });
+    }
+    console.log(`[admin/set-role] requested actorUid=${verifiedUser.uid} targetUid=${targetUid} role=${nextRole}`);
+    if (targetUid === verifiedUser.uid && nextRole !== "owner") {
+      const owners = await countOwnersFromUsersMirror();
+      if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
+    }
+
+    const auth = getAdminAuth();
+    const authUser = await auth.getUser(targetUid);
+    const oldClaimsRaw = authUser.customClaims || {};
+    const oldRole = normalizeRoleFromClaims(oldClaimsRaw);
+    const oldPermissions = sanitizePermissionSet(oldClaimsRaw.permissions, oldRole);
+    const nextPermissions = defaultPermissionsForRole(nextRole);
+    if (oldRole === "owner" && nextRole !== "owner") {
+      const owners = await countOwnersFromUsersMirror();
+      if (owners <= 1) return res.status(400).json({ error: "Cannot demote the last remaining owner" });
+    }
+    if (callerRole !== "owner" && oldRole === "owner") {
+      return res.status(403).json({ error: "Only owners can modify owner accounts" });
+    }
+
+    const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, role: nextRole, permissions: nextPermissions };
+    nextClaims.admin = nextRole === "owner" || nextRole === "admin";
+    await auth.setCustomUserClaims(targetUid, nextClaims);
+    await auth.revokeRefreshTokens(targetUid);
+
+    const email = authUser.email || "";
+    const displayName = authUser.displayName || "";
+    await firestoreCall(`users/${targetUid}`, {
+      method: "PATCH",
+      body: { fields: toFirestoreUserFields({ email, displayName, role: nextRole, permissions: nextPermissions, status: "active", actorUid: verifiedUser.uid }) },
+    });
+    await writeAuditLog({
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email || "",
+      targetUid,
+      targetEmail: email,
+      action: "set-role",
+      oldRole,
+      newRole: nextRole,
+      metadata: { oldPermissions, nextPermissions },
+    });
+    await pause(120);
+    console.log(`[admin/set-role] success actorUid=${verifiedUser.uid} targetUid=${targetUid} oldRole=${oldRole} newRole=${nextRole}`);
+    return res.json({ success: true, message: "Role updated. Ask the user to refresh their token (sign out/sign in)." });
+  } catch (error) {
+    console.error("[admin/set-role] failed", error);
+    await pause(120);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to set role" });
+  }
+});
+
+app.post("/api/admin/users/:action(enable|disable)", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+    const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+    if (!targetUid) return res.status(400).json({ error: "uid is required" });
+    const disableUser = req.params.action === "disable";
+
+    const lookup = await identityToolkitCall("/accounts:lookup", { localId: [targetUid] });
+    const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
+    if (!authUser) return res.status(404).json({ error: "Target user not found" });
+    await identityToolkitCall("/accounts:update", { localId: targetUid, disableUser });
+
+    const oldClaimsRaw = typeof authUser.customAttributes === "string" ? JSON.parse(authUser.customAttributes) as Record<string, unknown> : {};
+    const role = normalizeRoleFromClaims(oldClaimsRaw);
+    if (callerRole !== "owner" && role === "owner") {
+      return res.status(403).json({ error: "Only owners can modify owner accounts" });
+    }
+    const permissions = sanitizePermissionSet(oldClaimsRaw.permissions, role);
+    const email = String(authUser.email || "");
+    const displayName = String(authUser.displayName || "");
+    await firestoreCall(`users/${targetUid}`, {
+      method: "PATCH",
+      body: { fields: toFirestoreUserFields({ email, displayName, role, permissions, status: disableUser ? "disabled" : "active", actorUid: verifiedUser.uid }) },
+    });
+    await writeAuditLog({
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email || "",
+      targetUid,
+      targetEmail: email,
+      action: disableUser ? "disable-user" : "enable-user",
+    });
+    return res.json({ success: true, message: `User ${disableUser ? "disabled" : "enabled"}. User should sign in again.` });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update user status" });
+  }
+});
+
+app.post("/api/admin/users/set-permissions", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+
+    const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+    if (!targetUid) return res.status(400).json({ error: "uid is required" });
+
+    const auth = getAdminAuth();
+    const authUser = await auth.getUser(targetUid);
+    const oldClaimsRaw = authUser.customClaims || {};
+    const targetRole = normalizeRoleFromClaims(oldClaimsRaw);
+    if (callerRole !== "owner" && targetRole === "owner") {
+      return res.status(403).json({ error: "Only owners can modify owner accounts" });
+    }
+    const nextPermissions = sanitizePermissionSet(req.body?.permissions, targetRole);
+    const nextClaims: Record<string, unknown> = { ...oldClaimsRaw, permissions: nextPermissions };
+    await auth.setCustomUserClaims(targetUid, nextClaims);
+    await auth.revokeRefreshTokens(targetUid);
+
+    const email = authUser.email || "";
+    const displayName = authUser.displayName || "";
+    await firestoreCall(`users/${targetUid}`, {
+      method: "PATCH",
+      body: { fields: toFirestoreUserFields({ email, displayName, role: targetRole, permissions: nextPermissions, status: "active", actorUid: verifiedUser.uid }) },
+    });
+    await writeAuditLog({
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email || "",
+      targetUid,
+      targetEmail: email,
+      action: "set-permissions",
+      metadata: { nextPermissions },
+    });
+
+    return res.json({ success: true, message: "Permissions updated. User should refresh access claims." });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
+  }
+});
+
+export default app;
+
+if (!isVercel) {
+  void (async () => {
+    if (!isProduction) {
+      const { createServer: createViteServer } = await import("vite");
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } else {
+      const distPath = path.join(process.cwd(), "dist");
+      app.use(express.static(distPath));
+      const indexPath = path.join(distPath, "index.html");
+      app.get("*", (_req, res) => {
+        void (async () => {
+          try {
+            const indexHtml = await readFile(indexPath, "utf8");
+            const runtimeEnv = CLIENT_FIREBASE_ENV_KEYS.reduce<Record<string, string>>((acc, key) => {
+              const value = process.env[key];
+              if (value && value.trim().length > 0) {
+                acc[key] = value;
+              }
+              return acc;
+            }, {});
+            const runtimeScript = `<script>window.__APP_ENV__=${JSON.stringify(runtimeEnv)};</script>`;
+            const html = indexHtml.includes("</head>")
+              ? indexHtml.replace("</head>", `${runtimeScript}</head>`)
+              : `${runtimeScript}${indexHtml}`;
+            res.setHeader("Content-Type", "text/html; charset=utf-8");
+            res.send(html);
+          } catch (error: unknown) {
+            console.error("Failed to render index.html with runtime env", error);
+            res.status(500).send("Unable to load app shell.");
+          }
+        })();
+      });
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  })();
 }
-
-startServer();
