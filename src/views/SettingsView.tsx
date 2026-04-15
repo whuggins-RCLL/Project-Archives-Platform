@@ -136,18 +136,25 @@ export default function SettingsView({
         </div>
       )}
 
-      {bootstrapStatus?.configured && bootstrapStatus.ownerCount === 0 && (
+      {bootstrapStatus?.ownerCount === 0 && (
         <div className="mb-6 rounded-lg border border-tertiary-fixed/30 bg-tertiary-container/30 p-4 text-sm text-on-surface-variant space-y-3">
           <p className="font-bold text-on-surface">First owner setup</p>
-          <p>
-            No owner accounts are configured yet. If your email is listed in <code>OWNER_EMAILS</code>, you can claim owner access here.
-          </p>
+          {bootstrapStatus.configured ? (
+            <p>
+              No owner accounts are configured yet. If your email is listed in <code>OWNER_EMAILS</code>, you can claim owner access here.
+            </p>
+          ) : (
+            <p>
+              No owner accounts exist yet, and <code>OWNER_EMAILS</code> is not configured in the deployment environment. Add at least one email to
+              <code> OWNER_EMAILS</code> (comma-separated) and reload this page to enable first-owner claim.
+            </p>
+          )}
           <button
             onClick={claimOwnerAccess}
-            disabled={!bootstrapStatus.eligible || claimingOwner}
+            disabled={!bootstrapStatus.configured || !bootstrapStatus.eligible || claimingOwner}
             className="px-4 py-2 rounded-lg bg-primary text-white font-bold disabled:opacity-50"
           >
-            {claimingOwner ? 'Claiming owner access...' : 'Claim owner access'}
+            {claimingOwner ? 'Claiming owner access...' : bootstrapStatus.configured ? 'Claim owner access' : 'Owner claim unavailable'}
           </button>
         </div>
       )}
