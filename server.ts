@@ -874,6 +874,14 @@ function isEmailEligibleForOwnerBootstrap(email: string | null | undefined): boo
   return configuredOwnerEmails().includes(normalized);
 }
 
+function canClaimInitialOwnerAccess(user: VerifiedUser, ownerCount: number): boolean {
+  if (ownerCount > 0) return false;
+  if (isEmailEligibleForOwnerBootstrap(user.email)) return true;
+  const ownerEmails = configuredOwnerEmails();
+  if (ownerEmails.length > 0) return false;
+  return isInternalUser(user.claims);
+}
+
 async function applyOwnerRoleToUid(input: { uid: string; email: string; displayName: string; actorUid?: string; actorEmail?: string; action: string }): Promise<void> {
   const auth = getAdminAuth();
   const authUser = await auth.getUser(input.uid);
@@ -1355,7 +1363,7 @@ app.get("/api/admin/bootstrap/status", async (req, res) => {
 
     const ownerCount = await countOwnersFromUsersMirror();
     const ownerEmails = configuredOwnerEmails();
-    const eligible = ownerCount === 0 && isEmailEligibleForOwnerBootstrap(verifiedUser.email);
+    const eligible = canClaimInitialOwnerAccess(verifiedUser, ownerCount);
     return res.json({
       ownerCount,
       configured: ownerEmails.length > 0,
@@ -1373,13 +1381,14 @@ const handleBootstrapOwnerClaim = async (req: express.Request, res: express.Resp
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
 
-    if (!isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
-      return res.status(403).json({ error: "Signed-in email is not configured for owner bootstrap" });
-    }
-
     const ownerCount = await countOwnersFromUsersMirror();
     if (ownerCount > 0) {
       return res.status(409).json({ error: "Owner already exists. Use Access Management for role changes." });
+    }
+    if (!canClaimInitialOwnerAccess(verifiedUser, ownerCount)) {
+      return res.status(403).json({
+        error: "You are not eligible to claim owner access. Add your email to OWNER_EMAILS or sign in with an internal account.",
+      });
     }
 
     await applyOwnerRoleToUid({

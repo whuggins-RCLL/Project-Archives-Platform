@@ -145,8 +145,8 @@ export default function SettingsView({
             </p>
           ) : (
             <p>
-              No owner accounts exist yet, and <code>OWNER_EMAILS</code> is not configured in the deployment environment. Add at least one email to
-              <code> OWNER_EMAILS</code> (comma-separated) and reload this page to enable first-owner claim.
+              No owner accounts exist yet. Since <code>OWNER_EMAILS</code> is not configured, the first signed-in internal user can claim owner access
+              here. If this button is disabled, ask your deployer to set <code>OWNER_EMAILS</code> (comma-separated) or verify internal claims.
             </p>
           )}
           <button
@@ -154,7 +154,7 @@ export default function SettingsView({
             disabled={!bootstrapStatus.configured || !bootstrapStatus.eligible || claimingOwner}
             className="px-4 py-2 rounded-lg bg-primary text-white font-bold disabled:opacity-50"
           >
-            {claimingOwner ? 'Claiming owner access...' : bootstrapStatus.configured ? 'Claim owner access' : 'Owner claim unavailable'}
+            {claimingOwner ? 'Claiming owner access...' : bootstrapStatus.eligible ? 'Claim owner access' : 'Owner claim unavailable'}
           </button>
         </div>
       )}
