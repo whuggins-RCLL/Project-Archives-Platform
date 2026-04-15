@@ -55,12 +55,17 @@ const generateUniqueProjectCode = async (): Promise<string> => {
 
 export interface Settings {
   aiEnabled: boolean;
-  activeProvider: string;
+  activeProvider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc';
   aiNextBestActionEnabled: boolean;
   aiRiskNarrativeEnabled: boolean;
   aiDuplicateDetectionEnabled: boolean;
   aiRequireHumanApproval: boolean;
   privacyMode: 'public-read' | 'private-read';
+  suiteName: string;
+  portalName: string;
+  logoDataUrl?: string;
+  primaryColor: string;
+  brandDarkColor: string;
 }
 
 
@@ -105,7 +110,12 @@ export const api = {
           aiRiskNarrativeEnabled: data.aiRiskNarrativeEnabled ?? true,
           aiDuplicateDetectionEnabled: data.aiDuplicateDetectionEnabled ?? true,
           aiRequireHumanApproval: data.aiRequireHumanApproval ?? true,
-          privacyMode: data.privacyMode ?? 'public-read'
+          privacyMode: data.privacyMode ?? 'public-read',
+          suiteName: data.suiteName ?? 'AI Librarian Suite',
+          portalName: data.portalName ?? 'Project Archives',
+          logoDataUrl: data.logoDataUrl ?? '',
+          primaryColor: data.primaryColor ?? '#002045',
+          brandDarkColor: data.brandDarkColor ?? '#1A365D',
         };
       }
       return {
@@ -115,7 +125,12 @@ export const api = {
         aiRiskNarrativeEnabled: true,
         aiDuplicateDetectionEnabled: true,
         aiRequireHumanApproval: true,
-        privacyMode: 'public-read'
+        privacyMode: 'public-read',
+        suiteName: 'AI Librarian Suite',
+        portalName: 'Project Archives',
+        logoDataUrl: '',
+        primaryColor: '#002045',
+        brandDarkColor: '#1A365D',
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');

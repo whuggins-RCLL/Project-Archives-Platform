@@ -37,7 +37,7 @@ export interface AIModelOption {
   id: string;
   label: string;
   description: string;
-  provider: 'gemini' | 'openai' | 'anthropic' | 'gemma';
+  provider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc';
 }
 
 export interface ApprovalCheckpoint {

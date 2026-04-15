@@ -4,11 +4,13 @@ import { FolderArchive, LogIn } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { APP_CONFIG } from '../config';
+import { useBranding } from '../hooks/useBranding';
 
 export default function LoginView() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { branding } = useBranding();
 
   const handleLogin = async () => {
     setIsLoading(true);
@@ -43,15 +45,19 @@ export default function LoginView() {
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-body">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
-          <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-            <FolderArchive className="text-white w-6 h-6" />
-          </div>
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt={`${branding.portalName} logo`} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-outline-variant/30" />
+          ) : (
+            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+              <FolderArchive className="text-white w-6 h-6" />
+            </div>
+          )}
         </div>
         <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900 font-headline">
           Team Login
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          Access the {APP_CONFIG.appName} internal dashboard
+          Access the {branding.appName || APP_CONFIG.appName} internal dashboard
         </p>
       </div>
 

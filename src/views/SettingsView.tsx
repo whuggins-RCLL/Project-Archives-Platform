@@ -8,11 +8,13 @@ export default function SettingsView({
   canViewSettings,
   loadingRole,
   onRoleRefreshRequested,
+  onSettingsUpdated,
 }: {
   canManageSettings: boolean,
   canViewSettings: boolean,
   loadingRole: boolean,
   onRoleRefreshRequested?: () => Promise<void>,
+  onSettingsUpdated?: (settings: Settings) => void,
 }) {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [settings, setSettings] = useState<Settings>({
@@ -22,7 +24,12 @@ export default function SettingsView({
     aiRiskNarrativeEnabled: true,
     aiDuplicateDetectionEnabled: true,
     aiRequireHumanApproval: true,
-    privacyMode: 'public-read'
+    privacyMode: 'public-read',
+    suiteName: 'AI Librarian Suite',
+    portalName: 'Project Archives',
+    logoDataUrl: '',
+    primaryColor: '#002045',
+    brandDarkColor: '#1A365D',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -36,6 +43,7 @@ export default function SettingsView({
       try {
         const data = await api.getSettings();
         setSettings(data);
+        onSettingsUpdated?.(data);
       } catch (error) {
         console.error('Failed to fetch settings');
       } finally {
@@ -68,6 +76,7 @@ export default function SettingsView({
     }
     try {
       await api.updateSettings(settings);
+      onSettingsUpdated?.(settings);
       setToast({ type: 'success', message: 'Settings saved successfully.' });
     } catch (error) {
       console.error('Failed to save settings');
@@ -82,6 +91,10 @@ export default function SettingsView({
     const timeout = window.setTimeout(() => setToast(null), 3200);
     return () => window.clearTimeout(timeout);
   }, [toast]);
+
+  useEffect(() => {
+    onSettingsUpdated?.(settings);
+  }, [settings.primaryColor, settings.brandDarkColor, settings.portalName, settings.suiteName, settings.logoDataUrl]);
 
   if (loading || loadingRole) return <div className="p-10">Loading settings...</div>;
 
@@ -145,8 +158,8 @@ export default function SettingsView({
             </p>
           ) : (
             <p>
-              No owner accounts exist yet. Since <code>OWNER_EMAILS</code> is not configured, the first signed-in internal user can claim owner access
-              here. If this button is disabled, ask your deployer to set <code>OWNER_EMAILS</code> (comma-separated) or verify internal claims.
+              No owner accounts exist yet. Since <code>OWNER_EMAILS</code> is not configured, the first signed-in user can claim owner access
+              here.
             </p>
           )}
           <button
@@ -201,6 +214,87 @@ export default function SettingsView({
             <p className="text-xs text-on-surface-variant mt-2">
               Use private mode for institutions that require restricted access by default.
             </p>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="font-bold text-on-surface">Branding</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="settings-suite-name" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Suite Name</label>
+                <input
+                  id="settings-suite-name"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.suiteName}
+                  maxLength={80}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, suiteName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-portal-name" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Portal Name</label>
+                <input
+                  id="settings-portal-name"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.portalName}
+                  maxLength={80}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, portalName: e.target.value })}
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-primary-color" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Primary Color</label>
+                <input
+                  id="settings-primary-color"
+                  type="color"
+                  className="w-16 h-10 bg-transparent border border-outline-variant/20 rounded"
+                  value={settings.primaryColor}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, primaryColor: e.target.value })}
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-brand-dark-color" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Dark Brand Color</label>
+                <input
+                  id="settings-brand-dark-color"
+                  type="color"
+                  className="w-16 h-10 bg-transparent border border-outline-variant/20 rounded"
+                  value={settings.brandDarkColor}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, brandDarkColor: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="settings-logo-upload" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Identity Logo (optional)</label>
+              <input
+                id="settings-logo-upload"
+                type="file"
+                accept="image/*"
+                disabled={readOnly}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = typeof reader.result === 'string' ? reader.result : '';
+                    setSettings((prev) => ({ ...prev, logoDataUrl: result }));
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+              {settings.logoDataUrl && (
+                <div className="mt-2 flex items-center gap-4">
+                  <img src={settings.logoDataUrl} alt="Brand logo preview" className="h-10 w-10 rounded object-cover border border-outline-variant/30" />
+                  <button
+                    onClick={() => setSettings((prev) => ({ ...prev, logoDataUrl: '' }))}
+                    disabled={readOnly}
+                    className="text-xs font-bold text-error"
+                  >
+                    Remove Logo
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* AI Enable Toggle */}

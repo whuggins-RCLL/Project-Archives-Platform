@@ -1,8 +1,9 @@
-import { Search, Bell, Settings, LogOut } from 'lucide-react';
+import { Search, Bell, Settings, LogOut, XCircle, CheckCircle2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { APP_CONFIG } from '../config';
+import { useMemo, useState } from 'react';
 
 export default function Topbar({
   roleLabel,
@@ -13,6 +14,7 @@ export default function Topbar({
   onOpenSettings,
   canViewSettings,
   canManageSettings,
+  branding,
 }: {
   roleLabel: string,
   rawRole: string,
@@ -22,8 +24,27 @@ export default function Topbar({
   onOpenSettings: () => void,
   canViewSettings: boolean,
   canManageSettings: boolean,
+  branding: {
+    appName: string;
+    logoUrl?: string;
+  },
 }) {
   const navigate = useNavigate();
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notifications = useMemo(() => ([
+    {
+      id: 'permissions',
+      title: 'Permissions loaded',
+      detail: `Role: ${roleLabel}`,
+      icon: CheckCircle2,
+    },
+    {
+      id: 'settings',
+      title: canManageSettings ? 'Settings access granted' : 'Settings access is read-only',
+      detail: canManageSettings ? 'You can edit global settings.' : 'Ask an admin to modify global settings.',
+      icon: canManageSettings ? CheckCircle2 : XCircle,
+    },
+  ]), [roleLabel, canManageSettings]);
 
   const handleLogout = async () => {
     try {
@@ -37,7 +58,7 @@ export default function Topbar({
   return (
     <header className="bg-white/85 backdrop-blur-xl sticky top-0 z-30 flex justify-between items-center w-full px-10 h-16 shadow-[0_8px_32px_rgba(25,28,30,0.06)]">
       <div className="flex items-center space-x-8">
-        <span className="text-2xl font-black tracking-tighter text-brand-dark font-headline">{APP_CONFIG.appName}</span>
+        <span className="text-2xl font-black tracking-tighter text-brand-dark font-headline">{branding.appName || APP_CONFIG.appName}</span>
         <div className="relative md:hidden">
           <label htmlFor="topbar-search-mobile" className="sr-only">Search Archives</label>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant w-4 h-4" />
@@ -71,10 +92,11 @@ export default function Topbar({
           </button>
           {roleError && <p className="text-[10px] text-error">{roleError}</p>}
         </div>
-        <div className="flex space-x-2">
+        <div className="flex space-x-2 relative">
           <button
             aria-label="Open notifications. You have unread notifications"
             title="Notifications"
+            onClick={() => setNotificationsOpen((prev) => !prev)}
             className="p-2 text-slate-700 hover:bg-slate-100 rounded-full transition-colors relative"
           >
             <Bell className="w-5 h-5" />
@@ -84,6 +106,22 @@ export default function Topbar({
               className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-white"
             ></span>
           </button>
+          {notificationsOpen && (
+            <div className="absolute right-20 top-14 w-80 rounded-lg border border-outline-variant/30 bg-surface-container-lowest shadow-xl p-3 z-50">
+              <div className="text-xs font-bold uppercase text-on-surface-variant mb-2">Notifications</div>
+              <div className="space-y-2">
+                {notifications.map((item) => (
+                  <div key={item.id} className="rounded-md bg-surface-container-low p-2">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <item.icon className="w-4 h-4 text-primary" />
+                      {item.title}
+                    </div>
+                    <p className="text-xs text-on-surface-variant mt-1">{item.detail}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <button
             aria-label="Open settings"
             title={
@@ -111,15 +149,16 @@ export default function Topbar({
           <img
             alt="Librarian Profile"
             className="w-9 h-9 rounded-full object-cover border-2 border-primary-container/20"
-            src={auth.currentUser?.photoURL || "https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg"}
+            src={auth.currentUser?.photoURL || branding.logoUrl || "https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg"}
           />
           <button 
             onClick={handleLogout}
             aria-label="Log out"
-            className="p-2 text-slate-700 hover:text-error hover:bg-error/10 rounded-full transition-colors ml-2"
+            className="p-2 text-slate-700 hover:text-error hover:bg-error/10 rounded-full transition-colors ml-2 inline-flex items-center gap-2"
             title="Log out"
           >
             <LogOut className="w-5 h-5" />
+            <span className="hidden lg:inline text-xs font-bold">Sign out</span>
           </button>
         </div>
       </div>

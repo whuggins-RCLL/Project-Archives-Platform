@@ -10,10 +10,28 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.admin == true;
     }
 
+    function hasUserMirror() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userMirrorData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function mirroredRole() {
+      return hasUserMirror() && userMirrorData().role is string
+        ? userMirrorData().role
+        : null;
+    }
+
     function role() {
-      return isAuthenticated() && request.auth.token.role is string
-        ? request.auth.token.role
-        : (hasLegacyAdminClaim() ? 'admin' : 'viewer');
+      return mirroredRole() in ['owner', 'admin', 'collaborator', 'viewer']
+        ? mirroredRole()
+        : (
+            isAuthenticated() && request.auth.token.role is string
+              ? request.auth.token.role
+              : (hasLegacyAdminClaim() ? 'admin' : 'viewer')
+          );
     }
 
     function isOwnerRole() {
@@ -25,11 +43,53 @@ service cloud.firestore {
     }
 
     function canEditContent() {
-      return role() in ['owner', 'admin', 'collaborator'];
+      return role() in ['owner', 'admin', 'collaborator'] ||
+        (
+          hasUserMirror() &&
+          userMirrorData().permissions is map &&
+          userMirrorData().permissions.canEditContent == true
+        ) ||
+        (
+          isAuthenticated() &&
+          request.auth.token.permissions is map &&
+          request.auth.token.permissions.canEditContent == true
+        );
     }
 
     function canViewInternal() {
       return isAuthenticated() && role() in ['owner', 'admin', 'collaborator', 'viewer'];
+    }
+
+    function canManageSettings() {
+      return isAdminRole() ||
+        (
+          hasUserMirror() &&
+          userMirrorData().permissions is map &&
+          userMirrorData().permissions.canManageSettings == true
+        ) ||
+        (
+          isAuthenticated() &&
+          request.auth.token.permissions is map &&
+          request.auth.token.permissions.canManageSettings == true
+        );
+    }
+
+    function canManageRoles() {
+      return isAdminRole() ||
+        (
+          hasUserMirror() &&
+          userMirrorData().permissions is map &&
+          userMirrorData().permissions.canManageRoles == true
+        ) ||
+        (
+          isAuthenticated() &&
+          request.auth.token.permissions is map &&
+          request.auth.token.permissions.canManageRoles == true
+        );
+    }
+
+    function isActiveUser() {
+      return !hasUserMirror() || userMirrorData().status != 'disabled';
     }
 
     function hasAllowedDomainClaim() {
@@ -41,7 +101,7 @@ service cloud.firestore {
     }
 
     function isInternalUser() {
-      return canViewInternal() || hasAllowedDomainClaim() || hasAnyGroup(['internal', 'staff', 'team', 'employee']);
+      return isAuthenticated() && isActiveUser() && (canViewInternal() || hasAllowedDomainClaim() || hasAnyGroup(['internal', 'staff', 'team', 'employee']));
     }
 
     function hasRequiredFields(fields) {
@@ -127,15 +187,23 @@ service cloud.firestore {
     }
 
     function isValidSettings(data) {
-      return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode']) &&
+      return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
              data.aiEnabled is bool &&
-             data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma'] &&
+             data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc'] &&
              data.aiNextBestActionEnabled is bool &&
              data.aiRiskNarrativeEnabled is bool &&
              data.aiDuplicateDetectionEnabled is bool &&
              data.aiRequireHumanApproval is bool &&
-             data.privacyMode in ['public-read', 'private-read'];
+             data.privacyMode in ['public-read', 'private-read'] &&
+             isValidString(data.suiteName, 1, 80) &&
+             isValidString(data.portalName, 1, 80) &&
+             data.logoDataUrl is string &&
+             data.logoDataUrl.size() <= 150000 &&
+             data.primaryColor is string &&
+             data.primaryColor.matches('^#[0-9A-Fa-f]{6}$') &&
+             data.brandDarkColor is string &&
+             data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$');
     }
 
     function currentPrivacyMode() {
@@ -168,8 +236,8 @@ service cloud.firestore {
     }
 
     match /settings/{settingId} {
-      allow read: if isInternalUser();
-      allow write: if isInternalUser() && isAdminRole() && isValidSettings(request.resource.data);
+      allow read: if settingId == 'global' || isInternalUser();
+      allow write: if isInternalUser() && canManageSettings() && isValidSettings(request.resource.data);
     }
 
     match /projects/{projectId} {
@@ -188,11 +256,15 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isInternalUser();
-      allow write: if isInternalUser() && isAdminRole() && isValidUserMirror(request.resource.data);
+      allow write: if isInternalUser() && canManageRoles() && isValidUserMirror(request.resource.data) &&
+        (
+          request.resource.data.role != 'owner' ||
+          isOwnerRole()
+        );
     }
 
     match /adminAudit/{entryId} {
-      allow read, write: if isInternalUser() && isAdminRole();
+      allow read, write: if isInternalUser() && canManageRoles();
     }
   }
 }

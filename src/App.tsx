@@ -21,6 +21,7 @@ import AdminUsersView from './views/AdminUsersView';
 import { api } from './lib/api';
 import { useUserRole } from './hooks/useUserRole';
 import { buildDefaultApprovalCheckpoints, buildDefaultMilestones } from './lib/projectGovernance';
+import { applyBrandingToDocument, useBranding } from './hooks/useBranding';
 
 import { Project } from './types';
 
@@ -45,9 +46,14 @@ function InternalApp() {
     rawRole,
   } = useUserRole();
   const modalRef = useRef<HTMLDivElement | null>(null);
+  const { branding, settings } = useBranding();
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
+
+  useEffect(() => {
+    applyBrandingToDocument(settings);
+  }, [settings.primaryColor, settings.brandDarkColor]);
 
   useEffect(() => {
     if (!isNewProjectModalOpen) return;
@@ -179,7 +185,7 @@ function InternalApp() {
       case 'record':
         return <RecordView projects={projects} loading={loadingProjects} projectId={selectedProjectId} onBack={() => setCurrentView('kanban')} isAdmin={canEditContent} />;
       case 'settings':
-        return <SettingsView canManageSettings={canManageSettings} canViewSettings={canViewSettings} loadingRole={loadingRole} onRoleRefreshRequested={refreshRoleClaims} />;
+        return <SettingsView canManageSettings={canManageSettings} canViewSettings={canViewSettings} loadingRole={loadingRole} onRoleRefreshRequested={refreshRoleClaims} onSettingsUpdated={(next) => applyBrandingToDocument(next)} />;
       case 'admin-users':
         return <AdminUsersView canManageRoles={canManageRoles} onRoleRefreshRequested={refreshRoleClaims} currentRole={rawRole} />;
       default:
@@ -199,6 +205,7 @@ function InternalApp() {
         canManageRoles={canManageRoles}
         isMobileOpen={isSidebarMobileOpen}
         onMobileClose={() => setIsSidebarMobileOpen(false)}
+        branding={branding}
       />
       <div className="flex-1 lg:ml-64 flex flex-col">
         <button
@@ -217,6 +224,7 @@ function InternalApp() {
           onOpenSettings={() => setCurrentView('settings')}
           canViewSettings={canViewSettings}
           canManageSettings={canManageSettings}
+          branding={branding}
         />
         <main
           ref={mainContentRef}

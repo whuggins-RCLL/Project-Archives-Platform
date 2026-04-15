@@ -25,4 +25,10 @@ export const AI_MODEL_OPTIONS: AIModelOption[] = [
     description: 'Default Gemma instruct model served via OpenAI-compatible API.',
     provider: 'gemma',
   },
+  {
+    id: 'groc-2-latest',
+    label: 'Groc 2 Latest',
+    description: 'Groc model via OpenAI-compatible endpoint.',
+    provider: 'groc',
+  },
 ];

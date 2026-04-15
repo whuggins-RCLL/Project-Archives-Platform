@@ -1,6 +1,8 @@
-import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users } from 'lucide-react';
+import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, LogOut } from 'lucide-react';
 import { APP_CONFIG } from '../config';
 import Button from './Button';
+import { signOut } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 
 export default function Sidebar({
   currentView,
@@ -11,7 +13,8 @@ export default function Sidebar({
   canManageSettings,
   canManageRoles,
   isMobileOpen,
-  onMobileClose
+  onMobileClose,
+  branding,
 }: {
   currentView: string,
   setCurrentView: (v: string) => void,
@@ -21,7 +24,12 @@ export default function Sidebar({
   canManageSettings: boolean,
   canManageRoles: boolean,
   isMobileOpen: boolean,
-  onMobileClose: () => void
+  onMobileClose: () => void,
+  branding: {
+    appName: string;
+    portalName: string;
+    logoUrl?: string;
+  }
 }) {
   const navItems = [
     { id: 'kanban', icon: Kanban, label: 'Kanban Board' },
@@ -31,6 +39,11 @@ export default function Sidebar({
 
   const handleHelpClick = () => {
     window.open('/', '_blank', 'noopener,noreferrer');
+    onMobileClose();
+  };
+
+  const handleLogout = async () => {
+    await signOut(auth);
     onMobileClose();
   };
 
@@ -49,12 +62,16 @@ export default function Sidebar({
         <X className="w-5 h-5" />
       </button>
       <div className="mb-8 px-2 flex items-center space-x-3">
-        <div className="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center">
-          <FolderArchive className="text-white w-5 h-5" />
-        </div>
+        {branding.logoUrl ? (
+          <img src={branding.logoUrl} alt={`${branding.portalName} logo`} className="w-10 h-10 rounded-lg object-cover border border-outline-variant/40" />
+        ) : (
+          <div className="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center">
+            <FolderArchive className="text-white w-5 h-5" />
+          </div>
+        )}
         <div>
-          <p className="font-headline text-lg font-bold text-brand-dark leading-tight" aria-label="Portal name">{APP_CONFIG.portalName}</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant opacity-60">{APP_CONFIG.appName}</p>
+          <p className="font-headline text-lg font-bold text-brand-dark leading-tight" aria-label="Portal name">{branding.portalName || APP_CONFIG.portalName}</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant opacity-60">{branding.appName || APP_CONFIG.appName}</p>
         </div>
       </div>
       <nav className="flex-1 space-y-1">
@@ -126,6 +143,13 @@ export default function Sidebar({
             <span>Access Management</span>
           </button>
         )}
+        <button
+          onClick={() => void handleLogout()}
+          className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-error text-xs font-medium"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign out</span>
+        </button>
       </div>
     </aside>
     </>
