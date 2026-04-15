@@ -93,6 +93,54 @@ export const api = {
     }
   },
 
+  getElevatedAuthStatus: async (): Promise<{ required: boolean; needsChange: boolean }> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/auth/elevated/status', {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to read elevated auth status');
+    return {
+      required: payload.required === true,
+      needsChange: payload.needsChange === true,
+    };
+  },
+
+  loginElevatedAccess: async (password: string): Promise<{ needsChange: boolean }> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/auth/elevated/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ password }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Invalid elevated access password');
+    return { needsChange: payload.needsChange === true };
+  },
+
+  changeElevatedPassword: async (currentPassword: string, newPassword: string): Promise<void> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/auth/elevated/change-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update elevated access password');
+  },
+
   refreshCurrentUserClaims: async (forceRefresh = true): Promise<void> => {
     if (!auth.currentUser) throw new Error('You must be logged in to refresh claims.');
     await auth.currentUser.getIdTokenResult(forceRefresh);

@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { readFile } from "node:fs/promises";
-import { createSign, randomUUID } from "node:crypto";
+import { createSign, randomUUID, createHash, timingSafeEqual } from "node:crypto";
 import { GoogleGenAI } from "@google/genai";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
@@ -144,6 +144,7 @@ const STAGE_TARGET_DAYS: Record<string, number> = {
   "Review / Approval": 10,
 };
 const DEFAULT_BOOTSTRAP_OWNER_EMAIL = "whuggins@law.stanford.edu";
+const DEFAULT_ELEVATED_PASSWORD = "ChangeMe1234";
 
 function getClientIp(req: express.Request): string {
   const header = req.headers["x-forwarded-for"];
@@ -932,6 +933,49 @@ async function getUserMirrorRoleAndPermissions(uid: string): Promise<{ role: App
   }
 }
 
+function hashPassword(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function safeCompareHash(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
+}
+
+async function getElevatedAccessConfig(): Promise<{ passwordHash: string; needsChange: boolean }> {
+  try {
+    const result = await firestoreCall("settings/global");
+    const parsed = parseFirestoreDocument(result as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    const passwordHash = typeof parsed.elevatedPasswordHash === "string" && parsed.elevatedPasswordHash.length > 0
+      ? parsed.elevatedPasswordHash
+      : hashPassword(DEFAULT_ELEVATED_PASSWORD);
+    const needsChange = typeof parsed.elevatedPasswordNeedsChange === "boolean"
+      ? parsed.elevatedPasswordNeedsChange
+      : true;
+    return { passwordHash, needsChange };
+  } catch {
+    return { passwordHash: hashPassword(DEFAULT_ELEVATED_PASSWORD), needsChange: true };
+  }
+}
+
+async function saveElevatedAccessConfig(config: { passwordHash: string; needsChange: boolean }): Promise<void> {
+  await firestoreCall("settings/global", {
+    method: "PATCH",
+    body: {
+      fields: {
+        elevatedPasswordHash: { stringValue: config.passwordHash },
+        elevatedPasswordNeedsChange: { booleanValue: config.needsChange },
+      },
+    },
+  });
+}
+
+async function resolveEffectiveRole(verifiedUser: VerifiedUser): Promise<AppRole> {
+  const mirror = await getUserMirrorRoleAndPermissions(verifiedUser.uid);
+  if (mirror.role) return mirror.role;
+  return normalizeRoleFromClaims(verifiedUser.claims);
+}
+
 async function applyOwnerRoleToUid(input: { uid: string; email: string; displayName: string; actorUid?: string; actorEmail?: string; action: string }): Promise<void> {
   const auth = getAdminAuth();
   const authUser = await auth.getUser(input.uid);
@@ -1096,6 +1140,75 @@ app.post("/api/auth/reconcile-role", async (req, res) => {
     console.error("[auth/reconcile-role] failed", error);
     await pause(120);
     return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to reconcile role" });
+  }
+});
+
+app.get("/api/auth/elevated/status", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const role = await resolveEffectiveRole(verifiedUser);
+    if (role !== "owner" && role !== "admin") {
+      return res.json({ required: false, needsChange: false });
+    }
+    const config = await getElevatedAccessConfig();
+    return res.json({ required: true, needsChange: config.needsChange });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to read elevated auth status" });
+  }
+});
+
+app.post("/api/auth/elevated/login", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const role = await resolveEffectiveRole(verifiedUser);
+    if (role !== "owner" && role !== "admin") {
+      return res.status(403).json({ error: "Elevated access is only for admins and owners" });
+    }
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!password) return res.status(400).json({ error: "Password is required" });
+    const config = await getElevatedAccessConfig();
+    const suppliedHash = hashPassword(password);
+    if (!safeCompareHash(suppliedHash, config.passwordHash)) {
+      return res.status(401).json({ error: "Invalid password" });
+    }
+    return res.json({ success: true, needsChange: config.needsChange });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to authenticate elevated access" });
+  }
+});
+
+app.post("/api/auth/elevated/change-password", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const role = await resolveEffectiveRole(verifiedUser);
+    if (role !== "owner" && role !== "admin") {
+      return res.status(403).json({ error: "Elevated access is only for admins and owners" });
+    }
+    const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+    const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: "Current and new password are required" });
+    if (newPassword.length < 8) return res.status(400).json({ error: "New password must be at least 8 characters" });
+    const config = await getElevatedAccessConfig();
+    const currentHash = hashPassword(currentPassword);
+    if (!safeCompareHash(currentHash, config.passwordHash)) {
+      return res.status(401).json({ error: "Current password is incorrect" });
+    }
+    await saveElevatedAccessConfig({
+      passwordHash: hashPassword(newPassword),
+      needsChange: false,
+    });
+    return res.json({ success: true, message: "Password updated successfully" });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to change elevated password" });
   }
 });
 

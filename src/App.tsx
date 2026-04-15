@@ -33,6 +33,13 @@ function InternalApp() {
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
+  const [elevatedStatus, setElevatedStatus] = useState<{ required: boolean; needsChange: boolean }>({ required: false, needsChange: false });
+  const [elevatedAuthenticated, setElevatedAuthenticated] = useState(false);
+  const [elevatedPassword, setElevatedPassword] = useState('');
+  const [newElevatedPassword, setNewElevatedPassword] = useState('');
+  const [confirmElevatedPassword, setConfirmElevatedPassword] = useState('');
+  const [elevatedError, setElevatedError] = useState<string | null>(null);
+  const [checkingElevated, setCheckingElevated] = useState(true);
   const {
     canEditContent,
     canManageRoles,
@@ -52,6 +59,39 @@ function InternalApp() {
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
+  const isViewerOnly = rawRole === 'viewer';
+
+  useEffect(() => {
+    applyBrandingToDocument(settings);
+  }, [settings.primaryColor, settings.brandDarkColor]);
+
+  useEffect(() => {
+    if (isViewerOnly && currentView !== 'portfolio') {
+      setCurrentView('portfolio');
+    }
+  }, [isViewerOnly, currentView]);
+
+  useEffect(() => {
+    const checkElevatedStatus = async () => {
+      setCheckingElevated(true);
+      try {
+        const status = await api.getElevatedAuthStatus();
+        setElevatedStatus(status);
+        if (!status.required) {
+          setElevatedAuthenticated(true);
+          return;
+        }
+        const cached = window.sessionStorage.getItem('elevated-access-ok') === 'true';
+        setElevatedAuthenticated(cached);
+      } catch {
+        setElevatedStatus({ required: false, needsChange: false });
+        setElevatedAuthenticated(true);
+      } finally {
+        setCheckingElevated(false);
+      }
+    };
+    void checkElevatedStatus();
+  }, [rawRole]);
 
   useEffect(() => {
     applyBrandingToDocument(settings);
@@ -177,6 +217,9 @@ function InternalApp() {
   };
 
   const renderView = () => {
+    if (isViewerOnly) {
+      return <PortfolioView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onProjectsRefreshed={handleProjectsRefreshed} />;
+    }
     switch (currentView) {
       case 'kanban':
         return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={canEditContent} />;
@@ -195,6 +238,104 @@ function InternalApp() {
     }
   };
 
+  const handleElevatedLogin = async () => {
+    setElevatedError(null);
+    try {
+      const result = await api.loginElevatedAccess(elevatedPassword);
+      setElevatedAuthenticated(true);
+      window.sessionStorage.setItem('elevated-access-ok', 'true');
+      if (result.needsChange) {
+        setElevatedStatus({ required: true, needsChange: true });
+      }
+      setElevatedPassword('');
+    } catch (error) {
+      setElevatedError(error instanceof Error ? error.message : 'Unable to validate password.');
+    }
+  };
+
+  const handleChangeElevatedPassword = async () => {
+    setElevatedError(null);
+    if (newElevatedPassword.length < 8) {
+      setElevatedError('New password must be at least 8 characters.');
+      return;
+    }
+    if (newElevatedPassword !== confirmElevatedPassword) {
+      setElevatedError('New password confirmation does not match.');
+      return;
+    }
+    try {
+      await api.changeElevatedPassword(elevatedPassword, newElevatedPassword);
+      setElevatedStatus({ required: true, needsChange: false });
+      setElevatedPassword('');
+      setNewElevatedPassword('');
+      setConfirmElevatedPassword('');
+    } catch (error) {
+      setElevatedError(error instanceof Error ? error.message : 'Unable to change password.');
+    }
+  };
+
+  if (checkingElevated) {
+    return <div className="min-h-screen flex items-center justify-center">Checking access...</div>;
+  }
+
+  if (elevatedStatus.required && !elevatedAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+        <div className="w-full max-w-md rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 space-y-4">
+          <h2 className="text-xl font-bold">Admin / Owner Access Password</h2>
+          <p className="text-sm text-on-surface-variant">Enter your elevated access password. Default: <code>ChangeMe1234</code></p>
+          <input
+            type="password"
+            value={elevatedPassword}
+            onChange={(e) => setElevatedPassword(e.target.value)}
+            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            placeholder="Password"
+          />
+          {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
+          <button onClick={() => void handleElevatedLogin()} className="w-full rounded-lg bg-primary text-white py-2 font-bold">
+            Unlock Admin Access
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (elevatedStatus.required && elevatedStatus.needsChange) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
+        <div className="w-full max-w-md rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 space-y-3">
+          <h2 className="text-xl font-bold">Change Default Password</h2>
+          <p className="text-sm text-on-surface-variant">You must change the default password before continuing.</p>
+          <input
+            type="password"
+            value={elevatedPassword}
+            onChange={(e) => setElevatedPassword(e.target.value)}
+            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            placeholder="Current password"
+          />
+          <input
+            type="password"
+            value={newElevatedPassword}
+            onChange={(e) => setNewElevatedPassword(e.target.value)}
+            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            placeholder="New password"
+          />
+          <input
+            type="password"
+            value={confirmElevatedPassword}
+            onChange={(e) => setConfirmElevatedPassword(e.target.value)}
+            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            placeholder="Confirm new password"
+          />
+          {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
+          <button onClick={() => void handleChangeElevatedPassword()} className="w-full rounded-lg bg-primary text-white py-2 font-bold">
+            Save New Password
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-surface text-on-surface font-body">
       <Sidebar
@@ -205,6 +346,7 @@ function InternalApp() {
         canViewSettings={canViewSettings}
         canManageSettings={canManageSettings}
         canManageRoles={canManageRoles}
+        viewerOnlyMode={isViewerOnly}
         isMobileOpen={isSidebarMobileOpen}
         onMobileClose={() => setIsSidebarMobileOpen(false)}
         branding={branding}
@@ -224,8 +366,8 @@ function InternalApp() {
           refreshingRole={refreshingRole}
           onRefreshPermissions={refreshRoleClaims}
           onOpenSettings={() => setCurrentView('settings')}
-          canViewSettings={canViewSettings}
-          canManageSettings={canManageSettings}
+          canViewSettings={!isViewerOnly && canViewSettings}
+          canManageSettings={!isViewerOnly && canManageSettings}
           branding={branding}
           tokenRoleSnapshot={tokenRoleSnapshot}
           mirrorRoleSnapshot={mirrorRoleSnapshot}

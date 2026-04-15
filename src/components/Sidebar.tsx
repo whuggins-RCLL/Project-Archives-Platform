@@ -12,6 +12,7 @@ export default function Sidebar({
   canViewSettings,
   canManageSettings,
   canManageRoles,
+  viewerOnlyMode,
   isMobileOpen,
   onMobileClose,
   branding,
@@ -23,6 +24,7 @@ export default function Sidebar({
   canViewSettings: boolean,
   canManageSettings: boolean,
   canManageRoles: boolean,
+  viewerOnlyMode: boolean,
   isMobileOpen: boolean,
   onMobileClose: () => void,
   branding: {
@@ -31,11 +33,13 @@ export default function Sidebar({
     logoUrl?: string;
   }
 }) {
-  const navItems = [
-    { id: 'kanban', icon: Kanban, label: 'Kanban Board' },
-    { id: 'priority', icon: AlertCircle, label: 'Priority Matrix' },
-    { id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' },
-  ];
+  const navItems = viewerOnlyMode
+    ? [{ id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' }]
+    : [
+      { id: 'kanban', icon: Kanban, label: 'Kanban Board' },
+      { id: 'priority', icon: AlertCircle, label: 'Priority Matrix' },
+      { id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' },
+    ];
 
   const handleHelpClick = () => {
     window.open('/', '_blank', 'noopener,noreferrer');
@@ -97,19 +101,21 @@ export default function Sidebar({
         })}
       </nav>
       <div className="pt-6 border-t border-slate-200/50 space-y-1">
-        <Button 
-          onClick={() => {
-            onNewProject();
-            onMobileClose();
-          }}
-          disabled={!canEditContent}
-          title={canEditContent ? 'Create a new project' : 'You need editor access to create projects'}
-          variant="primary"
-          className="w-full py-3 rounded-lg"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Project</span>
-        </Button>
+        {!viewerOnlyMode && (
+          <Button
+            onClick={() => {
+              onNewProject();
+              onMobileClose();
+            }}
+            disabled={!canEditContent}
+            title={canEditContent ? 'Create a new project' : 'You need editor access to create projects'}
+            variant="primary"
+            className="w-full py-3 rounded-lg"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Project</span>
+          </Button>
+        )}
         <div className="h-4"></div>
         <button
           onClick={handleHelpClick}
@@ -118,7 +124,7 @@ export default function Sidebar({
           <HelpCircle className="w-4 h-4" />
           <span>Help</span>
         </button>
-        {canViewSettings && (
+        {!viewerOnlyMode && canViewSettings && (
           <button 
             onClick={() => {
               setCurrentView('settings');
@@ -131,7 +137,7 @@ export default function Sidebar({
             <span>{canManageSettings ? 'Archive Settings' : 'Archive Settings (View)'}</span>
           </button>
         )}
-        {canManageRoles && (
+        {!viewerOnlyMode && canManageRoles && (
           <button
             onClick={() => {
               setCurrentView('admin-users');
