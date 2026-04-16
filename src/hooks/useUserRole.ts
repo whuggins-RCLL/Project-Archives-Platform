@@ -93,7 +93,6 @@ export function useUserRole() {
 
   const refreshRoleClaims = useCallback(async () => {
     setRefreshingRole(true);
-    void auth.currentUser?.getIdTokenResult(true).catch(() => {});
     await resolveRole(true);
   }, [resolveRole]);
 

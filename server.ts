@@ -974,7 +974,7 @@ async function saveElevatedAccessConfig(config: { passwordHash: string; needsCha
 }
 
 async function resolveEffectiveRole(verifiedUser: VerifiedUser): Promise<AppRole> {
-  if ((verifiedUser.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
+  if (isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
     return "owner";
   }
   const mirror = await getUserMirrorRoleAndPermissions(verifiedUser.uid);
@@ -1532,8 +1532,8 @@ app.get("/api/admin/users/list", async (req, res) => {
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
 
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const callerRole = await resolveEffectiveRole(verifiedUser);
+    const callerPermissions = defaultPermissionsForRole(callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
     const result = await firestoreCall("users?pageSize=500");
@@ -1620,8 +1620,8 @@ app.get("/api/admin/users/audit", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const callerRole = await resolveEffectiveRole(verifiedUser);
+    const callerPermissions = defaultPermissionsForRole(callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
     const result = await firestoreCall("adminAudit?pageSize=100");
     const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
@@ -1638,8 +1638,8 @@ app.post("/api/admin/users/set-role", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const callerRole = await resolveEffectiveRole(verifiedUser);
+    const callerPermissions = defaultPermissionsForRole(callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
     const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
@@ -1705,8 +1705,8 @@ app.post("/api/admin/users/:action(enable|disable)", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const callerRole = await resolveEffectiveRole(verifiedUser);
+    const callerPermissions = defaultPermissionsForRole(callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
     const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
     if (!targetUid) return res.status(400).json({ error: "uid is required" });
@@ -1748,8 +1748,8 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const callerRole = await resolveEffectiveRole(verifiedUser);
+    const callerPermissions = defaultPermissionsForRole(callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
     const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
