@@ -257,10 +257,14 @@ function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; s
   if ((user.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
     return { ok: true };
   }
+  const role = normalizeRoleFromClaims(user.claims);
+  // Owners have super privileges — bypass the internal domain/group check entirely
+  if (isOwnerRole(role)) {
+    return { ok: true };
+  }
   if (!isInternalUser(user.claims)) {
     return { ok: false, status: 403, error: "Internal domain/group authorization required" };
   }
-  const role = normalizeRoleFromClaims(user.claims);
   const permissions = sanitizePermissionSet(user.claims.permissions, role);
   if (!permissions.canManageSettings) {
     return { ok: false, status: 403, error: "Admin or owner role required" };

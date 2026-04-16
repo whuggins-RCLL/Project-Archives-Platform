@@ -172,7 +172,7 @@ export default function AdminUsersView({
                 <td className="p-3 text-xs">{user.updatedAt || '-'}</td>
                 <td className="p-3">
                   <div className="flex flex-wrap gap-2">
-                    {(['owner','admin','collaborator','viewer'] as AppRole[]).map((role) => (
+                    {(['owner','admin','collaborator','viewer'] as AppRole[]).filter((role) => role !== 'owner' || currentRole === 'owner').map((role) => (
                       <button key={role} className="px-2 py-1 border rounded text-xs" disabled={user.role === role} onClick={() => void mutateRole(user.uid, role)}>{role}</button>
                     ))}
                     {user.status === 'active'
