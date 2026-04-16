@@ -253,20 +253,17 @@ function isInternalUser(claims: Record<string, unknown>): boolean {
   );
 }
 
-function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; status: number; error: string } {
-  if ((user.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
-    return { ok: true };
-  }
-  const role = normalizeRoleFromClaims(user.claims);
-  // Owners have super privileges — bypass the internal domain/group check entirely
+async function requireInternalAdmin(user: VerifiedUser): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  // resolveEffectiveRole checks bootstrap email → Firestore mirror → token claims
+  // so it works even when token claims are stale or missing
+  const role = await resolveEffectiveRole(user);
   if (isOwnerRole(role)) {
     return { ok: true };
   }
   if (!isInternalUser(user.claims)) {
     return { ok: false, status: 403, error: "Internal domain/group authorization required" };
   }
-  const permissions = sanitizePermissionSet(user.claims.permissions, role);
-  if (!permissions.canManageSettings) {
+  if (!isAdminRole(role)) {
     return { ok: false, status: 403, error: "Admin or owner role required" };
   }
   return { ok: true };
@@ -1247,7 +1244,7 @@ app.post("/api/ai/generate", async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
 
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireInternalAdmin(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1410,7 +1407,7 @@ app.post("/api/admin/settings", async (req, res) => {
     if (!verifiedUser) {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireInternalAdmin(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1483,7 +1480,7 @@ app.post("/api/admin/operations/run", async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
 
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireInternalAdmin(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }

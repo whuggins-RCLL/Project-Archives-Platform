@@ -6,15 +6,19 @@ import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
 export default function SettingsView({
   canManageSettings,
   canViewSettings,
+  canManageRoles,
   loadingRole,
   onRoleRefreshRequested,
   onSettingsUpdated,
+  onNavigateToAccessManagement,
 }: {
   canManageSettings: boolean,
   canViewSettings: boolean,
+  canManageRoles: boolean,
   loadingRole: boolean,
   onRoleRefreshRequested?: () => Promise<void>,
   onSettingsUpdated?: (settings: Settings) => void,
+  onNavigateToAccessManagement?: () => void,
 }) {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [settings, setSettings] = useState<Settings>({
@@ -146,6 +150,21 @@ export default function SettingsView({
       {readOnly && (
         <div className="mb-6 rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-on-surface-variant">
           You have read-only settings access. Owners and admins can edit and save changes.
+        </div>
+      )}
+
+      {canManageRoles && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 flex items-center justify-between gap-4">
+          <div>
+            <p className="font-bold text-on-surface text-sm">User &amp; Role Management</p>
+            <p className="text-xs text-on-surface-variant mt-0.5">Assign owners, admins, collaborators, and viewers. Manage access permissions.</p>
+          </div>
+          <button
+            onClick={onNavigateToAccessManagement}
+            className="shrink-0 px-4 py-2 rounded-lg bg-primary text-white text-sm font-bold hover:bg-primary/90 transition-colors"
+          >
+            Manage Access
+          </button>
         </div>
       )}
 
