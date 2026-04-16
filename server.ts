@@ -88,6 +88,8 @@ type AppSettings = {
   logoDataUrl: string;
   primaryColor: string;
   brandDarkColor: string;
+  customFooter?: string;
+  helpContactEmail?: string;
 };
 
 type VerifiedUser = {
@@ -646,7 +648,9 @@ function validateSettings(input: unknown): AppSettings | null {
     typeof source.primaryColor !== "string" ||
     !source.primaryColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     typeof source.brandDarkColor !== "string" ||
-    !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/)
+    !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/) ||
+    (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
+    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254))
   ) {
     return null;
   }
@@ -664,6 +668,8 @@ function validateSettings(input: unknown): AppSettings | null {
     logoDataUrl: source.logoDataUrl,
     primaryColor: source.primaryColor,
     brandDarkColor: source.brandDarkColor,
+    customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
+    helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
   };
 }
 
@@ -681,6 +687,8 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     logoDataUrl: { stringValue: settings.logoDataUrl },
     primaryColor: { stringValue: settings.primaryColor },
     brandDarkColor: { stringValue: settings.brandDarkColor },
+    ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
+    ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
   };
 }
 
@@ -701,6 +709,8 @@ function fromFirestoreFields(
     logoDataUrl: fields.logoDataUrl?.stringValue,
     primaryColor: fields.primaryColor?.stringValue,
     brandDarkColor: fields.brandDarkColor?.stringValue,
+    customFooter: fields.customFooter?.stringValue,
+    helpContactEmail: fields.helpContactEmail?.stringValue,
   };
 }
 

@@ -66,6 +66,8 @@ export interface Settings {
   logoDataUrl?: string;
   primaryColor: string;
   brandDarkColor: string;
+  customFooter?: string;
+  helpContactEmail?: string;
 }
 
 
@@ -181,6 +183,8 @@ export const api = {
           logoDataUrl: data.logoDataUrl ?? '',
           primaryColor: data.primaryColor ?? '#002045',
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
+          customFooter: data.customFooter ?? '',
+          helpContactEmail: data.helpContactEmail ?? '',
         };
       }
       return {
@@ -196,6 +200,8 @@ export const api = {
         logoDataUrl: '',
         primaryColor: '#002045',
         brandDarkColor: '#1A365D',
+        customFooter: '',
+        helpContactEmail: '',
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');

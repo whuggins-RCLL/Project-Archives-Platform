@@ -60,7 +60,7 @@ export default function PublicView() {
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState<ProjectFilterQuery>(DEFAULT_FILTER_QUERY);
   const { views, saveView, deleteView } = useSavedViews('public');
-  const { branding } = useBranding();
+  const { branding, settings } = useBranding();
 
   useEffect(() => {
     const unsubscribe = api.subscribeToProjects(
@@ -242,8 +242,15 @@ export default function PublicView() {
             <span className="font-headline font-bold text-slate-900">{branding.portalName || APP_CONFIG.portalName}</span>
           </div>
           <p className="text-sm text-slate-500">
-            &copy; {new Date().getFullYear()} {APP_CONFIG.footerText}
+            {settings.customFooter
+              ? settings.customFooter
+              : <>&copy; {new Date().getFullYear()} {APP_CONFIG.footerText}</>}
           </p>
+          {settings.helpContactEmail && (
+            <p className="text-xs text-slate-400 mt-2">
+              Need help? Contact <a href={`mailto:${settings.helpContactEmail}`} className="underline hover:text-slate-600">{settings.helpContactEmail}</a>
+            </p>
+          )}
         </div>
       </footer>
     </div>

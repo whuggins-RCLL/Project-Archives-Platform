@@ -15,6 +15,8 @@ const DEFAULT_SETTINGS: Settings = {
   logoDataUrl: '',
   primaryColor: '#002045',
   brandDarkColor: '#1A365D',
+  customFooter: '',
+  helpContactEmail: '',
 };
 
 export function applyBrandingToDocument(settings: Pick<Settings, 'primaryColor' | 'brandDarkColor'>): void {

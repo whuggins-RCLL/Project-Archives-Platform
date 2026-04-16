@@ -295,6 +295,33 @@ export default function SettingsView({
                 </div>
               )}
             </div>
+            <div>
+              <label htmlFor="settings-custom-footer" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Custom Footer</label>
+              <input
+                id="settings-custom-footer"
+                className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                value={settings.customFooter ?? ''}
+                maxLength={500}
+                disabled={readOnly}
+                placeholder="e.g. © My Organization. All rights reserved."
+                onChange={(e) => setSettings({ ...settings, customFooter: e.target.value })}
+              />
+              <p className="text-xs text-on-surface-variant mt-1">Displayed in the public portal footer. Leave blank to use the default.</p>
+            </div>
+            <div>
+              <label htmlFor="settings-help-email" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Help Contact Email</label>
+              <input
+                id="settings-help-email"
+                type="email"
+                className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                value={settings.helpContactEmail ?? ''}
+                maxLength={254}
+                disabled={readOnly}
+                placeholder="e.g. help@myorganization.org"
+                onChange={(e) => setSettings({ ...settings, helpContactEmail: e.target.value })}
+              />
+              <p className="text-xs text-on-surface-variant mt-1">Shown to users who need support. Leave blank to hide.</p>
+            </div>
           </div>
 
           {/* AI Enable Toggle */}
