@@ -252,6 +252,9 @@ function isInternalUser(claims: Record<string, unknown>): boolean {
 }
 
 function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; status: number; error: string } {
+  if ((user.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
+    return { ok: true };
+  }
   if (!isInternalUser(user.claims)) {
     return { ok: false, status: 403, error: "Internal domain/group authorization required" };
   }
@@ -971,6 +974,9 @@ async function saveElevatedAccessConfig(config: { passwordHash: string; needsCha
 }
 
 async function resolveEffectiveRole(verifiedUser: VerifiedUser): Promise<AppRole> {
+  if ((verifiedUser.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
+    return "owner";
+  }
   const mirror = await getUserMirrorRoleAndPermissions(verifiedUser.uid);
   if (mirror.role) return mirror.role;
   return normalizeRoleFromClaims(verifiedUser.claims);

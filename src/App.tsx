@@ -94,10 +94,6 @@ function InternalApp() {
   }, [rawRole]);
 
   useEffect(() => {
-    applyBrandingToDocument(settings);
-  }, [settings.primaryColor, settings.brandDarkColor]);
-
-  useEffect(() => {
     if (!isNewProjectModalOpen) return;
 
     previousActiveElementRef.current = document.activeElement as HTMLElement | null;
