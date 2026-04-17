@@ -798,43 +798,20 @@ async function firestoreCall(path: string, options: { method?: string; body?: un
   return data as Record<string, unknown>;
 }
 
-async function fetchFirestoreSettings(idToken: string): Promise<Partial<AppSettings>> {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
-  if (!projectId) throw new Error("VITE_FIREBASE_PROJECT_ID is not configured on the server");
-
-  const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/settings/global`,
-    { headers: { Authorization: `Bearer ${idToken}` } },
-  );
-
-  if (response.status === 404) return {};
-  if (!response.ok) throw new Error("Unable to read settings document for auditing");
-
-  const documentData = (await response.json()) as {
-    fields?: Record<string, { stringValue?: string; booleanValue?: boolean }>;
-  };
-  return fromFirestoreFields(documentData.fields);
+async function fetchFirestoreSettings(): Promise<Partial<AppSettings>> {
+  try {
+    const result = await firestoreCall("settings/global");
+    return fromFirestoreFields(result.fields as Record<string, { stringValue?: string; booleanValue?: boolean }> | undefined);
+  } catch {
+    return {};
+  }
 }
 
-async function saveFirestoreSettings(idToken: string, settings: AppSettings): Promise<void> {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
-  if (!projectId) throw new Error("VITE_FIREBASE_PROJECT_ID is not configured on the server");
-
-  const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/settings/global`,
-    {
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ fields: toFirestoreFields(settings) }),
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error("Unable to write settings document");
-  }
+async function saveFirestoreSettings(settings: AppSettings): Promise<void> {
+  await firestoreCall("settings/global", {
+    method: "PATCH",
+    body: { fields: toFirestoreFields(settings) },
+  });
 }
 
 function validateRole(input: unknown): AppRole | null {
@@ -1435,12 +1412,12 @@ app.post("/api/admin/settings", async (req, res) => {
     }
 
     const previousSettings = await withTimeout(
-      fetchFirestoreSettings(token),
+      fetchFirestoreSettings(),
       ADMIN_SETTINGS_TIMEOUT_MS,
       "Settings request timed out",
     );
     await withTimeout(
-      saveFirestoreSettings(token, nextSettings),
+      saveFirestoreSettings(nextSettings),
       ADMIN_SETTINGS_TIMEOUT_MS,
       "Settings request timed out",
     );

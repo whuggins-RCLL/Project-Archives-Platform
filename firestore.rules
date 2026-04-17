@@ -188,7 +188,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc'] &&
              data.aiNextBestActionEnabled is bool &&
@@ -203,7 +203,9 @@ service cloud.firestore {
              data.primaryColor is string &&
              data.primaryColor.matches('^#[0-9A-Fa-f]{6}$') &&
              data.brandDarkColor is string &&
-             data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$');
+             data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$') &&
+             (!('customFooter' in data) || (data.customFooter is string && data.customFooter.size() <= 500)) &&
+             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254));
     }
 
     function currentPrivacyMode() {
