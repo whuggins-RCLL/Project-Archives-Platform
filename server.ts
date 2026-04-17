@@ -18,7 +18,16 @@ const app = express();
 
 let adminAuth: admin.auth.Auth | null = null;
 if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-  console.warn("FIREBASE_SERVICE_ACCOUNT_JSON not set; Firebase Admin SDK disabled.");
+  console.warn("FIREBASE_SERVICE_ACCOUNT_JSON not set; trying Application Default Credentials.");
+  try {
+    if (admin.apps.length === 0) {
+      admin.initializeApp();
+    }
+    adminAuth = admin.auth();
+    console.log("Firebase Admin SDK initialized via Application Default Credentials");
+  } catch (error) {
+    console.warn("Firebase Admin SDK: ADC initialization failed. Admin features will be unavailable.", error);
+  }
 } else {
   try {
     const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) as {
@@ -738,32 +747,50 @@ function getServiceAccount(): { clientEmail: string; privateKey: string } {
 }
 
 async function getGoogleAccessToken(scope = "https://www.googleapis.com/auth/cloud-platform"): Promise<string> {
-  const { clientEmail, privateKey } = getServiceAccount();
-  const now = Math.floor(Date.now() / 1000);
-  const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
-  const payload = Buffer.from(JSON.stringify({
-    iss: clientEmail,
-    scope,
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now,
-    exp: now + 3600,
-  })).toString("base64url");
-  const unsigned = `${header}.${payload}`;
-  const signature = createSign("RSA-SHA256").update(unsigned).sign(privateKey, "base64url");
-  const assertion = `${unsigned}.${signature}`;
+  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    const { clientEmail, privateKey } = getServiceAccount();
+    const now = Math.floor(Date.now() / 1000);
+    const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
+    const payload = Buffer.from(JSON.stringify({
+      iss: clientEmail,
+      scope,
+      aud: "https://oauth2.googleapis.com/token",
+      iat: now,
+      exp: now + 3600,
+    })).toString("base64url");
+    const unsigned = `${header}.${payload}`;
+    const signature = createSign("RSA-SHA256").update(unsigned).sign(privateKey, "base64url");
+    const assertion = `${unsigned}.${signature}`;
 
-  const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion,
-    }),
-  });
-  if (!tokenRes.ok) throw new Error("Unable to fetch Google access token");
-  const tokenData = await tokenRes.json() as { access_token?: string };
-  if (!tokenData.access_token) throw new Error("Google access token missing");
-  return tokenData.access_token;
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion,
+      }),
+    });
+    if (!tokenRes.ok) throw new Error("Unable to fetch Google access token");
+    const tokenData = await tokenRes.json() as { access_token?: string };
+    if (!tokenData.access_token) throw new Error("Google access token missing");
+    return tokenData.access_token;
+  }
+
+  // Fallback: Application Default Credentials via GCP metadata server (Cloud Run, App Engine, GCE)
+  try {
+    const metaRes = await fetch(
+      `http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token?scopes=${encodeURIComponent(scope)}`,
+      { headers: { "Metadata-Flavor": "Google" } },
+    );
+    if (metaRes.ok) {
+      const metaData = await metaRes.json() as { access_token?: string };
+      if (metaData.access_token) return metaData.access_token;
+    }
+  } catch {
+    // Not running on GCP or metadata server unreachable
+  }
+
+  throw new Error("No credentials available: set FIREBASE_SERVICE_ACCOUNT_JSON or deploy to a GCP environment with Application Default Credentials");
 }
 
 async function identityToolkitCall(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -983,30 +1010,41 @@ async function applyOwnerRoleToUid(input: { uid: string; email: string; displayN
 
   await auth.setCustomUserClaims(input.uid, nextClaims);
   await auth.revokeRefreshTokens(input.uid);
-  await firestoreCall(`users/${input.uid}`, {
-    method: "PATCH",
-    body: {
-      fields: toFirestoreUserFields({
-        email: input.email,
-        displayName: input.displayName || authUser.displayName || "",
-        role: "owner",
-        permissions: nextPermissions,
-        status: "active",
-        actorUid: input.actorUid,
-      }),
-    },
-  });
+
+  // Mirror write and audit are best-effort: a Firestore failure must not
+  // roll back the Auth claim update that already succeeded above.
+  try {
+    await firestoreCall(`users/${input.uid}`, {
+      method: "PATCH",
+      body: {
+        fields: toFirestoreUserFields({
+          email: input.email,
+          displayName: input.displayName || authUser.displayName || "",
+          role: "owner",
+          permissions: nextPermissions,
+          status: "active",
+          actorUid: input.actorUid,
+        }),
+      },
+    });
+  } catch (mirrorError) {
+    console.error(`[applyOwnerRoleToUid] Firestore mirror write failed for uid=${input.uid}:`, mirrorError);
+  }
 
   if (input.actorUid && input.actorEmail) {
-    await writeAuditLog({
-      actorUid: input.actorUid,
-      actorEmail: input.actorEmail,
-      targetUid: input.uid,
-      targetEmail: input.email,
-      action: input.action,
-      oldRole,
-      newRole: "owner",
-    });
+    try {
+      await writeAuditLog({
+        actorUid: input.actorUid,
+        actorEmail: input.actorEmail,
+        targetUid: input.uid,
+        targetEmail: input.email,
+        action: input.action,
+        oldRole,
+        newRole: "owner",
+      });
+    } catch (auditError) {
+      console.error(`[applyOwnerRoleToUid] Audit log write failed:`, auditError);
+    }
   }
 }
 
@@ -1085,6 +1123,21 @@ app.use("/api", (_req, _res, next) => {
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/api/debug/env", (req, res) => {
+  res.json({
+    adminSdkInitialized: adminAuth !== null,
+    hasServiceAccountJson: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
+    hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID),
+    hasViteFirebaseProjectId: Boolean(process.env.VITE_FIREBASE_PROJECT_ID),
+    hasGoogleCloudProject: Boolean(process.env.GOOGLE_CLOUD_PROJECT),
+    hasViteFirebaseApiKey: Boolean(process.env.VITE_FIREBASE_API_KEY),
+    hasOwnerEmails: Boolean(process.env.OWNER_EMAILS),
+    resolvedProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.VITE_FIREBASE_PROJECT_ID || null,
+    nodeEnv: process.env.NODE_ENV || null,
+    isVercel: Boolean(process.env.VERCEL),
+  });
 });
 
 app.post("/api/auth/reconcile-role", async (req, res) => {
