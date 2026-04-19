@@ -1092,6 +1092,12 @@ async function bootstrapOwnersFromEnv(): Promise<void> {
   for (const email of ownerEmails) {
     try {
       const authUser = await auth.getUserByEmail(email);
+      // Skip if claims are already set — avoids unnecessary revokeRefreshTokens on each cold start
+      const existingClaims = authUser.customClaims || {};
+      if (normalizeRoleFromClaims(existingClaims) === "owner") {
+        auditLog("owner_bootstrap_skipped", { email, uid: authUser.uid, reason: "already_owner" });
+        continue;
+      }
       await applyOwnerRoleToUid({
         uid: authUser.uid,
         email,
@@ -1137,20 +1143,16 @@ if (!hasUpstash) {
     console.warn("Upstash Redis credentials missing; using in-memory AI rate limiting for non-production only.");
   }
 }
-let bootstrapPromise: Promise<void> | null = null;
-function ensureBootstrap(): Promise<void> {
-  if (!bootstrapPromise) {
-    bootstrapPromise = bootstrapOwnersFromEnv();
-  }
-  return bootstrapPromise;
-}
+let bootstrapFired = false;
 app.use("/api", (_req, _res, next) => {
-  void ensureBootstrap()
-    .then(() => next())
-    .catch((error) => {
-      console.error("Failed to bootstrap owners from env", error);
-      next();
+  // Fire bootstrap once in background — never block the request or the cold start
+  if (!bootstrapFired) {
+    bootstrapFired = true;
+    void bootstrapOwnersFromEnv().catch((error) => {
+      console.error("Background bootstrap failed:", error);
     });
+  }
+  next();
 });
 
 app.get("/api/health", (req, res) => {
