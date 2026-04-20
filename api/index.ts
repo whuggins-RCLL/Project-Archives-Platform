@@ -1,32 +1,10 @@
-// Wrap the server import so initialization crashes produce a diagnostic JSON
-// response instead of Vercel's opaque FUNCTION_INVOCATION_FAILED page. Uses a
-// top-level-await dynamic import so errors thrown at module-init time of
-// `server.ts` surface through the try/catch.
-import express, { type Request, type Response, type NextFunction } from "express";
+// IMPORTANT: this must be a STATIC import, not `await import("../server")`.
+// Vercel's file-tracer (nft / @vercel/node) only follows static imports when
+// deciding which files to include in the Lambda artifact. A dynamic import
+// hides the dependency, so `server.ts` never lands at `/var/task/server` and
+// every request fails with ERR_MODULE_NOT_FOUND. Runtime errors inside
+// individual endpoints are caught by the per-route try/catch blocks in
+// server.ts and a global express error handler.
+import app from "../server";
 
-let handler: express.Express;
-let initError: string | null = null;
-let initErrorName: string | null = null;
-
-try {
-  const mod = await import("../server");
-  handler = (mod as { default: express.Express }).default;
-} catch (e) {
-  initErrorName = e instanceof Error ? e.name : "UnknownError";
-  initError = e instanceof Error ? `${e.name}: ${e.message}\n${e.stack ?? ""}` : String(e);
-  console.error("[api/index] Server module failed to load:", initError);
-  handler = express();
-  handler.use((_req: Request, res: Response, _next: NextFunction) => {
-    res.status(500).json({
-      error: "Server module failed to initialize",
-      errorName: initErrorName,
-      initError,
-      nodeVersion: process.version,
-      isVercel: Boolean(process.env.VERCEL),
-      hasServiceAccountJson: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
-      hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID),
-    });
-  });
-}
-
-export default handler;
+export default app;

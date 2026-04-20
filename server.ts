@@ -2088,6 +2088,26 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
   }
 });
 
+// Global error handler: any synchronous throw or unhandled rejection passed to
+// next() returns a JSON 500 with enough detail to diagnose, instead of letting
+// the Vercel Lambda surface an opaque FUNCTION_INVOCATION_FAILED.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const name = err instanceof Error ? err.name : "UnknownError";
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  console.error("[express] unhandled error", { name, message, stack });
+  if (res.headersSent) {
+    return;
+  }
+  res.status(500).json({
+    error: message,
+    errorName: name,
+    stack: process.env.NODE_ENV === "production" ? undefined : stack,
+    adminSdkInitialized: adminAuth !== null,
+    adminSdkInitError,
+  });
+});
+
 export default app;
 
 if (!isVercel) {
