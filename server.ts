@@ -17,6 +17,17 @@ const PORT = 3000;
 const app = express();
 
 let adminAuth: admin.auth.Auth | null = null;
+let adminSdkInitError: string | null = null;
+
+function sanitizeServiceAccountJson(raw: string): string {
+  let s = raw.trim();
+  // Strip surrounding single or double quotes that are sometimes added by env var tools
+  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
 if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
   console.warn("FIREBASE_SERVICE_ACCOUNT_JSON not set; trying Application Default Credentials.");
   try {
@@ -26,11 +37,14 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     adminAuth = admin.auth();
     console.log("Firebase Admin SDK initialized via Application Default Credentials");
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    adminSdkInitError = `ADC failed: ${msg}`;
     console.warn("Firebase Admin SDK: ADC initialization failed. Admin features will be unavailable.", error);
   }
 } else {
   try {
-    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON) as {
+    const raw = sanitizeServiceAccountJson(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    const sa = JSON.parse(raw) as {
       project_id?: string;
       client_email?: string;
       private_key?: string;
@@ -50,7 +64,20 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     adminAuth = admin.auth();
     console.log("Firebase Admin SDK initialized");
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    adminSdkInitError = `Service account init failed: ${msg}`;
     console.error("Failed to initialize Firebase Admin SDK:", error);
+    // Fallback: try ADC in case this is a GCP environment with ambient credentials
+    try {
+      if (admin.apps.length === 0) {
+        admin.initializeApp();
+      }
+      adminAuth = admin.auth();
+      adminSdkInitError = null;
+      console.log("Firebase Admin SDK initialized via ADC fallback");
+    } catch {
+      // ADC also unavailable; admin features will be degraded
+    }
   }
 }
 
@@ -736,7 +763,7 @@ function getFirebaseProjectId(): string {
 function getServiceAccount(): { clientEmail: string; privateKey: string } {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (!raw) throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is required for role administration");
-  const parsed = JSON.parse(raw) as { client_email?: string; private_key?: string };
+  const parsed = JSON.parse(sanitizeServiceAccountJson(raw)) as { client_email?: string; private_key?: string };
   if (!parsed.client_email || !parsed.private_key) {
     throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is missing client_email/private_key");
   }
@@ -748,6 +775,7 @@ function getServiceAccount(): { clientEmail: string; privateKey: string } {
 
 async function getGoogleAccessToken(scope = "https://www.googleapis.com/auth/cloud-platform"): Promise<string> {
   if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+    try {
     const { clientEmail, privateKey } = getServiceAccount();
     const now = Math.floor(Date.now() / 1000);
     const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString("base64url");
@@ -774,6 +802,10 @@ async function getGoogleAccessToken(scope = "https://www.googleapis.com/auth/clo
     const tokenData = await tokenRes.json() as { access_token?: string };
     if (!tokenData.access_token) throw new Error("Google access token missing");
     return tokenData.access_token;
+    } catch (saError) {
+      console.error("Service account token fetch failed, falling back to ADC:", saError);
+      // Fall through to ADC below
+    }
   }
 
   // Fallback: Application Default Credentials via GCP metadata server (Cloud Run, App Engine, GCE)
@@ -1060,6 +1092,12 @@ async function bootstrapOwnersFromEnv(): Promise<void> {
   for (const email of ownerEmails) {
     try {
       const authUser = await auth.getUserByEmail(email);
+      // Skip if claims are already set — avoids unnecessary revokeRefreshTokens on each cold start
+      const existingClaims = authUser.customClaims || {};
+      if (normalizeRoleFromClaims(existingClaims) === "owner") {
+        auditLog("owner_bootstrap_skipped", { email, uid: authUser.uid, reason: "already_owner" });
+        continue;
+      }
       await applyOwnerRoleToUid({
         uid: authUser.uid,
         email,
@@ -1105,20 +1143,16 @@ if (!hasUpstash) {
     console.warn("Upstash Redis credentials missing; using in-memory AI rate limiting for non-production only.");
   }
 }
-let bootstrapPromise: Promise<void> | null = null;
-function ensureBootstrap(): Promise<void> {
-  if (!bootstrapPromise) {
-    bootstrapPromise = bootstrapOwnersFromEnv();
-  }
-  return bootstrapPromise;
-}
+let bootstrapFired = false;
 app.use("/api", (_req, _res, next) => {
-  void ensureBootstrap()
-    .then(() => next())
-    .catch((error) => {
-      console.error("Failed to bootstrap owners from env", error);
-      next();
+  // Fire bootstrap once in background — never block the request or the cold start
+  if (!bootstrapFired) {
+    bootstrapFired = true;
+    void bootstrapOwnersFromEnv().catch((error) => {
+      console.error("Background bootstrap failed:", error);
     });
+  }
+  next();
 });
 
 app.get("/api/health", (req, res) => {
@@ -1126,9 +1160,24 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/debug/env", (req, res) => {
+  const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
+  let saJsonValid = false;
+  let saJsonError: string | null = null;
+  if (saRaw) {
+    try {
+      const parsed = JSON.parse(sanitizeServiceAccountJson(saRaw)) as Record<string, unknown>;
+      saJsonValid = Boolean(parsed.project_id && parsed.client_email && parsed.private_key);
+      if (!saJsonValid) saJsonError = "Parsed OK but missing project_id/client_email/private_key";
+    } catch (e) {
+      saJsonError = e instanceof Error ? e.message : "JSON.parse failed";
+    }
+  }
   res.json({
     adminSdkInitialized: adminAuth !== null,
-    hasServiceAccountJson: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
+    adminSdkInitError,
+    hasServiceAccountJson: Boolean(saRaw),
+    serviceAccountJsonValid: saJsonValid,
+    serviceAccountJsonError: saJsonError,
     hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID),
     hasViteFirebaseProjectId: Boolean(process.env.VITE_FIREBASE_PROJECT_ID),
     hasGoogleCloudProject: Boolean(process.env.GOOGLE_CLOUD_PROJECT),
@@ -1152,6 +1201,11 @@ app.post("/api/auth/reconcile-role", async (req, res) => {
     const mirrored = await getUserMirrorRoleAndPermissions(verifiedUser.uid);
 
     if (currentRole !== "owner" && isEmailEligibleForOwnerBootstrap(verifiedUser.email)) {
+      if (!adminAuth) {
+        console.warn(`[auth/reconcile-role] Admin SDK unavailable; cannot set claims for uid=${verifiedUser.uid}. Fix FIREBASE_SERVICE_ACCOUNT_JSON in Vercel.`);
+        await pause(120);
+        return res.json({ role: "owner", reconciled: false, warning: "Admin SDK unavailable; token claims not updated. Check FIREBASE_SERVICE_ACCOUNT_JSON in Vercel environment variables." });
+      }
       await applyOwnerRoleToUid({
         uid: verifiedUser.uid,
         email: verifiedUser.email || "",
@@ -1610,13 +1664,19 @@ app.get("/api/admin/bootstrap/status", async (req, res) => {
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
 
-    const ownerCount = await countOwnersFromUsersMirror();
+    let ownerCount = 0;
+    try {
+      ownerCount = await countOwnersFromUsersMirror();
+    } catch {
+      // Firestore unavailable; treat as zero owners so bootstrap UI still renders
+    }
     const ownerEmails = configuredOwnerEmails();
     const eligible = canClaimInitialOwnerAccess(verifiedUser, ownerCount);
     return res.json({
       ownerCount,
       configured: ownerEmails.length > 0,
       eligible,
+      adminSdkAvailable: adminAuth !== null,
     });
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to get bootstrap status" });
