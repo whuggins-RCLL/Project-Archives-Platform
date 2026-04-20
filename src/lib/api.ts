@@ -78,11 +78,6 @@ export interface AddCommentOptions {
 }
 
 export const api = {
-  getCurrentUserMirrorRole: async (): Promise<AppRole | null> => {
-    const mirror = await api.getCurrentUserMirrorSnapshot();
-    return mirror?.role ?? null;
-  },
-
   /** Single read of `users/{uid}` for role resolution and permission merge (matches Firestore rules inputs). */
   getCurrentUserMirrorSnapshot: async (): Promise<{ role: AppRole; permissions?: UserPermissionSet } | null> => {
     const currentUser = auth.currentUser;

@@ -72,8 +72,8 @@ export function isPermissionExplicitlyTrue(
 }
 
 /**
- * Mirrors Firestore rules: role bands plus optional per-user permission flags
- * on the token and/or mirror document (OR semantics).
+ * Mirrors Firestore rules for each capability:
+ * role bands for all permissions, plus token/mirror OR overrides where rules allow.
  */
 export function effectiveCapabilityFlags(
   role: AppRole,
@@ -94,10 +94,7 @@ export function effectiveCapabilityFlags(
       canManageRoles(role) ||
       isPermissionExplicitlyTrue(tokenPermissions, 'canManageRoles') ||
       (mirror != null && isPermissionExplicitlyTrue(mirror, 'canManageRoles')),
-    canViewInternalStats:
-      canViewInternalStats(role) ||
-      isPermissionExplicitlyTrue(tokenPermissions, 'canViewInternalStats') ||
-      (mirror != null && isPermissionExplicitlyTrue(mirror, 'canViewInternalStats')),
+    canViewInternalStats: canViewInternalStats(role),
   };
 }
 
