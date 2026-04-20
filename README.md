@@ -351,3 +351,127 @@ Firebase custom claims are embedded in ID tokens. After role updates, users shou
 - Owner/admin can view + save settings.
 - Collaborator/viewer can open settings in read-only mode.
 - All writes remain server-authorized by existing owner/admin checks.
+
+## Troubleshooting: "Token: viewer" / "Failed to list users" / permission denied on Vercel
+
+If a signed-in owner/admin sees **Token: viewer**, **Mirror: none**, **Failed to list users**, **Failed to list audit logs**, **CORS origin denied**, or **Missing or insufficient permissions** when subscribing to Firestore — the root cause is almost always a broken chain between the Vercel serverless function, Firebase Admin SDK, and the Firestore user mirror. Debug in this exact order; each step surfaces evidence that tells you whether to stop or continue.
+
+### 1. Confirm the serverless function is actually running
+
+Browse directly to `/api/debug/env` on your deployment:
+
+- **Vercel error page (`FUNCTION_INVOCATION_FAILED`)** or **500 with no body**: the Lambda is crashing on cold start. Check the Vercel runtime log for the function. If the log shows no useful stack, temporarily replace `api/index.ts` with a top-level `try { await import("../server.js") } catch (e) { return e.stack }` wrapper to surface the real error as JSON. Common causes:
+  - `ERR_MODULE_NOT_FOUND for '/var/task/server'` under Node 24 → the import must include the **`.js` extension**: `import app from "../server.js";`. `package.json` has `"type": "module"` and Node 24 enforces strict ESM resolution.
+  - Dynamic `await import("../server")` in `api/index.ts` works locally but hides the dependency from Vercel's file tracer, so `server.js` never ships to `/var/task/`. Keep the import **static** at the top of the file.
+- **200 JSON response**: proceed.
+
+A healthy response looks like:
+
+```json
+{
+  "adminSdkInitialized": true,
+  "adminSdkInitError": null,
+  "hasServiceAccountJson": true,
+  "serviceAccountJsonValid": true,
+  "hasFirebaseProjectId": true,
+  "hasOwnerEmails": true,
+  "configuredOwnerEmails": ["owner@example.com"],
+  "resolvedProjectId": "your-project-id",
+  "isVercel": true
+}
+```
+
+If `adminSdkInitialized: false` or `serviceAccountJsonValid: false`, fix `FIREBASE_SERVICE_ACCOUNT_JSON` in Vercel (Project → Settings → Environment Variables) before going further. Paste the raw JSON value exactly — no outer quotes, no escaping of the embedded newlines in `private_key`.
+
+### 2. Confirm CORS lets the SPA talk to the API
+
+If the elevated-access modal (or any in-app fetch) shows **"CORS origin denied"** even though the SPA and API share the same Vercel host:
+
+- The server's allowlist defaults to `CORS_ALLOWED_ORIGINS` plus **`VERCEL_URL`**, **`VERCEL_PROJECT_PRODUCTION_URL`**, **`VERCEL_BRANCH_URL`**, and any `https://*.vercel.app` origin. Those Vercel env vars are automatically injected at runtime; you don't need to add them yourself.
+- If you use a custom domain (e.g. `archive.yourorg.com`), add it to `CORS_ALLOWED_ORIGINS` in Vercel.
+- Typing a URL into the address bar works without CORS because the browser omits the `Origin` header. Same-origin `fetch()` calls **do** send `Origin`, so the allowlist must include your deployment host.
+
+Denied origins are now logged to Vercel function logs like `[cors] origin denied: <origin>. Configured allowlist: [...]` so you can see exactly what was rejected.
+
+### 3. Check the caller's view of their own identity
+
+Authenticated diagnostic endpoint: `GET /api/debug/whoami` with `Authorization: Bearer <firebase-id-token>`. Easiest way to call it while signed in:
+
+```js
+// Paste into the browser DevTools console on the SPA tab
+const r = await fetch('/api/debug/whoami', {
+  headers: { Authorization: 'Bearer ' + await firebase.auth().currentUser.getIdToken() }
+});
+console.log(await r.json());
+```
+
+Expect:
+
+```json
+{
+  "uid": "...",
+  "email": "owner@example.com",
+  "tokenRole": "viewer",
+  "mirrorRole": "owner",
+  "effectiveRole": "owner",
+  "mergedPermissions": { "canManageRoles": true, "canManageSettings": true, ... },
+  "emailIsBootstrapOwner": true,
+  "configuredOwnerEmails": ["owner@example.com"],
+  "adminSdkInitialized": true
+}
+```
+
+Common patterns:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `mirrorRole: null` and `users/{uid}` missing or has only stray fields like `{ mirror: true }` | Previous bootstrap attempt wrote a malformed doc; `firestore.rules`' `isActiveUser()` errors on missing `status` | Click **Refresh permissions** in the app. `/api/auth/reconcile-role` now rewrites `users/{uid}` to a full owner record (email, role, status: active, permissions, timestamps) for any email in `configuredOwnerEmails`, even if the Admin SDK's `setCustomUserClaims` fails. |
+| `tokenRole: "viewer"` but `mirrorRole: "admin"` or `"owner"` | ID token custom claim lag; claims only update on sign-in or forced refresh | Admin HTTP routes already merge the mirror so access works immediately. To update the UI's "Token:" label, sign out / sign back in. |
+| `emailIsBootstrapOwner: false` even though you set `OWNER_EMAILS` | `OWNER_EMAILS` missing from the Vercel environment variable list, or value has stray quotes | Set `OWNER_EMAILS=user1@example.com,user2@example.com` (comma-separated, no quotes) in Vercel Project → Settings → Environment Variables. |
+| `adminSdkInitialized: false` | `FIREBASE_SERVICE_ACCOUNT_JSON` missing or malformed | See step 1. |
+
+### 4. Check the Firestore user mirror directly
+
+Open Firebase Console → Firestore → `users/{uid}` where `{uid}` is your Firebase Auth UID. The document must have **all** of:
+
+- `role: "owner"` (string, not boolean)
+- `status: "active"`
+- `email`, `displayName`, `createdAt`, `updatedAt`, `lastRoleChangedAt`, `lastRoleChangedBy`
+- `permissions: { canManageRoles, canManageSettings, canEditContent, canViewInternalStats }` (all booleans)
+
+If the doc is malformed (only `{ mirror: true }` for example), **click "Refresh permissions"** in the app — `/api/auth/reconcile-role` heals it. `firestore.rules`' `isActiveUser()` will then evaluate cleanly and the browser's project subscription will stop failing.
+
+### 5. Verify `firestore.rules` is deployed
+
+In the Firebase Console → Firestore Database → Rules, confirm the deployed rules match `firestore.rules` in this repo. If you haven't deployed rules, Firestore defaults block reads/writes and every authenticated call fails.
+
+Deploy via Firebase CLI:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+### 6. End-to-end reproduction of the full failure chain
+
+To reproduce the full failure scenario this project hit in production (useful for testing a fresh deployment):
+
+1. Deploy a fresh copy to Vercel with `FIREBASE_SERVICE_ACCOUNT_JSON`, `OWNER_EMAILS`, and all `VITE_FIREBASE_*` env vars set.
+2. Delete the Firestore `users/{uid}` document for your account (or manually create one containing only `{ mirror: true }` to simulate the malformed state).
+3. Sign in. The UI shows **Token: viewer / Mirror: none** and Access Management shows "No users found".
+4. Open DevTools console and call `/api/debug/whoami` as shown above. `mirrorRole` will be `null`, `mergedPermissions.canManageRoles` will be `true` because `emailIsBootstrapOwner: true`.
+5. Click **Refresh permissions**. Reconcile rewrites the mirror.
+6. Reload the page. Access Management lists users.
+7. Sign out / sign in to pick up the new custom claim and update the Token label.
+
+### Summary of diagnostic endpoints and variables
+
+| Endpoint / env | What it tells you |
+|---|---|
+| `GET /api/debug/env` (no auth) | Admin SDK state, env vars set, resolved project id. 500 here = Lambda itself is broken. |
+| `GET /api/debug/whoami` (Bearer auth) | Caller's token claims, mirror doc, effective role, merged permissions, whether email is bootstrap-eligible. |
+| `POST /api/auth/reconcile-role` (Bearer auth) | Repairs `users/{uid}` for bootstrap-eligible emails and updates custom claims when Admin SDK is available. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Required for Admin SDK, for verifying ID tokens, and for Firestore admin writes from the server. |
+| `OWNER_EMAILS` | Comma-separated bootstrap allow-list. Members are treated as owner by `requireInternalAdmin`, `resolveEffectiveRole`, and the admin-route mirror merge, even if the token still says `viewer`. |
+| `CORS_ALLOWED_ORIGINS` | Additional allowed origins beyond the auto-detected Vercel hosts. Required when you add a custom domain. |
+| `VITE_FIREBASE_*` | Required on both client and server (server uses `VITE_FIREBASE_API_KEY` as a fallback for token verification when the Admin SDK path is unavailable). |
+
