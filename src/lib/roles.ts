@@ -63,6 +63,44 @@ export function defaultPermissionsForRole(role: AppRole): UserPermissionSet {
   };
 }
 
+export function isPermissionExplicitlyTrue(
+  claims: unknown,
+  key: UserPermissionKey
+): boolean {
+  if (!claims || typeof claims !== 'object') return false;
+  return (claims as Record<string, unknown>)[key] === true;
+}
+
+/**
+ * Mirrors Firestore rules: role bands plus optional per-user permission flags
+ * on the token and/or mirror document (OR semantics).
+ */
+export function effectiveCapabilityFlags(
+  role: AppRole,
+  tokenPermissions: unknown,
+  mirrorPermissions: unknown | null | undefined
+): UserPermissionSet {
+  const mirror = mirrorPermissions;
+  return {
+    canEditContent:
+      canEditContent(role) ||
+      isPermissionExplicitlyTrue(tokenPermissions, 'canEditContent') ||
+      (mirror != null && isPermissionExplicitlyTrue(mirror, 'canEditContent')),
+    canManageSettings:
+      canManageSettings(role) ||
+      isPermissionExplicitlyTrue(tokenPermissions, 'canManageSettings') ||
+      (mirror != null && isPermissionExplicitlyTrue(mirror, 'canManageSettings')),
+    canManageRoles:
+      canManageRoles(role) ||
+      isPermissionExplicitlyTrue(tokenPermissions, 'canManageRoles') ||
+      (mirror != null && isPermissionExplicitlyTrue(mirror, 'canManageRoles')),
+    canViewInternalStats:
+      canViewInternalStats(role) ||
+      isPermissionExplicitlyTrue(tokenPermissions, 'canViewInternalStats') ||
+      (mirror != null && isPermissionExplicitlyTrue(mirror, 'canViewInternalStats')),
+  };
+}
+
 export function roleLabel(role: AppRole): string {
   if (role === 'owner') return 'Owner';
   if (role === 'admin') return 'Admin';

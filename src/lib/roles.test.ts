@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canManageRoles, canManageSettings, canViewSettings, defaultPermissionsForRole, normalizeRoleFromClaims } from './roles';
+import {
+  canManageRoles,
+  canManageSettings,
+  canViewSettings,
+  defaultPermissionsForRole,
+  effectiveCapabilityFlags,
+  normalizeRoleFromClaims,
+} from './roles';
 
 test('canViewSettings includes all supported roles', () => {
   assert.equal(canViewSettings('owner'), true);
@@ -35,4 +42,23 @@ test('normalizeRoleFromClaims preserves admin fallback compatibility', () => {
   assert.equal(normalizeRoleFromClaims({ role: 'collaborator' }), 'collaborator');
   assert.equal(normalizeRoleFromClaims({ admin: true }), 'admin');
   assert.equal(normalizeRoleFromClaims({}), 'viewer');
+});
+
+test('effectiveCapabilityFlags matches role bands when no overrides', () => {
+  assert.deepEqual(
+    effectiveCapabilityFlags('viewer', null, null),
+    defaultPermissionsForRole('viewer')
+  );
+  assert.deepEqual(
+    effectiveCapabilityFlags('collaborator', null, null),
+    defaultPermissionsForRole('collaborator')
+  );
+});
+
+test('effectiveCapabilityFlags ORs explicit permission flags with role bands', () => {
+  const tokenPerms = { canEditContent: true };
+  assert.equal(effectiveCapabilityFlags('viewer', tokenPerms, null).canEditContent, true);
+  assert.equal(effectiveCapabilityFlags('viewer', tokenPerms, null).canManageSettings, false);
+  const mirrorPerms = { canManageSettings: true };
+  assert.equal(effectiveCapabilityFlags('viewer', null, mirrorPerms).canManageSettings, true);
 });
