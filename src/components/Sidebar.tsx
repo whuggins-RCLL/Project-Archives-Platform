@@ -28,7 +28,7 @@ export default function Sidebar({
   isMobileOpen: boolean,
   onMobileClose: () => void,
   branding: {
-    appName: string;
+    suiteName: string;
     portalName: string;
     logoUrl?: string;
   }
@@ -65,17 +65,30 @@ export default function Sidebar({
       >
         <X className="w-5 h-5" />
       </button>
-      <div className="mb-8 px-2 flex items-center space-x-3">
-        {branding.logoUrl ? (
-          <img src={branding.logoUrl} alt={`${branding.portalName} logo`} className="w-10 h-10 rounded-lg object-cover border border-outline-variant/40" />
-        ) : (
-          <div className="w-10 h-10 bg-primary-container rounded-lg flex items-center justify-center">
-            <FolderArchive className="text-white w-5 h-5" />
+      <div className="mb-8 px-1">
+        <div className="flex gap-3 items-start">
+          {branding.logoUrl ? (
+            <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-xl border border-outline-variant/25 bg-white shadow-sm">
+              <img
+                src={branding.logoUrl}
+                alt=""
+                className="max-h-12 max-w-12 object-contain"
+              />
+            </div>
+          ) : (
+            <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-xl bg-primary-container shadow-sm">
+              <FolderArchive className="text-white w-7 h-7" aria-hidden />
+            </div>
+          )}
+          <div className="min-w-0 pt-0.5">
+            <p className="font-headline text-[1.05rem] font-bold text-brand-dark leading-snug tracking-tight" aria-label="Organization name">
+              {branding.portalName || APP_CONFIG.portalName}
+            </p>
+            <p className="mt-1 text-xs text-on-surface-variant leading-snug line-clamp-2">
+              <span className="sr-only">Product: </span>
+              {branding.suiteName || APP_CONFIG.appName}
+            </p>
           </div>
-        )}
-        <div>
-          <p className="font-headline text-lg font-bold text-brand-dark leading-tight" aria-label="Portal name">{branding.portalName || APP_CONFIG.portalName}</p>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant opacity-60">{branding.appName || APP_CONFIG.appName}</p>
         </div>
       </div>
       <nav className="flex-1 space-y-1">

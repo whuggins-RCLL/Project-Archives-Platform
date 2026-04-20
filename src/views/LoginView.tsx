@@ -46,10 +46,12 @@ export default function LoginView() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           {branding.logoUrl ? (
-            <img src={branding.logoUrl} alt={`${branding.portalName} logo`} className="w-12 h-12 rounded-xl object-cover shadow-lg border border-outline-variant/30" />
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg">
+              <img src={branding.logoUrl} alt="" className="max-h-14 max-w-14 object-contain" />
+            </div>
           ) : (
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <FolderArchive className="text-white w-6 h-6" />
+            <div className="w-14 h-14 bg-primary rounded-2xl flex items-center justify-center shadow-lg">
+              <FolderArchive className="text-white w-7 h-7" aria-hidden />
             </div>
           )}
         </div>
@@ -57,7 +59,7 @@ export default function LoginView() {
           Team Login
         </h2>
         <p className="mt-2 text-center text-sm text-slate-600">
-          Access the {branding.appName || APP_CONFIG.appName} internal dashboard
+          Sign in to the {branding.suiteName || APP_CONFIG.appName} workspace for {branding.portalName || APP_CONFIG.portalName}
         </p>
       </div>
 

@@ -84,17 +84,19 @@ export default function PublicView() {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-3 min-w-0">
             {branding.logoUrl ? (
-              <img src={branding.logoUrl} alt={`${branding.portalName} logo`} className="w-8 h-8 rounded-lg object-cover border border-outline-variant/30" />
+              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200/80 bg-white shadow-sm">
+                <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
+              </div>
             ) : (
-              <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                <FolderArchive className="text-white w-4 h-4" />
+              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg bg-primary shadow-sm">
+                <FolderArchive className="text-white w-5 h-5" aria-hidden />
               </div>
             )}
-            <div>
-              <h1 className="font-headline text-lg font-bold text-brand-dark leading-tight">{branding.portalName || APP_CONFIG.portalName}</h1>
-              <p className="text-xs font-bold uppercase tracking-widest text-slate-500">{APP_CONFIG.subHeading}</p>
+            <div className="min-w-0">
+              <h1 className="font-headline text-lg font-bold text-brand-dark leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
+              <p className="text-xs text-slate-500 truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
             </div>
           </div>
           <Link 

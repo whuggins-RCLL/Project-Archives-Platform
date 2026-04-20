@@ -218,28 +218,35 @@ export default function SettingsView({
 
           <div className="space-y-4">
             <h3 className="font-bold text-on-surface">Branding</h3>
+            <p className="text-sm text-on-surface-variant -mt-2 mb-1">
+              Use a clear organization title as the main name. The product line appears in smaller UI labels so you are not repeating the same phrase in the sidebar and header.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="settings-suite-name" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Suite Name</label>
-                <input
-                  id="settings-suite-name"
-                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
-                  value={settings.suiteName}
-                  maxLength={80}
-                  disabled={readOnly}
-                  onChange={(e) => setSettings({ ...settings, suiteName: e.target.value })}
-                />
-              </div>
-              <div>
-                <label htmlFor="settings-portal-name" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Portal Name</label>
+                <label htmlFor="settings-portal-name" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Primary name (organization)</label>
                 <input
                   id="settings-portal-name"
                   className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
                   value={settings.portalName}
                   maxLength={80}
                   disabled={readOnly}
+                  placeholder="e.g. Library Technology and Innovation"
                   onChange={(e) => setSettings({ ...settings, portalName: e.target.value })}
                 />
+                <p className="text-xs text-on-surface-variant mt-1.5">Shown as the main title in the sidebar, top bar, and public site header.</p>
+              </div>
+              <div>
+                <label htmlFor="settings-suite-name" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Product line (short)</label>
+                <input
+                  id="settings-suite-name"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.suiteName}
+                  maxLength={80}
+                  disabled={readOnly}
+                  placeholder="e.g. Project workspace"
+                  onChange={(e) => setSettings({ ...settings, suiteName: e.target.value })}
+                />
+                <p className="text-xs text-on-surface-variant mt-1.5">A short product label under the primary name; avoid duplicating the organization title.</p>
               </div>
               <div>
                 <label htmlFor="settings-primary-color" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Primary Color</label>
@@ -284,7 +291,9 @@ export default function SettingsView({
               />
               {settings.logoDataUrl && (
                 <div className="mt-2 flex items-center gap-4">
-                  <img src={settings.logoDataUrl} alt="Brand logo preview" className="h-10 w-10 rounded object-cover border border-outline-variant/30" />
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-white">
+                    <img src={settings.logoDataUrl} alt="Brand logo preview" className="max-h-14 max-w-14 object-contain" />
+                  </div>
                   <button
                     onClick={() => setSettings((prev) => ({ ...prev, logoDataUrl: '' }))}
                     disabled={readOnly}

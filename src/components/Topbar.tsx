@@ -27,7 +27,8 @@ export default function Topbar({
   canViewSettings: boolean,
   canManageSettings: boolean,
   branding: {
-    appName: string;
+    suiteName: string;
+    portalName: string;
     logoUrl?: string;
   },
   tokenRoleSnapshot: string;
@@ -61,8 +62,18 @@ export default function Topbar({
 
   return (
     <header className="bg-white/85 backdrop-blur-xl sticky top-0 z-30 flex justify-between items-center w-full px-10 h-16 shadow-[0_8px_32px_rgba(25,28,30,0.06)]">
-      <div className="flex items-center space-x-8">
-        <span className="text-2xl font-black tracking-tighter text-brand-dark font-headline">{branding.appName || APP_CONFIG.appName}</span>
+      <div className="flex items-center space-x-8 min-w-0">
+        <div className="min-w-0 hidden sm:block max-w-[min(22rem,40vw)]">
+          <p className="font-headline text-lg sm:text-xl font-bold text-brand-dark tracking-tight truncate" title={branding.portalName || APP_CONFIG.portalName}>
+            {branding.portalName || APP_CONFIG.portalName}
+          </p>
+          <p className="text-[11px] text-on-surface-variant truncate mt-0.5" title={branding.suiteName || APP_CONFIG.appName}>
+            {branding.suiteName || APP_CONFIG.appName}
+          </p>
+        </div>
+        <p className="sm:hidden font-headline text-lg font-bold text-brand-dark truncate max-w-[42vw]" title={branding.portalName || APP_CONFIG.portalName}>
+          {branding.portalName || APP_CONFIG.portalName}
+        </p>
         <div className="relative md:hidden">
           <label htmlFor="topbar-search-mobile" className="sr-only">Search Archives</label>
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant w-4 h-4" />
@@ -156,7 +167,7 @@ export default function Topbar({
           <img
             alt="Librarian Profile"
             className="w-9 h-9 rounded-full object-cover border-2 border-primary-container/20"
-            src={auth.currentUser?.photoURL || branding.logoUrl || "https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg"}
+            src={auth.currentUser?.photoURL || "https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg"}
           />
           <button 
             onClick={handleLogout}
