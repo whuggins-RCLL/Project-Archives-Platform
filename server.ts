@@ -289,11 +289,49 @@ function isInternalUser(claims: Record<string, unknown>): boolean {
   );
 }
 
-function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; status: number; error: string } {
+const ROLE_PRIORITY: Record<AppRole, number> = {
+  owner: 4,
+  admin: 3,
+  collaborator: 2,
+  viewer: 1,
+};
+
+function hasMinimumRole(role: AppRole, minimum: AppRole): boolean {
+  return ROLE_PRIORITY[role] >= ROLE_PRIORITY[minimum];
+}
+
+/**
+ * Admin HTTP routes must not rely on JWT custom claims alone: tokens lag behind
+ * Firestore `users/{uid}` updates. Merge mirror role and permission flags with
+ * the token so list/set-role/audit match `firestore.rules` behavior.
+ */
+async function mergeFirestoreMirrorIntoClaims(verifiedUser: VerifiedUser): Promise<VerifiedUser> {
+  const mirror = await getUserMirrorRoleAndPermissions(verifiedUser.uid);
+  if (!mirror.role) return verifiedUser;
+  const tokenRole = normalizeRoleFromClaims(verifiedUser.claims);
+  const mergedClaims: Record<string, unknown> = { ...verifiedUser.claims };
+  if (hasMinimumRole(mirror.role, tokenRole)) {
+    mergedClaims.role = mirror.role;
+  }
+  const effectiveRole = normalizeRoleFromClaims(mergedClaims);
+  const tokenPerms = sanitizePermissionSet(verifiedUser.claims.permissions, tokenRole);
+  const mirrorPerms = mirror.permissions;
+  mergedClaims.permissions = {
+    canManageRoles: tokenPerms.canManageRoles || mirrorPerms.canManageRoles,
+    canManageSettings: tokenPerms.canManageSettings || mirrorPerms.canManageSettings,
+    canEditContent: tokenPerms.canEditContent || mirrorPerms.canEditContent,
+    canViewInternalStats: tokenPerms.canViewInternalStats || mirrorPerms.canViewInternalStats,
+  };
+  mergedClaims.admin = effectiveRole === "owner" || effectiveRole === "admin";
+  return { ...verifiedUser, claims: mergedClaims };
+}
+
+async function requireInternalAdmin(user: VerifiedUser): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   if ((user.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
     return { ok: true };
   }
-  const role = normalizeRoleFromClaims(user.claims);
+  const merged = await mergeFirestoreMirrorIntoClaims(user);
+  const role = normalizeRoleFromClaims(merged.claims);
   // Owners have super privileges — bypass the internal domain/group check entirely
   if (isOwnerRole(role)) {
     return { ok: true };
@@ -301,7 +339,7 @@ function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; s
   if (!isInternalUser(user.claims)) {
     return { ok: false, status: 403, error: "Internal domain/group authorization required" };
   }
-  const permissions = sanitizePermissionSet(user.claims.permissions, role);
+  const permissions = sanitizePermissionSet(merged.claims.permissions, role);
   if (!permissions.canManageSettings) {
     return { ok: false, status: 403, error: "Admin or owner role required" };
   }
@@ -1393,7 +1431,7 @@ app.post("/api/ai/generate", async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
 
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireInternalAdmin(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1556,7 +1594,7 @@ app.post("/api/admin/settings", async (req, res) => {
     if (!verifiedUser) {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireInternalAdmin(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1629,7 +1667,7 @@ app.post("/api/admin/operations/run", async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
 
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireInternalAdmin(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1691,9 +1729,10 @@ app.get("/api/admin/users/list", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const actor = await mergeFirestoreMirrorIntoClaims(verifiedUser);
 
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const callerRole = normalizeRoleFromClaims(actor.claims);
+    const callerPermissions = sanitizePermissionSet(actor.claims.permissions, callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
     const result = await firestoreCall("users?pageSize=500");
@@ -1786,8 +1825,9 @@ app.get("/api/admin/users/audit", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const actor = await mergeFirestoreMirrorIntoClaims(verifiedUser);
+    const callerRole = normalizeRoleFromClaims(actor.claims);
+    const callerPermissions = sanitizePermissionSet(actor.claims.permissions, callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
     const result = await firestoreCall("adminAudit?pageSize=100");
     const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
@@ -1804,8 +1844,9 @@ app.post("/api/admin/users/set-role", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const actor = await mergeFirestoreMirrorIntoClaims(verifiedUser);
+    const callerRole = normalizeRoleFromClaims(actor.claims);
+    const callerPermissions = sanitizePermissionSet(actor.claims.permissions, callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
     const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
@@ -1871,8 +1912,9 @@ app.post("/api/admin/users/:action(enable|disable)", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const actor = await mergeFirestoreMirrorIntoClaims(verifiedUser);
+    const callerRole = normalizeRoleFromClaims(actor.claims);
+    const callerPermissions = sanitizePermissionSet(actor.claims.permissions, callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
     const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
     if (!targetUid) return res.status(400).json({ error: "uid is required" });
@@ -1914,8 +1956,9 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
     if (!token) return res.status(401).json({ error: "Authentication required" });
     const verifiedUser = await verifyFirebaseUser(token);
     if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
-    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
-    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    const actor = await mergeFirestoreMirrorIntoClaims(verifiedUser);
+    const callerRole = normalizeRoleFromClaims(actor.claims);
+    const callerPermissions = sanitizePermissionSet(actor.claims.permissions, callerRole);
     if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
 
     const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
