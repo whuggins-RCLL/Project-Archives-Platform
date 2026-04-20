@@ -624,7 +624,57 @@ async function deliverDigest(report: OperationsDigestReport): Promise<Operations
   return delivery;
 }
 
+/**
+ * Prefer Admin SDK verification so API routes work when only FIREBASE_SERVICE_ACCOUNT_JSON is set
+ * (VITE_* keys are often omitted from server runtime on Vercel).
+ */
+function decodedIdTokenToCustomClaims(decoded: admin.auth.DecodedIdToken): Record<string, unknown> {
+  const reserved = new Set([
+    "aud",
+    "auth_time",
+    "user_id",
+    "sub",
+    "iat",
+    "exp",
+    "iss",
+    "firebase",
+    "uid",
+    "email",
+    "email_verified",
+    "name",
+    "picture",
+    "phone_number",
+    "sign_in_provider",
+    "sign_in_second_factor",
+    "second_factor_identifier",
+  ]);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(decoded)) {
+    if (!reserved.has(key)) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+async function verifyFirebaseUserWithAdmin(idToken: string): Promise<VerifiedUser | null> {
+  if (!adminAuth) return null;
+  try {
+    const decoded = await adminAuth.verifyIdToken(idToken, true);
+    return {
+      uid: decoded.uid,
+      email: decoded.email ?? null,
+      claims: decodedIdTokenToCustomClaims(decoded),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function verifyFirebaseUser(idToken: string): Promise<VerifiedUser | null> {
+  const viaAdmin = await verifyFirebaseUserWithAdmin(idToken);
+  if (viaAdmin) return viaAdmin;
+
   try {
     const apiKey = process.env.VITE_FIREBASE_API_KEY;
     if (!apiKey) return null;
@@ -1220,6 +1270,18 @@ app.post("/api/auth/reconcile-role", async (req, res) => {
     }
 
     if (mirrored.role && mirrored.role !== currentRole) {
+      if (!adminAuth) {
+        console.warn(
+          `[auth/reconcile-role] Admin SDK unavailable; cannot sync token to mirror role=${mirrored.role} uid=${verifiedUser.uid}. Set FIREBASE_SERVICE_ACCOUNT_JSON.`,
+        );
+        await pause(120);
+        return res.json({
+          role: mirrored.role,
+          reconciled: false,
+          warning:
+            "Admin SDK unavailable; token claims were not updated to match Firestore. Add FIREBASE_SERVICE_ACCOUNT_JSON to the server environment, then use Refresh permissions.",
+        });
+      }
       const auth = getAdminAuth();
       const authUser = await auth.getUser(verifiedUser.uid);
       const existingClaims = authUser.customClaims || {};
