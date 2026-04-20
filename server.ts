@@ -90,7 +90,9 @@ const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS = 15;
 const ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS = 6;
-const ADMIN_SETTINGS_MAX_BODY_BYTES = 8 * 1024;
+// Settings payloads can include a logo data URL up to ~150KB plus the other
+// fields; size cap must comfortably exceed the schema limit in validateSettings.
+const ADMIN_SETTINGS_MAX_BODY_BYTES = 256 * 1024;
 const ADMIN_OPERATIONS_MAX_BODY_BYTES = 2 * 1024;
 const ADMIN_SETTINGS_TIMEOUT_MS = 8_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
@@ -111,6 +113,27 @@ type RateLimitEntry = {
   windowStart: number;
 };
 
+type TypographyFamily =
+  | "system"
+  | "inter"
+  | "roboto"
+  | "source-sans"
+  | "merriweather"
+  | "playfair"
+  | "ibm-plex-serif"
+  | "libre-baskerville";
+
+const TYPOGRAPHY_FAMILY_VALUES: ReadonlyArray<TypographyFamily> = [
+  "system",
+  "inter",
+  "roboto",
+  "source-sans",
+  "merriweather",
+  "playfair",
+  "ibm-plex-serif",
+  "libre-baskerville",
+];
+
 type AppSettings = {
   aiEnabled: boolean;
   activeProvider: string;
@@ -126,6 +149,9 @@ type AppSettings = {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  typographyFamily: TypographyFamily;
+  showRefreshPermissions: boolean;
+  showUserPermissionDetails: boolean;
 };
 
 type VerifiedUser = {
@@ -828,7 +854,10 @@ function validateSettings(input: unknown): AppSettings | null {
     typeof source.brandDarkColor !== "string" ||
     !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
-    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254))
+    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254)) ||
+    (source.typographyFamily !== undefined && (typeof source.typographyFamily !== "string" || !TYPOGRAPHY_FAMILY_VALUES.includes(source.typographyFamily as TypographyFamily))) ||
+    (source.showRefreshPermissions !== undefined && typeof source.showRefreshPermissions !== "boolean") ||
+    (source.showUserPermissionDetails !== undefined && typeof source.showUserPermissionDetails !== "boolean")
   ) {
     return null;
   }
@@ -848,6 +877,11 @@ function validateSettings(input: unknown): AppSettings | null {
     brandDarkColor: source.brandDarkColor,
     customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
     helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
+    typographyFamily: typeof source.typographyFamily === "string" && TYPOGRAPHY_FAMILY_VALUES.includes(source.typographyFamily as TypographyFamily)
+      ? (source.typographyFamily as TypographyFamily)
+      : "system",
+    showRefreshPermissions: typeof source.showRefreshPermissions === "boolean" ? source.showRefreshPermissions : true,
+    showUserPermissionDetails: typeof source.showUserPermissionDetails === "boolean" ? source.showUserPermissionDetails : true,
   };
 }
 
@@ -867,6 +901,9 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     brandDarkColor: { stringValue: settings.brandDarkColor },
     ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
     ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
+    typographyFamily: { stringValue: settings.typographyFamily },
+    showRefreshPermissions: { booleanValue: settings.showRefreshPermissions },
+    showUserPermissionDetails: { booleanValue: settings.showUserPermissionDetails },
   };
 }
 
@@ -889,6 +926,11 @@ function fromFirestoreFields(
     brandDarkColor: fields.brandDarkColor?.stringValue,
     customFooter: fields.customFooter?.stringValue,
     helpContactEmail: fields.helpContactEmail?.stringValue,
+    typographyFamily: TYPOGRAPHY_FAMILY_VALUES.includes(fields.typographyFamily?.stringValue as TypographyFamily)
+      ? (fields.typographyFamily?.stringValue as TypographyFamily)
+      : undefined,
+    showRefreshPermissions: fields.showRefreshPermissions?.booleanValue,
+    showUserPermissionDetails: fields.showUserPermissionDetails?.booleanValue,
   };
 }
 
@@ -1299,7 +1341,9 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "16kb" }));
+// Settings payloads may include base64 logo data URLs up to ~150KB; keep room
+// for JSON overhead and other fields.
+app.use(express.json({ limit: "512kb" }));
 app.set("trust proxy", getTrustProxySetting());
 
 if (!hasUpstash) {

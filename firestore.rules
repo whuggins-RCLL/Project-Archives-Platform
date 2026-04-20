@@ -188,7 +188,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'typographyFamily', 'showRefreshPermissions', 'showUserPermissionDetails', 'elevatedPasswordHash', 'elevatedPasswordNeedsChange']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc'] &&
              data.aiNextBestActionEnabled is bool &&
@@ -205,7 +205,10 @@ service cloud.firestore {
              data.brandDarkColor is string &&
              data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$') &&
              (!('customFooter' in data) || (data.customFooter is string && data.customFooter.size() <= 500)) &&
-             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254));
+             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254)) &&
+             (!('typographyFamily' in data) || (data.typographyFamily is string && data.typographyFamily in ['system', 'inter', 'roboto', 'source-sans', 'merriweather', 'playfair', 'ibm-plex-serif', 'libre-baskerville'])) &&
+             (!('showRefreshPermissions' in data) || data.showRefreshPermissions is bool) &&
+             (!('showUserPermissionDetails' in data) || data.showUserPermissionDetails is bool);
     }
 
     function currentPrivacyMode() {

@@ -53,6 +53,27 @@ const generateUniqueProjectCode = async (): Promise<string> => {
   throw new Error('Unable to generate unique project code');
 };
 
+export type TypographyFamily =
+  | 'system'
+  | 'inter'
+  | 'roboto'
+  | 'source-sans'
+  | 'merriweather'
+  | 'playfair'
+  | 'ibm-plex-serif'
+  | 'libre-baskerville';
+
+export const TYPOGRAPHY_FAMILY_VALUES: TypographyFamily[] = [
+  'system',
+  'inter',
+  'roboto',
+  'source-sans',
+  'merriweather',
+  'playfair',
+  'ibm-plex-serif',
+  'libre-baskerville',
+];
+
 export interface Settings {
   aiEnabled: boolean;
   activeProvider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc';
@@ -68,6 +89,9 @@ export interface Settings {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  typographyFamily: TypographyFamily;
+  showRefreshPermissions: boolean;
+  showUserPermissionDetails: boolean;
 }
 
 
@@ -177,6 +201,9 @@ export const api = {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as Partial<Settings>;
+        const typography = TYPOGRAPHY_FAMILY_VALUES.includes(data.typographyFamily as TypographyFamily)
+          ? (data.typographyFamily as TypographyFamily)
+          : 'system';
         return {
           aiEnabled: data.aiEnabled ?? false,
           activeProvider: data.activeProvider ?? 'gemini',
@@ -192,6 +219,9 @@ export const api = {
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
           customFooter: data.customFooter ?? '',
           helpContactEmail: data.helpContactEmail ?? '',
+          typographyFamily: typography,
+          showRefreshPermissions: data.showRefreshPermissions ?? true,
+          showUserPermissionDetails: data.showUserPermissionDetails ?? true,
         };
       }
       return {
@@ -209,6 +239,9 @@ export const api = {
         brandDarkColor: '#1A365D',
         customFooter: '',
         helpContactEmail: '',
+        typographyFamily: 'system',
+        showRefreshPermissions: true,
+        showUserPermissionDetails: true,
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');

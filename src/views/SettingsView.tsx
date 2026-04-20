@@ -1,7 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, Bot, Key, Shield } from 'lucide-react';
-import { api, Settings } from '../lib/api';
+import { api, Settings, TypographyFamily } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
+
+const TYPOGRAPHY_OPTIONS: Array<{ id: TypographyFamily; label: string; sample: string }> = [
+  { id: 'system', label: 'System default (sans-serif)', sample: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
+  { id: 'inter', label: 'Inter', sample: "'Inter', system-ui, sans-serif" },
+  { id: 'roboto', label: 'Roboto', sample: "'Roboto', system-ui, sans-serif" },
+  { id: 'source-sans', label: 'Source Sans 3', sample: "'Source Sans 3', 'Source Sans Pro', system-ui, sans-serif" },
+  { id: 'merriweather', label: 'Merriweather (serif)', sample: "'Merriweather', Georgia, serif" },
+  { id: 'playfair', label: 'Playfair Display (serif)', sample: "'Playfair Display', Georgia, serif" },
+  { id: 'ibm-plex-serif', label: 'IBM Plex Serif', sample: "'IBM Plex Serif', Georgia, serif" },
+  { id: 'libre-baskerville', label: 'Libre Baskerville', sample: "'Libre Baskerville', Georgia, serif" },
+];
 
 export default function SettingsView({
   canManageSettings,
@@ -30,6 +41,11 @@ export default function SettingsView({
     logoDataUrl: '',
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
+    customFooter: '',
+    helpContactEmail: '',
+    typographyFamily: 'system',
+    showRefreshPermissions: true,
+    showUserPermissionDetails: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -94,7 +110,16 @@ export default function SettingsView({
 
   useEffect(() => {
     onSettingsUpdated?.(settings);
-  }, [settings.primaryColor, settings.brandDarkColor, settings.portalName, settings.suiteName, settings.logoDataUrl]);
+  }, [
+    settings.primaryColor,
+    settings.brandDarkColor,
+    settings.portalName,
+    settings.suiteName,
+    settings.logoDataUrl,
+    settings.typographyFamily,
+    settings.showRefreshPermissions,
+    settings.showUserPermissionDetails,
+  ]);
 
   if (loading || loadingRole) return <div className="p-10">Loading settings...</div>;
 
@@ -263,6 +288,31 @@ export default function SettingsView({
                   onChange={(e) => setSettings({ ...settings, brandDarkColor: e.target.value })}
                 />
               </div>
+              <div className="md:col-span-2">
+                <label htmlFor="settings-typography" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Typography</label>
+                <select
+                  id="settings-typography"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.typographyFamily}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, typographyFamily: e.target.value as TypographyFamily })}
+                >
+                  {TYPOGRAPHY_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <p
+                  className="text-sm text-on-surface mt-2"
+                  style={{ fontFamily: TYPOGRAPHY_OPTIONS.find((option) => option.id === settings.typographyFamily)?.sample }}
+                >
+                  The quick brown fox jumps over the lazy dog.
+                </p>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Applied site-wide. Web fonts load from Google Fonts on demand.
+                </p>
+              </div>
             </div>
             <div>
               <label htmlFor="settings-logo-upload" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Identity Logo (optional)</label>
@@ -399,6 +449,42 @@ export default function SettingsView({
               <strong className="text-on-surface block mb-1">API Key Configuration</strong>
               To use these providers, you must configure the corresponding API keys in the server environment variables (<code>.env</code>). Keys are securely handled server-side and never exposed to the client.
             </div>
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="font-bold text-on-surface">Interface Options</h3>
+            <p className="text-xs text-on-surface-variant">
+              Hide utilities in the top bar and admin views that are only useful while troubleshooting permissions.
+            </p>
+            {[
+              {
+                key: 'showRefreshPermissions' as const,
+                title: 'Show "Refresh permissions" button',
+                desc: 'Displays the refresh-permissions button in the top bar. Useful for admins and during role troubleshooting.',
+              },
+              {
+                key: 'showUserPermissionDetails' as const,
+                title: 'Show user permission details',
+                desc: 'Displays the Token/Mirror role source under each user and the role-mismatch banner in Access Management.',
+              },
+            ].map((option) => (
+              <div key={option.key} className="flex items-center justify-between bg-surface-container-low rounded-lg p-3">
+                <div>
+                  <div className="text-sm font-bold">{option.title}</div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">{option.desc}</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={Boolean(settings[option.key])}
+                    disabled={readOnly}
+                    onChange={(e) => setSettings({ ...settings, [option.key]: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            ))}
           </div>
         </div>
 

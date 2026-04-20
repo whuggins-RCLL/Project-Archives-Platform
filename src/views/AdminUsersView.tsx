@@ -24,10 +24,12 @@ export default function AdminUsersView({
   canManageRoles,
   onRoleRefreshRequested,
   currentRole,
+  showUserPermissionDetails = true,
 }: {
   canManageRoles: boolean;
   onRoleRefreshRequested?: () => Promise<void>;
   currentRole: AppRole;
+  showUserPermissionDetails?: boolean;
 }) {
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [audit, setAudit] = useState<AdminAuditEntry[]>([]);
@@ -143,7 +145,7 @@ export default function AdminUsersView({
           </button>
         </div>
       </div>
-      {roleMismatch && (
+      {showUserPermissionDetails && roleMismatch && (
         <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
           Your user record role is <strong>{currentUserMirrorRole}</strong>, but your active token role is <strong>{currentRole}</strong>. Refresh permissions to sync this session.
         </div>

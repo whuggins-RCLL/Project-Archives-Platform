@@ -17,6 +17,8 @@ export default function Topbar({
   branding,
   tokenRoleSnapshot,
   mirrorRoleSnapshot,
+  showRefreshPermissions = true,
+  showUserPermissionDetails = true,
 }: {
   roleLabel: string,
   rawRole: string,
@@ -32,6 +34,8 @@ export default function Topbar({
   },
   tokenRoleSnapshot: string;
   mirrorRoleSnapshot: string | null;
+  showRefreshPermissions?: boolean;
+  showUserPermissionDetails?: boolean;
 }) {
   const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -85,17 +89,19 @@ export default function Topbar({
         </div>
       </div>
       <div className="flex items-center space-x-6">
-        <div className="hidden lg:flex flex-col items-end gap-1">
-          <button
-            type="button"
-            className="text-[11px] px-2 py-1 border rounded-md hover:bg-slate-50 disabled:opacity-60"
-            onClick={() => void onRefreshPermissions()}
-            disabled={refreshingRole}
-          >
-            {refreshingRole ? 'Refreshing permissions…' : 'Refresh permissions'}
-          </button>
-          {roleError && <p className="text-[10px] text-error">{roleError}</p>}
-        </div>
+        {showRefreshPermissions && (
+          <div className="hidden lg:flex flex-col items-end gap-1">
+            <button
+              type="button"
+              className="text-[11px] px-2 py-1 border rounded-md hover:bg-slate-50 disabled:opacity-60"
+              onClick={() => void onRefreshPermissions()}
+              disabled={refreshingRole}
+            >
+              {refreshingRole ? 'Refreshing permissions…' : 'Refresh permissions'}
+            </button>
+            {roleError && <p className="text-[10px] text-error">{roleError}</p>}
+          </div>
+        )}
         <div className="flex space-x-2 relative">
           <button
             aria-label="Open notifications. You have unread notifications"
@@ -149,9 +155,11 @@ export default function Topbar({
           <div className="text-right hidden md:block">
             <p className="text-xs font-bold text-brand-dark">{auth.currentUser?.displayName || 'Librarian Alpha'}</p>
             <p className="text-[10px] text-on-surface-variant" title={`Role key: ${rawRole}`}>{roleLabel}</p>
-            <p className="text-[9px] text-on-surface-variant/80" title="Role debug source">
-              Token: {tokenRoleSnapshot} | Mirror: {mirrorRoleSnapshot ?? 'none'}
-            </p>
+            {showUserPermissionDetails && (
+              <p className="text-[9px] text-on-surface-variant/80" title="Role debug source">
+                Token: {tokenRoleSnapshot} | Mirror: {mirrorRoleSnapshot ?? 'none'}
+              </p>
+            )}
           </div>
           <img
             alt="Librarian Profile"
