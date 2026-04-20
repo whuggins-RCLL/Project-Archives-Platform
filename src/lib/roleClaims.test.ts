@@ -21,9 +21,9 @@ test('fetchRoleFromUserClaims reads role from custom claims', async () => {
 test('fetchRoleFromUserClaims forces token refresh when requested', async () => {
   let forceSeen = false;
   const user = makeUser({
-    getIdToken: async (forceRefresh) => {
+    getIdTokenResult: async (forceRefresh?: boolean) => {
       forceSeen = Boolean(forceRefresh);
-      return 'token';
+      return { claims: { role: 'viewer' } };
     },
   });
   await fetchRoleFromUserClaims(user, true);

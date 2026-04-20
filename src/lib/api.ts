@@ -79,15 +79,22 @@ export interface AddCommentOptions {
 
 export const api = {
   getCurrentUserMirrorRole: async (): Promise<AppRole | null> => {
+    const mirror = await api.getCurrentUserMirrorSnapshot();
+    return mirror?.role ?? null;
+  },
+
+  /** Single read of `users/{uid}` for role resolution and permission merge (matches Firestore rules inputs). */
+  getCurrentUserMirrorSnapshot: async (): Promise<{ role: AppRole; permissions?: UserPermissionSet } | null> => {
     const currentUser = auth.currentUser;
     if (!currentUser?.uid) return null;
     try {
       const userRef = doc(db, 'users', currentUser.uid);
       const snap = await getDoc(userRef);
       if (!snap.exists()) return null;
-      const role = snap.data()?.role;
+      const data = snap.data();
+      const role = data?.role;
       if (role === 'owner' || role === 'admin' || role === 'collaborator' || role === 'viewer') {
-        return role;
+        return { role, permissions: data?.permissions as UserPermissionSet | undefined };
       }
       return null;
     } catch {
