@@ -1,4 +1,7 @@
 export type AppRole = 'owner' | 'admin' | 'collaborator' | 'viewer';
+
+/** Owner/admin UI simulation: actual permissions, a role band, or the signed-out public page. */
+export type RolePreviewMode = 'off' | 'public' | AppRole;
 export type UserPermissionKey = 'canManageRoles' | 'canManageSettings' | 'canEditContent' | 'canViewInternalStats';
 export type UserPermissionSet = Record<UserPermissionKey, boolean>;
 

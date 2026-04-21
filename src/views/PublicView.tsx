@@ -55,7 +55,7 @@ function formatLastUpdated(project: Project): string {
   return `Last updated ${sourceDate.toLocaleDateString()}`;
 }
 
-export default function PublicView() {
+export default function PublicView({ embedded = false }: { embedded?: boolean }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState<ProjectFilterQuery>(DEFAULT_FILTER_QUERY);
@@ -81,32 +81,34 @@ export default function PublicView() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-body">
-      {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            {branding.logoUrl ? (
-              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200/80 bg-white shadow-sm">
-                <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
+      {/* Header — hidden when embedded inside the signed-in app (Topbar shows context) */}
+      {!embedded && (
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div className="flex items-center gap-3 min-w-0">
+              {branding.logoUrl ? (
+                <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200/80 bg-white shadow-sm">
+                  <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
+                </div>
+              ) : (
+                <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg bg-primary shadow-sm">
+                  <FolderArchive className="text-white w-5 h-5" aria-hidden />
+                </div>
+              )}
+              <div className="min-w-0">
+                <h1 className="font-headline text-lg font-bold text-brand-dark leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
+                <p className="text-xs text-slate-500 truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
               </div>
-            ) : (
-              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg bg-primary shadow-sm">
-                <FolderArchive className="text-white w-5 h-5" aria-hidden />
-              </div>
-            )}
-            <div className="min-w-0">
-              <h1 className="font-headline text-lg font-bold text-brand-dark leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
-              <p className="text-xs text-slate-500 truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
             </div>
+            <Link 
+              to="/login"
+              className="text-sm font-medium text-slate-600 hover:text-primary transition-colors flex items-center gap-2"
+            >
+              Team Login <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
-          <Link 
-            to="/login"
-            className="text-sm font-medium text-slate-600 hover:text-primary transition-colors flex items-center gap-2"
-          >
-            Team Login <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Hero Section */}
       <div className="bg-brand-dark text-white py-20">
