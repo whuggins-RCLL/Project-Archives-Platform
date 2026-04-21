@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Bot, Key, Shield } from 'lucide-react';
-import { api, Settings } from '../lib/api';
+import { Settings as SettingsIcon, Save, Bot, Key, Shield, Calendar, HardDrive, Link as LinkIcon, RefreshCw } from 'lucide-react';
+import { api, Settings, CalendarSyncReport } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
 
 export default function SettingsView({
@@ -32,11 +32,23 @@ export default function SettingsView({
     logoDataUrl: '',
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
+    googleCalendarEnabled: false,
+    googleCalendarId: '',
+    googleCalendarUrl: '',
+    googleCalendarTimezone: '',
+    googleDriveEnabled: false,
+    googleDriveId: '',
+    googleDriveUrl: '',
+    googleDriveFolderId: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
+  const [serviceAccountEmail, setServiceAccountEmail] = useState<string | null>(null);
+  const [testingCalendar, setTestingCalendar] = useState(false);
+  const [syncingCalendar, setSyncingCalendar] = useState(false);
+  const [calendarSyncReport, setCalendarSyncReport] = useState<CalendarSyncReport | null>(null);
 
   const readOnly = !canManageSettings;
 
@@ -68,6 +80,57 @@ export default function SettingsView({
 
     void fetchBootstrapStatus();
   }, []);
+
+  useEffect(() => {
+    const fetchIntegrationStatus = async () => {
+      try {
+        const status = await api.getIntegrationStatus();
+        setServiceAccountEmail(status.serviceAccountEmail);
+      } catch {
+        setServiceAccountEmail(null);
+      }
+    };
+
+    if (canViewSettings) void fetchIntegrationStatus();
+  }, [canViewSettings]);
+
+  const runCalendarTest = async () => {
+    setTestingCalendar(true);
+    try {
+      const result = await api.testGoogleCalendar();
+      setToast({
+        type: 'success',
+        message: `Connected to "${result.summary || result.calendarId}" (${result.timezone || 'default timezone'}).`,
+      });
+    } catch (error) {
+      setToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Unable to reach Google Calendar.',
+      });
+    } finally {
+      setTestingCalendar(false);
+    }
+  };
+
+  const runCalendarSync = async () => {
+    setSyncingCalendar(true);
+    try {
+      const report = await api.syncProjectsToCalendar();
+      setCalendarSyncReport(report);
+      const { created, updated, skipped, failed } = report.totals;
+      setToast({
+        type: failed > 0 ? 'error' : 'success',
+        message: `Calendar sync complete: ${created} created, ${updated} updated, ${skipped} skipped, ${failed} failed.`,
+      });
+    } catch (error) {
+      setToast({
+        type: 'error',
+        message: error instanceof Error ? error.message : 'Unable to sync calendar.',
+      });
+    } finally {
+      setSyncingCalendar(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -435,6 +498,261 @@ export default function SettingsView({
                 </label>
               </div>
             ))}
+          </div>
+
+          {/* Google Workspace Integrations */}
+          <div className="space-y-6 pt-2">
+            <div>
+              <h3 className="font-bold text-on-surface flex items-center gap-2">
+                <LinkIcon className="w-4 h-4 text-primary" />
+                Google Workspace integrations
+              </h3>
+              <p className="text-xs text-on-surface-variant mt-1">
+                Connect a Google Calendar for automated project dates and a Shared Google Drive for file management. These
+                integrations use the Firebase service account below, which must be added as a member of the calendar and drive.
+              </p>
+              {serviceAccountEmail ? (
+                <div className="mt-3 rounded-lg border border-outline-variant/30 bg-surface-container-low p-3 text-xs text-on-surface-variant">
+                  <div className="font-bold text-on-surface">Service account email</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <code className="break-all">{serviceAccountEmail}</code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void navigator.clipboard?.writeText(serviceAccountEmail);
+                        setToast({ type: 'success', message: 'Service account email copied.' });
+                      }}
+                      className="text-xs font-bold text-primary"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  <p className="mt-2">
+                    Share your Google Calendar with this email (Make changes to events) and add it as a Manager on the
+                    target Shared Drive or folder.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-3 rounded-lg border border-error/30 bg-error-container/20 p-3 text-xs text-error">
+                  Service account not detected. Configure <code>FIREBASE_SERVICE_ACCOUNT_JSON</code> on the server so the
+                  Calendar and Drive APIs can be called.
+                </div>
+              )}
+            </div>
+
+            {/* Calendar */}
+            <div className="rounded-lg border border-outline-variant/20 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-primary" />
+                    <span className="font-bold text-on-surface">Google Calendar</span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    When enabled, project due dates can be pushed to the configured calendar as events.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={settings.googleCalendarEnabled === true}
+                    disabled={readOnly}
+                    onChange={(e) => setSettings({ ...settings, googleCalendarEnabled: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="settings-calendar-id" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                    Calendar ID
+                  </label>
+                  <input
+                    id="settings-calendar-id"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                    value={settings.googleCalendarId ?? ''}
+                    maxLength={254}
+                    disabled={readOnly}
+                    placeholder="e.g. library-projects@group.calendar.google.com"
+                    onChange={(e) => setSettings({ ...settings, googleCalendarId: e.target.value })}
+                  />
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    Found in Calendar settings under <em>Integrate calendar → Calendar ID</em>.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="settings-calendar-url" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                    Calendar share link (optional)
+                  </label>
+                  <input
+                    id="settings-calendar-url"
+                    type="url"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                    value={settings.googleCalendarUrl ?? ''}
+                    maxLength={500}
+                    disabled={readOnly}
+                    placeholder="https://calendar.google.com/calendar/u/0/r?cid=..."
+                    onChange={(e) => setSettings({ ...settings, googleCalendarUrl: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="settings-calendar-tz" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                    Timezone (optional)
+                  </label>
+                  <input
+                    id="settings-calendar-tz"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                    value={settings.googleCalendarTimezone ?? ''}
+                    maxLength={64}
+                    disabled={readOnly}
+                    placeholder="America/Los_Angeles"
+                    onChange={(e) => setSettings({ ...settings, googleCalendarTimezone: e.target.value })}
+                  />
+                  <p className="text-xs text-on-surface-variant mt-1">IANA zone; leave blank to use the calendar default.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={runCalendarTest}
+                  disabled={testingCalendar || !settings.googleCalendarId}
+                  className="px-3 py-2 text-xs font-bold rounded-lg border border-primary text-primary disabled:opacity-50"
+                >
+                  {testingCalendar ? 'Testing...' : 'Test connection'}
+                </button>
+                <button
+                  type="button"
+                  onClick={runCalendarSync}
+                  disabled={syncingCalendar || readOnly || !settings.googleCalendarEnabled || !settings.googleCalendarId}
+                  className="px-3 py-2 text-xs font-bold rounded-lg bg-primary text-white disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  {syncingCalendar ? 'Syncing project dates...' : 'Sync project dates to calendar'}
+                </button>
+                {settings.googleCalendarUrl && (
+                  <a
+                    href={settings.googleCalendarUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-2 text-xs font-bold text-primary underline"
+                  >
+                    Open calendar
+                  </a>
+                )}
+              </div>
+
+              {calendarSyncReport && (
+                <div className="mt-3 rounded-lg border border-outline-variant/30 bg-surface-container-low p-3 text-xs text-on-surface-variant">
+                  <div className="font-bold text-on-surface">Last sync report</div>
+                  <div className="mt-1">
+                    Evaluated {calendarSyncReport.totals.evaluated} · Created {calendarSyncReport.totals.created} ·
+                    Updated {calendarSyncReport.totals.updated} · Skipped {calendarSyncReport.totals.skipped} ·
+                    Failed {calendarSyncReport.totals.failed}
+                  </div>
+                  {calendarSyncReport.totals.failed > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {calendarSyncReport.outcomes.filter((o) => o.action === 'failed').slice(0, 5).map((o) => (
+                        <li key={o.projectId} className="text-error">
+                          {o.code || o.projectId}: {o.message || 'failed'}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Drive */}
+            <div className="rounded-lg border border-outline-variant/20 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <HardDrive className="w-4 h-4 text-primary" />
+                    <span className="font-bold text-on-surface">Shared Google Drive</span>
+                  </div>
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    Connect a Shared Drive so admins can list, upload, update, and delete files from this app.
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={settings.googleDriveEnabled === true}
+                    disabled={readOnly}
+                    onChange={(e) => setSettings({ ...settings, googleDriveEnabled: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="settings-drive-id" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                    Shared Drive ID
+                  </label>
+                  <input
+                    id="settings-drive-id"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm font-mono"
+                    value={settings.googleDriveId ?? ''}
+                    maxLength={100}
+                    disabled={readOnly}
+                    placeholder="0ABCDEFgHijKlmNopQ"
+                    onChange={(e) => setSettings({ ...settings, googleDriveId: e.target.value })}
+                  />
+                  <p className="text-xs text-on-surface-variant mt-1">
+                    Open the Shared Drive in the web; the ID is the URL segment after <code>/drive/folders/</code>.
+                  </p>
+                </div>
+                <div>
+                  <label htmlFor="settings-drive-url" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                    Drive share link (optional)
+                  </label>
+                  <input
+                    id="settings-drive-url"
+                    type="url"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                    value={settings.googleDriveUrl ?? ''}
+                    maxLength={500}
+                    disabled={readOnly}
+                    placeholder="https://drive.google.com/drive/folders/..."
+                    onChange={(e) => setSettings({ ...settings, googleDriveUrl: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="settings-drive-folder" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                    Default folder ID (optional)
+                  </label>
+                  <input
+                    id="settings-drive-folder"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm font-mono"
+                    value={settings.googleDriveFolderId ?? ''}
+                    maxLength={100}
+                    disabled={readOnly}
+                    placeholder="Folder ID for uploads (defaults to drive root)"
+                    onChange={(e) => setSettings({ ...settings, googleDriveFolderId: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {settings.googleDriveUrl && (
+                <a
+                  href={settings.googleDriveUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-block px-3 py-2 text-xs font-bold text-primary underline"
+                >
+                  Open shared drive
+                </a>
+              )}
+
+              <p className="text-xs text-on-surface-variant">
+                Files can be managed programmatically via <code>GET/POST/PUT/DELETE /api/admin/drive/files</code>.
+              </p>
+            </div>
           </div>
 
                     {/* API Key Notice */}

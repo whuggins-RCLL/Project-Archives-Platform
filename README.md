@@ -281,6 +281,79 @@ Because the app now uses an Express backend to secure the API keys, you must dep
 5. Configure `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; production startup now fails if these are missing so rate limiting remains distributed across instances.
 6. The API includes request-size limits and distributed rate limiting (including `/api/admin/settings` and `/api/admin/operations/run`), plus timeout guards on admin mutation/digest endpoints; tune these values in `server.ts` as needed.
 
+## Google Workspace Integrations (Calendar + Shared Drive)
+
+Owners/admins can link a **Google Calendar** for automated project dates and a **Shared Google Drive** for file management from the same Settings page. No Apps Script is required — both integrations reuse the existing Firebase service account and speak directly to the Google APIs.
+
+### 1. One-time Google Cloud setup
+
+In the Google Cloud project that owns the Firebase service account (`FIREBASE_SERVICE_ACCOUNT_JSON`):
+
+1. Open **APIs & Services → Enabled APIs** and enable:
+   - **Google Calendar API**
+   - **Google Drive API**
+2. No additional OAuth consent screen is needed — the server uses the service account's JWT assertion flow (scopes `https://www.googleapis.com/auth/calendar` and `https://www.googleapis.com/auth/drive`).
+
+### 2. Share calendar and drive with the service account
+
+The service account has no access by default; grant it explicitly:
+
+- **Calendar**: open the target calendar → *Settings and sharing* → *Share with specific people or groups* → add the service account email and grant **Make changes to events** (or higher).
+- **Shared Drive**: open the Shared Drive → *Manage members* → add the service account email as **Manager** (Content Manager is enough for file uploads but Manager is recommended so the account can also reorganize folders). Regular "My Drive" folders are not supported — Drive integration only operates on Shared Drives.
+
+The service account email is shown in **Settings → Google Workspace integrations** once the server is configured. It ends in `...iam.gserviceaccount.com`.
+
+### 3. Configure in app Settings
+
+In the in-app Settings view (owner/admin only):
+
+- **Google Calendar**
+  - *Calendar ID*: found under *Calendar settings → Integrate calendar → Calendar ID* (e.g. `library-projects@group.calendar.google.com`).
+  - *Calendar share link* (optional): the "Public URL" or private iCal link you want admins to open from the UI.
+  - *Timezone* (optional): IANA zone such as `America/Los_Angeles`. If blank, the calendar's default is used.
+  - Toggle *Enabled* on, then press **Test connection** to confirm the service account can read the calendar, and **Sync project dates to calendar** to push events.
+- **Shared Google Drive**
+  - *Shared Drive ID*: the URL segment after `/drive/folders/` when you open the Shared Drive in a browser.
+  - *Drive share link* (optional) and *Default folder ID* (optional; uploads land there unless callers specify `parents`).
+  - Toggle *Enabled* on.
+
+### 4. Automated project-date sync
+
+Each project with a `dueDate` is synced to the configured calendar:
+
+- A calendar event is created (or updated) per project, keyed by `extendedProperties.private.projectId`.
+- All-day dates (`YYYY-MM-DD`) become all-day events; ISO date-times become 1-hour events in the configured timezone.
+- Summary: `[PROJECT-CODE] Title`; description includes the stage, owner, and project code.
+- Re-running the sync updates existing events in place (idempotent). Projects without `dueDate` are skipped.
+
+Admins can call this manually from the Settings UI, programmatically via `POST /api/admin/calendar/sync` (optional `{ "projectId": "..." }` body to sync a single project), or wire it into automation via the same endpoint.
+
+### 5. Shared Drive CRUD from this repo
+
+Admin-authenticated endpoints (`Authorization: Bearer <Firebase ID token>`) wrap Drive v3:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/admin/drive/files` | List files in the configured Shared Drive. Query params: `pageToken`, `pageSize` (≤200), `q` (Drive query), `folderId`. |
+| `GET` | `/api/admin/drive/files/:fileId` | Get file metadata. Append `?alt=media` to stream the raw bytes. |
+| `POST` | `/api/admin/drive/files` | Create a file or folder. JSON body: `{ "metadata": { name, mimeType, parents?, description? }, "contentBase64"?, "contentMimeType"? }`. Uploads use `multipart/related` under the hood. |
+| `PUT` | `/api/admin/drive/files/:fileId` | Update metadata and/or replace contents. Body: `{ "metadata"?, "addParents"?, "removeParents"?, "contentBase64"?, "contentMimeType"? }`. |
+| `DELETE` | `/api/admin/drive/files/:fileId` | Permanently delete the file. Returns 204. |
+
+All endpoints require a signed-in **owner/admin** (same gate as Settings). Uploads are capped at 25 MB to keep the Express runtime predictable; larger files should be uploaded via resumable sessions in the future.
+
+There's also `GET /api/admin/integrations/status` for the UI to surface the resolved service-account email and current toggle state.
+
+### Do I need Apps Script?
+
+**No.** Apps Script is a reasonable alternative if you only want to automate events inside a single Google account, but a service account + REST API is a better fit here because:
+
+- It is already tied to your existing Firebase identity and doesn't require per-user OAuth consent.
+- Drive/Calendar access is auditable through the service account's Workspace sharing.
+- The same code path works for scheduled jobs (e.g. weekly operations digest) without needing installable triggers.
+
+If you still want an Apps Script **in front** of the calendar (for example to let non-admin collaborators subscribe via a dedicated webhook), you can deploy a simple web app that proxies to `POST /api/admin/calendar/sync` with a shared secret — but it's optional.
+
 ## Data Visibility & Access Model
 
 - `projects` are intentionally public-read to support the stakeholder dashboard.
