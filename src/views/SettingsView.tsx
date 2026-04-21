@@ -360,24 +360,36 @@ export default function SettingsView({
             </label>
           </div>
 
-          {/* Provider Selection */}
-          <div className={`transition-opacity ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
-            <h3 className="font-bold text-on-surface mb-3">Active AI Provider</h3>
+          {/* Provider selection stays clickable even when master AI is off (only readOnly blocks clicks). */}
+          <div className={readOnly ? 'pointer-events-none opacity-75' : ''}>
+            <h3 className="font-bold text-on-surface mb-1">Active AI provider</h3>
+            <p className="text-xs text-on-surface-variant mb-3">
+              Choose which vendor receives model requests after you save. This is not a link to an external site — click a card to select, then use <strong className="text-on-surface">Save Settings</strong>.
+              {!settings.aiEnabled && (
+                <span className="block mt-1">Turn <strong className="text-on-surface">Enable AI</strong> on to actually call the API from project pages.</span>
+              )}
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {AI_PROVIDER_OPTIONS.map(provider => (
-                <div
-                  key={provider.id}
-                  onClick={() => !readOnly && setSettings({ ...settings, activeProvider: provider.id })}
-                  className={`p-4 rounded-lg border-2 transition-all ${
-                    settings.activeProvider === provider.id
-                      ? 'border-primary bg-primary/5'
-                      : 'border-outline-variant/20 hover:border-primary/30'
-                  } ${readOnly ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
-                >
-                  <div className="font-bold text-sm">{provider.name}</div>
-                  <div className="text-xs text-on-surface-variant mt-1">{provider.desc}</div>
-                </div>
-              ))}
+              {AI_PROVIDER_OPTIONS.map((provider) => {
+                const selected = settings.activeProvider === provider.id;
+                return (
+                  <button
+                    key={provider.id}
+                    type="button"
+                    disabled={readOnly}
+                    aria-pressed={selected}
+                    onClick={() => setSettings({ ...settings, activeProvider: provider.id })}
+                    className={`text-left p-4 rounded-lg border-2 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 ${
+                      selected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-outline-variant/20 hover:border-primary/30 bg-surface-container-lowest'
+                    } ${readOnly ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
+                  >
+                    <div className="font-bold text-sm text-on-surface">{provider.name}</div>
+                    <div className="text-xs text-on-surface-variant mt-1">{provider.desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
