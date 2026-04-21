@@ -92,7 +92,8 @@ const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS = 15;
 const ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS = 6;
-const ADMIN_SETTINGS_MAX_BODY_BYTES = 8 * 1024;
+/** Settings include optional large `logoDataUrl` (up to 150k chars) — keep headroom above Express JSON limit. */
+const ADMIN_SETTINGS_MAX_BODY_BYTES = 256 * 1024;
 const ADMIN_OPERATIONS_MAX_BODY_BYTES = 2 * 1024;
 const ADMIN_SETTINGS_TIMEOUT_MS = 8_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
@@ -909,10 +910,21 @@ async function identityToolkitCall(path: string, body: Record<string, unknown>):
   return data as Record<string, unknown>;
 }
 
-async function firestoreCall(path: string, options: { method?: string; body?: unknown } = {}): Promise<Record<string, unknown>> {
+async function firestoreCall(
+  path: string,
+  options: { method?: string; body?: unknown; updateMaskFieldPaths?: string[] } = {},
+): Promise<Record<string, unknown>> {
   const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
   const projectId = getFirebaseProjectId();
-  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`, {
+  let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
+  if (options.updateMaskFieldPaths && options.updateMaskFieldPaths.length > 0) {
+    const params = new URLSearchParams();
+    for (const fp of options.updateMaskFieldPaths) {
+      params.append("updateMask.fieldPaths", fp);
+    }
+    url += `?${params.toString()}`;
+  }
+  const response = await fetch(url, {
     method: options.method || "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -935,9 +947,12 @@ async function fetchFirestoreSettings(): Promise<Partial<AppSettings>> {
 }
 
 async function saveFirestoreSettings(settings: AppSettings): Promise<void> {
+  const fields = toFirestoreFields(settings);
   await firestoreCall("settings/global", {
     method: "PATCH",
-    body: { fields: toFirestoreFields(settings) },
+    body: { fields },
+    // Without updateMask, Firestore replaces the entire document and drops fields we do not send (e.g. elevated password hash).
+    updateMaskFieldPaths: Object.keys(fields),
   });
 }
 
@@ -1088,6 +1103,7 @@ async function saveElevatedAccessConfig(config: { passwordHash: string; needsCha
         elevatedPasswordNeedsChange: { booleanValue: config.needsChange },
       },
     },
+    updateMaskFieldPaths: ["elevatedPasswordHash", "elevatedPasswordNeedsChange"],
   });
 }
 
@@ -1199,7 +1215,7 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "16kb" }));
+app.use(express.json({ limit: "512kb" }));
 app.set("trust proxy", getTrustProxySetting());
 
 if (!hasUpstash) {
@@ -1675,12 +1691,19 @@ app.post("/api/admin/settings", async (req, res) => {
     if (error instanceof Error && error.message === "Settings request timed out") {
       return res.status(408).json({ error: "Settings request timed out. Please retry." });
     }
+    const detail = error instanceof Error ? error.message : "Unknown server error";
     auditLog("admin_settings_update_failed", {
       requestId,
-      message: error instanceof Error ? error.message : "Unknown server error",
+      message: detail,
       ip: clientIp,
     }, "error");
-    res.status(500).json({ error: "Unable to save settings right now. Please try again later." });
+    const clientMessage =
+      detail.includes("PERMISSION_DENIED") || detail.includes("permission")
+        ? "Firestore rejected this save (permission). Deploy updated firestore.rules if you added new settings fields."
+        : detail.includes("NOT_FOUND") || detail.includes("not found")
+          ? "Settings document missing or wrong Firebase project. Check FIREBASE_PROJECT_ID matches your Firestore database."
+          : "Unable to save settings right now. Please try again later.";
+    res.status(500).json({ error: clientMessage, detail: isProduction ? undefined : detail });
   }
 });
 
@@ -2022,6 +2045,18 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
   }
+});
+
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const asRecord = err as { type?: string; status?: number; message?: string };
+  if (asRecord?.type === "entity.too.large" || asRecord?.status === 413) {
+    res.status(413).json({
+      error: "Request body too large. If you uploaded a large logo, try a smaller image or compress it before saving.",
+    });
+    return;
+  }
+  console.error("Unhandled express error", err);
+  res.status(500).json({ error: "Unexpected server error." });
 });
 
 export default app;
