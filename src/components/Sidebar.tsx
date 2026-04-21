@@ -57,10 +57,10 @@ export default function Sidebar({
         className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200 lg:hidden ${isMobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={onMobileClose}
       />
-      <aside className={`h-screen w-64 fixed left-0 top-0 z-50 bg-slate-50 flex flex-col py-8 px-6 space-y-4 transform transition-transform duration-200 lg:z-40 lg:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`h-screen w-64 fixed left-0 top-0 z-50 bg-surface-container-low flex flex-col py-8 px-6 space-y-4 transform transition-transform duration-200 border-r border-outline-variant/20 lg:z-40 lg:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <button
         onClick={onMobileClose}
-        className="lg:hidden absolute top-4 right-4 text-slate-500 hover:text-brand-dark transition-colors"
+        className="lg:hidden absolute top-4 right-4 text-on-surface-variant hover:text-on-surface transition-colors"
         aria-label="Close sidebar"
       >
         <X className="w-5 h-5" />
@@ -101,19 +101,19 @@ export default function Sidebar({
                 setCurrentView(item.id);
                 onMobileClose();
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+              className={`w-full flex items-center space-x-3 px-4 py-2.5 rounded-lg transition-colors duration-200 ${
                 isActive
-                  ? 'bg-white text-brand-dark shadow-sm'
-                  : 'text-slate-600 hover:text-brand-dark hover:bg-slate-200/50'
+                  ? 'bg-surface-container-lowest text-on-surface shadow-sm'
+                  : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
               }`}
             >
-              <item.icon className={`w-5 h-5 ${isActive ? '' : 'group-hover:translate-x-1 transition-transform'}`} />
+              <item.icon className={`w-5 h-5 ${isActive ? 'text-primary' : ''}`} />
               <span className="font-inter text-sm font-medium tracking-wide">{item.label}</span>
             </button>
           );
         })}
       </nav>
-      <div className="pt-6 border-t border-slate-200/50 space-y-1">
+      <div className="pt-6 border-t border-outline-variant/30 space-y-1">
         {!viewerOnlyMode && (
           <Button
             onClick={() => {
@@ -132,18 +132,18 @@ export default function Sidebar({
         <div className="h-4"></div>
         <button
           onClick={handleHelpClick}
-          className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-brand-dark text-xs font-medium"
+          className="w-full flex items-center space-x-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-md text-xs font-medium transition-colors"
         >
           <HelpCircle className="w-4 h-4" />
           <span>Help</span>
         </button>
         {!viewerOnlyMode && canViewSettings && (
-          <button 
+          <button
             onClick={() => {
               setCurrentView('settings');
               onMobileClose();
             }}
-            className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-brand-dark text-xs font-medium"
+            className="w-full flex items-center space-x-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-md text-xs font-medium transition-colors"
             title={canManageSettings ? 'Manage archive settings' : 'View archive settings (read-only)'}
           >
             <Settings2 className="w-4 h-4" />
@@ -156,7 +156,7 @@ export default function Sidebar({
               setCurrentView('admin-users');
               onMobileClose();
             }}
-            className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-brand-dark text-xs font-medium"
+            className="w-full flex items-center space-x-3 px-4 py-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-md text-xs font-medium transition-colors"
           >
             <Users className="w-4 h-4" />
             <span>Access Management</span>
@@ -164,7 +164,7 @@ export default function Sidebar({
         )}
         <button
           onClick={() => void handleLogout()}
-          className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-error text-xs font-medium"
+          className="w-full flex items-center space-x-3 px-4 py-2 text-on-surface-variant hover:text-error hover:bg-error/10 rounded-md text-xs font-medium transition-colors"
         >
           <LogOut className="w-4 h-4" />
           <span>Sign out</span>

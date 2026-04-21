@@ -1,9 +1,10 @@
-import { Search, Bell, Settings, LogOut, XCircle, CheckCircle2 } from 'lucide-react';
+import { Search, Bell, Settings, LogOut, XCircle, CheckCircle2, Sun, Moon, Laptop } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
-import { APP_CONFIG } from '../config';
 import { useMemo, useState } from 'react';
+import type { ThemeMode } from '../lib/api';
+import type { ResolvedTheme } from '../hooks/useBranding';
 
 export default function Topbar({
   roleLabel,
@@ -17,6 +18,11 @@ export default function Topbar({
   branding,
   tokenRoleSnapshot,
   mirrorRoleSnapshot,
+  showRefreshPermissions,
+  showRoleDebug,
+  themeMode,
+  resolvedTheme,
+  onChangeTheme,
 }: {
   roleLabel: string,
   rawRole: string,
@@ -33,6 +39,11 @@ export default function Topbar({
   },
   tokenRoleSnapshot: string;
   mirrorRoleSnapshot: string | null;
+  showRefreshPermissions: boolean;
+  showRoleDebug: boolean;
+  themeMode: ThemeMode;
+  resolvedTheme: ResolvedTheme;
+  onChangeTheme: (next: ThemeMode) => void;
 }) {
   const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -60,123 +71,121 @@ export default function Topbar({
     }
   };
 
+  const cycleTheme = () => {
+    const next: ThemeMode = themeMode === 'light' ? 'dark' : themeMode === 'dark' ? 'system' : 'light';
+    onChangeTheme(next);
+  };
+
+  const themeLabel = themeMode === 'system'
+    ? `System (${resolvedTheme === 'dark' ? 'dark' : 'light'})`
+    : themeMode.charAt(0).toUpperCase() + themeMode.slice(1);
+  const ThemeIcon = themeMode === 'system' ? Laptop : themeMode === 'dark' ? Moon : Sun;
+
   return (
-    <header className="bg-white/85 backdrop-blur-xl sticky top-0 z-30 flex justify-between items-center w-full px-10 h-16 shadow-[0_8px_32px_rgba(25,28,30,0.06)]">
-      <div className="flex items-center space-x-8 min-w-0">
-        <div className="min-w-0 hidden sm:block max-w-[min(22rem,40vw)]">
-          <p className="font-headline text-lg sm:text-xl font-bold text-brand-dark tracking-tight truncate" title={branding.portalName || APP_CONFIG.portalName}>
-            {branding.portalName || APP_CONFIG.portalName}
-          </p>
-          <p className="text-[11px] text-on-surface-variant truncate mt-0.5" title={branding.suiteName || APP_CONFIG.appName}>
-            {branding.suiteName || APP_CONFIG.appName}
-          </p>
-        </div>
-        <p className="sm:hidden font-headline text-lg font-bold text-brand-dark truncate max-w-[42vw]" title={branding.portalName || APP_CONFIG.portalName}>
-          {branding.portalName || APP_CONFIG.portalName}
-        </p>
-        <div className="relative md:hidden">
-          <label htmlFor="topbar-search-mobile" className="sr-only">Search Archives</label>
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant w-4 h-4" />
+    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-4 border-b border-outline-variant/20 bg-surface-container-lowest/85 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
+      <div className="flex min-w-0 flex-1 items-center gap-4">
+        <div className="relative w-full max-w-md">
+          <label htmlFor="topbar-search" className="sr-only">Search archives</label>
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-on-surface-variant" />
           <input
-            id="topbar-search-mobile"
-            className="bg-surface-container-low border-none rounded-full pl-10 pr-4 py-1.5 text-sm w-40 focus:ring-2 focus:ring-primary-container transition-all outline-none"
-            placeholder="Search..."
-            type="text"
-          />
-        </div>
-        <div className="relative hidden md:block">
-          <label htmlFor="topbar-search-desktop" className="sr-only">Search Archives</label>
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant w-4 h-4" />
-          <input
-            id="topbar-search-desktop"
-            className="bg-surface-container-low border-none rounded-full pl-10 pr-4 py-1.5 text-sm w-64 focus:ring-2 focus:ring-primary-container transition-all outline-none"
-            placeholder="Search Archives..."
+            id="topbar-search"
+            className="w-full rounded-full border border-outline-variant/20 bg-surface-container-low py-1.5 pl-10 pr-4 text-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/30"
+            placeholder={`Search ${branding.suiteName || 'archives'}…`}
             type="text"
           />
         </div>
       </div>
-      <div className="flex items-center space-x-6">
-        <div className="hidden lg:flex flex-col items-end gap-1">
+
+      <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+        {showRefreshPermissions && (
           <button
             type="button"
-            className="text-[11px] px-2 py-1 border rounded-md hover:bg-slate-50 disabled:opacity-60"
+            className="hidden rounded-md border border-outline-variant/30 px-2 py-1 text-[11px] text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:opacity-60 lg:inline-flex"
             onClick={() => void onRefreshPermissions()}
             disabled={refreshingRole}
+            title="Refresh Firebase claims for this session"
           >
-            {refreshingRole ? 'Refreshing permissions…' : 'Refresh permissions'}
+            {refreshingRole ? 'Refreshing…' : 'Refresh permissions'}
           </button>
-          {roleError && <p className="text-[10px] text-error">{roleError}</p>}
-        </div>
-        <div className="flex space-x-2 relative">
+        )}
+        {showRefreshPermissions && roleError && (
+          <span className="hidden text-[10px] text-error lg:inline">{roleError}</span>
+        )}
+
+        <button
+          type="button"
+          aria-label={`Theme: ${themeLabel}. Click to change.`}
+          title={`Theme: ${themeLabel}`}
+          onClick={cycleTheme}
+          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low"
+        >
+          <ThemeIcon className="h-5 w-5" />
+        </button>
+
+        <div className="relative">
           <button
-            aria-label="Open notifications. You have unread notifications"
+            aria-label="Open notifications"
             title="Notifications"
             onClick={() => setNotificationsOpen((prev) => !prev)}
-            className="p-2 text-slate-700 hover:bg-slate-100 rounded-full transition-colors relative"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low"
           >
-            <Bell className="w-5 h-5" />
-            <span className="sr-only">Unread notifications</span>
-            <span
-              aria-hidden="true"
-              className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-white"
-            ></span>
+            <Bell className="h-5 w-5" />
+            <span aria-hidden className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-surface-container-lowest bg-error" />
           </button>
           {notificationsOpen && (
-            <div className="absolute right-20 top-14 w-80 rounded-lg border border-outline-variant/30 bg-surface-container-lowest shadow-xl p-3 z-50">
-              <div className="text-xs font-bold uppercase text-on-surface-variant mb-2">Notifications</div>
+            <div className="absolute right-0 top-12 z-50 w-80 rounded-lg border border-outline-variant/30 bg-surface-container-lowest p-3 shadow-xl">
+              <div className="mb-2 text-xs font-bold uppercase tracking-wide text-on-surface-variant">Notifications</div>
               <div className="space-y-2">
                 {notifications.map((item) => (
                   <div key={item.id} className="rounded-md bg-surface-container-low p-2">
-                    <div className="flex items-center gap-2 text-sm font-semibold">
-                      <item.icon className="w-4 h-4 text-primary" />
+                    <div className="flex items-center gap-2 text-sm font-semibold text-on-surface">
+                      <item.icon className="h-4 w-4 text-primary" />
                       {item.title}
                     </div>
-                    <p className="text-xs text-on-surface-variant mt-1">{item.detail}</p>
+                    <p className="mt-1 text-xs text-on-surface-variant">{item.detail}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          <button
-            aria-label="Open settings"
-            title={
-              canViewSettings
-                ? (canManageSettings ? 'Settings' : 'Settings (view-only access)')
-                : 'Settings unavailable'
-            }
-            onClick={onOpenSettings}
-            disabled={!canViewSettings}
-            className={`p-2 rounded-full transition-colors ${
-              canViewSettings
-                ? 'text-slate-700 hover:bg-slate-100'
-                : 'text-slate-400 hover:bg-slate-100'
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-          </button>
         </div>
-        <div className="h-8 w-[1px] bg-slate-200 hidden md:block"></div>
-        <div className="flex items-center space-x-3 pl-2">
-          <div className="text-right hidden md:block">
-            <p className="text-xs font-bold text-brand-dark">{auth.currentUser?.displayName || 'Librarian Alpha'}</p>
+
+        <button
+          aria-label="Open settings"
+          title={canViewSettings ? (canManageSettings ? 'Settings' : 'Settings (view-only access)') : 'Settings unavailable'}
+          onClick={onOpenSettings}
+          disabled={!canViewSettings}
+          className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors ${canViewSettings ? 'text-on-surface-variant hover:bg-surface-container-low' : 'text-on-surface-variant/50'}`}
+        >
+          <Settings className="h-5 w-5" />
+        </button>
+
+        <div className="mx-1 hidden h-8 w-px bg-outline-variant/30 md:block" />
+
+        <div className="flex items-center gap-3 pl-1">
+          <div className="hidden text-right md:block">
+            <p className="text-xs font-semibold text-on-surface">{auth.currentUser?.displayName || 'Librarian Alpha'}</p>
             <p className="text-[10px] text-on-surface-variant" title={`Role key: ${rawRole}`}>{roleLabel}</p>
-            <p className="text-[9px] text-on-surface-variant/80" title="Role debug source">
-              Token: {tokenRoleSnapshot} | Mirror: {mirrorRoleSnapshot ?? 'none'}
-            </p>
+            {showRoleDebug && (
+              <p className="text-[9px] text-on-surface-variant/70" title="Role debug source">
+                Token: {tokenRoleSnapshot} · Mirror: {mirrorRoleSnapshot ?? 'none'}
+              </p>
+            )}
           </div>
           <img
-            alt="Librarian Profile"
-            className="w-9 h-9 rounded-full object-cover border-2 border-primary-container/20"
-            src={auth.currentUser?.photoURL || "https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg"}
+            alt=""
+            aria-hidden
+            className="h-9 w-9 shrink-0 rounded-full border border-outline-variant/40 object-cover"
+            src={auth.currentUser?.photoURL || 'https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg'}
           />
-          <button 
+          <button
             onClick={handleLogout}
             aria-label="Log out"
-            className="p-2 text-slate-700 hover:text-error hover:bg-error/10 rounded-full transition-colors ml-2 inline-flex items-center gap-2"
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-semibold text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
             title="Log out"
           >
-            <LogOut className="w-5 h-5" />
-            <span className="hidden lg:inline text-xs font-bold">Sign out</span>
+            <LogOut className="h-4 w-4" />
+            <span className="hidden lg:inline">Sign out</span>
           </button>
         </div>
       </div>
