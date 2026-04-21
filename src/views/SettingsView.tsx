@@ -81,8 +81,13 @@ export default function SettingsView({
       onSettingsUpdated?.(settings);
       setToast({ type: 'success', message: 'Settings saved successfully.' });
     } catch (error) {
-      console.error('Failed to save settings');
-      setToast({ type: 'error', message: 'Failed to save settings. Ensure you have admin privileges.' });
+      console.error('Failed to save settings', error);
+      const raw = error instanceof Error && error.message.trim().length > 0
+        ? error.message
+        : 'Failed to save settings. Ensure you have admin privileges.';
+      // Keep the toast readable by truncating long server detail strings.
+      const message = raw.length > 220 ? `${raw.slice(0, 217)}…` : raw;
+      setToast({ type: 'error', message });
     } finally {
       setSaving(false);
     }

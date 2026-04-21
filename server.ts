@@ -92,7 +92,11 @@ const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS = 15;
 const ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS = 6;
-const ADMIN_SETTINGS_MAX_BODY_BYTES = 8 * 1024;
+/**
+ * Settings payloads include an optional `logoDataUrl` that validateSettings allows up to ~150 KB.
+ * Keep headroom above `express.json` limit so base64 logos do not trigger a 413 on save.
+ */
+const ADMIN_SETTINGS_MAX_BODY_BYTES = 256 * 1024;
 const ADMIN_OPERATIONS_MAX_BODY_BYTES = 2 * 1024;
 const ADMIN_SETTINGS_TIMEOUT_MS = 8_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
@@ -909,10 +913,21 @@ async function identityToolkitCall(path: string, body: Record<string, unknown>):
   return data as Record<string, unknown>;
 }
 
-async function firestoreCall(path: string, options: { method?: string; body?: unknown } = {}): Promise<Record<string, unknown>> {
+async function firestoreCall(
+  path: string,
+  options: { method?: string; body?: unknown; updateMaskFieldPaths?: string[] } = {},
+): Promise<Record<string, unknown>> {
   const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
   const projectId = getFirebaseProjectId();
-  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`, {
+  let url = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${path}`;
+  if (options.updateMaskFieldPaths && options.updateMaskFieldPaths.length > 0) {
+    const params = new URLSearchParams();
+    for (const fieldPath of options.updateMaskFieldPaths) {
+      params.append("updateMask.fieldPaths", fieldPath);
+    }
+    url += `?${params.toString()}`;
+  }
+  const response = await fetch(url, {
     method: options.method || "GET",
     headers: {
       Authorization: `Bearer ${token}`,
@@ -935,9 +950,13 @@ async function fetchFirestoreSettings(): Promise<Partial<AppSettings>> {
 }
 
 async function saveFirestoreSettings(settings: AppSettings): Promise<void> {
+  const fields = toFirestoreFields(settings);
   await firestoreCall("settings/global", {
     method: "PATCH",
-    body: { fields: toFirestoreFields(settings) },
+    body: { fields },
+    // Without updateMask, Firestore replaces the whole document and drops fields
+    // we do not send in this payload (e.g. elevatedPasswordHash co-located on settings/global).
+    updateMaskFieldPaths: Object.keys(fields),
   });
 }
 
@@ -1088,6 +1107,8 @@ async function saveElevatedAccessConfig(config: { passwordHash: string; needsCha
         elevatedPasswordNeedsChange: { booleanValue: config.needsChange },
       },
     },
+    // Restrict write to just these two fields so concurrent settings saves are not clobbered.
+    updateMaskFieldPaths: ["elevatedPasswordHash", "elevatedPasswordNeedsChange"],
   });
 }
 
@@ -1199,7 +1220,7 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "16kb" }));
+app.use(express.json({ limit: "512kb" }));
 app.set("trust proxy", getTrustProxySetting());
 
 if (!hasUpstash) {
@@ -1675,12 +1696,20 @@ app.post("/api/admin/settings", async (req, res) => {
     if (error instanceof Error && error.message === "Settings request timed out") {
       return res.status(408).json({ error: "Settings request timed out. Please retry." });
     }
+    const detail = error instanceof Error ? error.message : "Unknown server error";
     auditLog("admin_settings_update_failed", {
       requestId,
-      message: error instanceof Error ? error.message : "Unknown server error",
+      message: detail,
       ip: clientIp,
     }, "error");
-    res.status(500).json({ error: "Unable to save settings right now. Please try again later." });
+    // Surface actionable messages for the two failure modes admins can fix themselves.
+    const clientMessage =
+      detail.includes("PERMISSION_DENIED") || /permission/i.test(detail)
+        ? "Firestore rejected this save (permission). Redeploy firestore.rules if you added new settings fields (e.g. aiAutoTagEnabled / aiSummarizeEnabled)."
+        : detail.includes("NOT_FOUND") || /not found/i.test(detail)
+          ? "Settings document missing or wrong Firebase project. Check FIREBASE_PROJECT_ID matches your Firestore database."
+          : "Unable to save settings right now. Please try again later.";
+    res.status(500).json({ error: clientMessage, detail: isProduction ? undefined : detail });
   }
 });
 
@@ -2022,6 +2051,28 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
   }
+});
+
+// Translate body-parser failures (oversized JSON, malformed JSON) into structured 4xx responses
+// so the Settings view shows a helpful message instead of a generic 500.
+app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const asRecord = err as { type?: string; status?: number; message?: string } | null;
+  if (asRecord && (asRecord.type === "entity.too.large" || asRecord.status === 413)) {
+    res.status(413).json({
+      error: "Request body too large. If you uploaded a large logo, try a smaller image or compress it before saving.",
+    });
+    return;
+  }
+  if (asRecord && asRecord.type === "entity.parse.failed") {
+    res.status(400).json({ error: "Request body is not valid JSON." });
+    return;
+  }
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  console.error("Unhandled express error", err);
+  res.status(500).json({ error: "Unexpected server error." });
 });
 
 export default app;

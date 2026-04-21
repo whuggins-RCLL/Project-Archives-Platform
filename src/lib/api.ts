@@ -263,14 +263,15 @@ export const api = {
   },
 
   updateSettings: async (settings: Settings): Promise<void> => {
-    try {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        throw new Error('You must be logged in to update settings.');
-      }
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      throw new Error('You must be logged in to update settings.');
+    }
 
+    let response: Response;
+    try {
       const idToken = await currentUser.getIdToken();
-      const response = await fetch('/api/admin/settings', {
+      response = await fetch('/api/admin/settings', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -278,13 +279,18 @@ export const api = {
         },
         body: JSON.stringify(settings),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Settings update failed');
-      }
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/global');
+      console.error('Settings network error', error);
+      throw new Error(error instanceof Error ? error.message : 'Network error while saving settings.');
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({} as { error?: string }));
+      const message = typeof errorData?.error === 'string' && errorData.error.length > 0
+        ? errorData.error
+        : `Settings update failed (${response.status})`;
+      console.error('Settings save rejected', { status: response.status, message });
+      throw new Error(message);
     }
   },
 
