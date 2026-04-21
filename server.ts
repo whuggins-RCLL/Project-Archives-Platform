@@ -1372,6 +1372,19 @@ app.post("/api/auth/reconcile-role", async (req, res) => {
   }
 });
 
+function describeServerError(error: unknown, fallback: string): Record<string, unknown> {
+  const message = error instanceof Error ? error.message : String(error);
+  const errorName = error instanceof Error ? error.name : "Error";
+  return {
+    error: message || fallback,
+    errorName,
+    adminSdkInitialized: adminAuth !== null,
+    adminSdkInitError,
+    hasServiceAccountJson: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_JSON),
+    hasFirebaseProjectId: Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.VITE_FIREBASE_PROJECT_ID),
+  };
+}
+
 app.get("/api/auth/elevated/status", async (req, res) => {
   try {
     const token = getBearerToken(req.headers.authorization);
@@ -1385,7 +1398,8 @@ app.get("/api/auth/elevated/status", async (req, res) => {
     const config = await getElevatedAccessConfig();
     return res.json({ required: true, needsChange: config.needsChange });
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to read elevated auth status" });
+    console.error("[auth/elevated/status] failed", error);
+    return res.status(500).json(describeServerError(error, "Unable to read elevated auth status"));
   }
 });
 
@@ -1408,7 +1422,8 @@ app.post("/api/auth/elevated/login", async (req, res) => {
     }
     return res.json({ success: true, needsChange: config.needsChange });
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to authenticate elevated access" });
+    console.error("[auth/elevated/login] failed", error);
+    return res.status(500).json(describeServerError(error, "Unable to authenticate elevated access"));
   }
 });
 
@@ -1437,7 +1452,8 @@ app.post("/api/auth/elevated/change-password", async (req, res) => {
     });
     return res.json({ success: true, message: "Password updated successfully" });
   } catch (error) {
-    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to change elevated password" });
+    console.error("[auth/elevated/change-password] failed", error);
+    return res.status(500).json(describeServerError(error, "Unable to change elevated password"));
   }
 });
 
@@ -2018,19 +2034,31 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
 });
 
 // Global error handler: any uncaught error from a route handler surfaces as a
-// JSON 500 with enough detail to diagnose from the Vercel logs instead of the
-// opaque FUNCTION_INVOCATION_FAILED page.
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+// JSON 500 with enough detail to diagnose from the response body instead of
+// Vercel's opaque FUNCTION_INVOCATION_FAILED page. Messages are always
+// included (the admin endpoints are authenticated and this is the only way to
+// debug production issues from the client). The stack is production-gated.
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = err instanceof Error ? err.message : String(err);
   const errorName = err instanceof Error ? err.name : "Error";
-  console.error("[server] unhandled error", { errorName, message, stack: err instanceof Error ? err.stack : undefined });
+  console.error("[server] unhandled error", {
+    method: req.method,
+    path: req.path,
+    errorName,
+    message,
+    stack: err instanceof Error ? err.stack : undefined,
+    adminSdkInitialized: adminAuth !== null,
+    adminSdkInitError,
+  });
   if (res.headersSent) return;
   res.status(500).json({
     error: "Server error",
     errorName,
-    message: isProduction ? undefined : message,
+    message,
+    stack: isProduction ? undefined : (err instanceof Error ? err.stack : undefined),
     adminSdkInitialized: adminAuth !== null,
     adminSdkInitError,
+    nodeVersion: process.version,
   });
 });
 
