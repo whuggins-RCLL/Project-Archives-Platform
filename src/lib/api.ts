@@ -72,6 +72,77 @@ export interface Settings {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  googleCalendarEnabled?: boolean;
+  googleCalendarId?: string;
+  googleCalendarUrl?: string;
+  googleCalendarTimezone?: string;
+  googleDriveEnabled?: boolean;
+  googleDriveId?: string;
+  googleDriveUrl?: string;
+  googleDriveFolderId?: string;
+}
+
+export interface IntegrationStatus {
+  serviceAccountEmail: string | null;
+  calendar: {
+    enabled: boolean;
+    calendarId: string;
+    calendarUrl: string;
+    timezone: string;
+  };
+  drive: {
+    enabled: boolean;
+    driveId: string;
+    driveUrl: string;
+    folderId: string;
+  };
+}
+
+export interface CalendarTestResult {
+  ok: true;
+  calendarId: string;
+  summary: string | null;
+  timezone: string | null;
+  serviceAccountEmail: string | null;
+}
+
+export interface CalendarSyncOutcome {
+  projectId: string;
+  code: string;
+  title: string;
+  action: 'created' | 'updated' | 'skipped-no-date' | 'skipped-invalid-date' | 'failed';
+  eventId?: string;
+  htmlLink?: string;
+  message?: string;
+}
+
+export interface CalendarSyncReport {
+  calendarId: string;
+  totals: { evaluated: number; created: number; updated: number; skipped: number; failed: number };
+  outcomes: CalendarSyncOutcome[];
+}
+
+export interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  parents?: string[];
+  modifiedTime?: string;
+  size?: string;
+  webViewLink?: string;
+  iconLink?: string;
+  trashed?: boolean;
+  owners?: Array<{ displayName?: string; emailAddress?: string }>;
+}
+
+export interface DriveFileMetadataInput {
+  name?: string;
+  mimeType?: string;
+  description?: string;
+  parents?: string[];
+  properties?: Record<string, string>;
+  appProperties?: Record<string, string>;
+  starred?: boolean;
 }
 
 
@@ -237,6 +308,14 @@ export const api = {
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
           customFooter: data.customFooter ?? '',
           helpContactEmail: data.helpContactEmail ?? '',
+          googleCalendarEnabled: data.googleCalendarEnabled ?? false,
+          googleCalendarId: data.googleCalendarId ?? '',
+          googleCalendarUrl: data.googleCalendarUrl ?? '',
+          googleCalendarTimezone: data.googleCalendarTimezone ?? '',
+          googleDriveEnabled: data.googleDriveEnabled ?? false,
+          googleDriveId: data.googleDriveId ?? '',
+          googleDriveUrl: data.googleDriveUrl ?? '',
+          googleDriveFolderId: data.googleDriveFolderId ?? '',
         };
       }
       return {
@@ -256,6 +335,14 @@ export const api = {
         brandDarkColor: '#1A365D',
         customFooter: '',
         helpContactEmail: '',
+        googleCalendarEnabled: false,
+        googleCalendarId: '',
+        googleCalendarUrl: '',
+        googleCalendarTimezone: '',
+        googleDriveEnabled: false,
+        googleDriveId: '',
+        googleDriveUrl: '',
+        googleDriveFolderId: '',
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');
@@ -657,5 +744,160 @@ export const api = {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Failed to claim owner access');
     return { message: payload.message || 'Owner access granted.' };
-  }
+  },
+
+  getIntegrationStatus: async (): Promise<IntegrationStatus> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/integrations/status', {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Failed to read integration status');
+    return payload as IntegrationStatus;
+  },
+
+  testGoogleCalendar: async (): Promise<CalendarTestResult> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/calendar/test', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to reach the Google Calendar');
+    return payload as CalendarTestResult;
+  },
+
+  syncProjectsToCalendar: async (options: { projectId?: string } = {}): Promise<CalendarSyncReport> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/calendar/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(options),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to sync calendar');
+    return payload as CalendarSyncReport;
+  },
+
+  listDriveFiles: async (options: { pageToken?: string; pageSize?: number; q?: string; folderId?: string } = {}): Promise<{ files: DriveFile[]; nextPageToken: string | null }> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const params = new URLSearchParams();
+    if (options.pageToken) params.set('pageToken', options.pageToken);
+    if (options.pageSize) params.set('pageSize', String(options.pageSize));
+    if (options.q) params.set('q', options.q);
+    if (options.folderId) params.set('folderId', options.folderId);
+    const response = await fetch(`/api/admin/drive/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to list drive files');
+    return payload as { files: DriveFile[]; nextPageToken: string | null };
+  },
+
+  getDriveFile: async (fileId: string): Promise<DriveFile> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/admin/drive/files/${encodeURIComponent(fileId)}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to get drive file');
+    return payload as DriveFile;
+  },
+
+  downloadDriveFile: async (fileId: string): Promise<Blob> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/admin/drive/files/${encodeURIComponent(fileId)}?alt=media`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || 'Unable to download drive file');
+    }
+    return response.blob();
+  },
+
+  createDriveFile: async (
+    metadata: DriveFileMetadataInput,
+    content?: { base64: string; mimeType: string },
+  ): Promise<DriveFile> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/drive/files', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        metadata,
+        contentBase64: content?.base64,
+        contentMimeType: content?.mimeType,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to create drive file');
+    return payload as DriveFile;
+  },
+
+  updateDriveFile: async (
+    fileId: string,
+    options: {
+      metadata?: DriveFileMetadataInput;
+      addParents?: string;
+      removeParents?: string;
+      content?: { base64: string; mimeType: string };
+    },
+  ): Promise<DriveFile> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/admin/drive/files/${encodeURIComponent(fileId)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({
+        metadata: options.metadata,
+        addParents: options.addParents,
+        removeParents: options.removeParents,
+        contentBase64: options.content?.base64,
+        contentMimeType: options.content?.mimeType,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update drive file');
+    return payload as DriveFile;
+  },
+
+  deleteDriveFile: async (fileId: string): Promise<void> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/admin/drive/files/${encodeURIComponent(fileId)}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (response.status === 204) return;
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || 'Unable to delete drive file');
+    }
+  },
 };
