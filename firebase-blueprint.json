@@ -146,9 +146,19 @@
             "gemini",
             "openai",
             "anthropic",
-            "gemma"
+            "gemma",
+            "groq",
+            "groc"
           ],
           "description": "The active AI provider."
+        },
+        "aiAutoTagEnabled": {
+          "type": "boolean",
+          "description": "Allow Auto-Tag on project records when master AI is on."
+        },
+        "aiSummarizeEnabled": {
+          "type": "boolean",
+          "description": "Allow AI executive summary on project records when master AI is on."
         },
         "aiNextBestActionEnabled": {
           "type": "boolean",

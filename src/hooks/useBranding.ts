@@ -5,6 +5,8 @@ import { APP_CONFIG } from '../config';
 const DEFAULT_SETTINGS: Settings = {
   aiEnabled: false,
   activeProvider: 'gemini',
+  aiAutoTagEnabled: false,
+  aiSummarizeEnabled: false,
   aiNextBestActionEnabled: true,
   aiRiskNarrativeEnabled: true,
   aiDuplicateDetectionEnabled: true,

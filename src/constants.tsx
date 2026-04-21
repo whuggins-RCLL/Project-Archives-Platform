@@ -22,7 +22,7 @@ export const AI_MODEL_OPTIONS: AIModelOption[] = [
   {
     id: 'gemma-7b-it',
     label: 'Gemma 7B Instruct',
-    description: 'Default Gemma instruct model served via OpenAI-compatible API.',
+    description: 'OpenAI-compatible endpoint (e.g. self-hosted or third-party).',
     provider: 'gemma',
   },
   {
@@ -30,5 +30,41 @@ export const AI_MODEL_OPTIONS: AIModelOption[] = [
     label: 'Groc 2 Latest',
     description: 'Groc model via OpenAI-compatible endpoint.',
     provider: 'groc',
+  },
+  {
+    id: 'llama-3.3-70b-versatile',
+    label: 'Llama 3.3 70B Versatile',
+    description: 'Groq production — strong general reasoning (Groq docs).',
+    provider: 'groq',
+  },
+  {
+    id: 'llama-3.1-8b-instant',
+    label: 'Llama 3.1 8B Instant',
+    description: 'Groq production — fast and inexpensive for lighter tasks.',
+    provider: 'groq',
+  },
+  {
+    id: 'openai/gpt-oss-120b',
+    label: 'GPT OSS 120B',
+    description: 'Groq production — open-weight flagship on GroqCloud.',
+    provider: 'groq',
+  },
+  {
+    id: 'openai/gpt-oss-20b',
+    label: 'GPT OSS 20B',
+    description: 'Groq production — smaller open-weight model, very high throughput.',
+    provider: 'groq',
+  },
+  {
+    id: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    label: 'Llama 4 Scout 17B 16E',
+    description: 'Groq preview — MoE; check Groq deprecations before production use.',
+    provider: 'groq',
+  },
+  {
+    id: 'qwen/qwen3-32b',
+    label: 'Qwen3 32B',
+    description: 'Groq preview — broad capability; verify availability in your Groq project.',
+    provider: 'groq',
   },
 ];

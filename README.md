@@ -194,20 +194,22 @@ Because this project includes an Express server (`server.ts`) for secure AI/prov
    - `VITE_FIREBASE_STORAGE_BUCKET`
    - `VITE_FIREBASE_MESSAGING_SENDER_ID`
    - `VITE_ALLOWED_DOMAIN` (optional)
-   - Server-side AI/provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`, etc.) if AI features are enabled
+   - Server-side AI/provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, `GEMMA_API_KEY` / `GEMMA_BASE_URL`, etc.) if AI features are enabled
 6. Click **Deploy**.
 
 **Important Post-Deployment Step:** Once Vercel provides your live production URL (for example `https://your-app.vercel.app`), add this domain to Firebase Authentication **Authorized domains** (Authentication → Settings → Authorized domains) so Google Sign-In works correctly.
 
 ## AI Features & Secure API Key Handling
 
-The Digital Archivist includes optional AI features (Auto-Tagging, Summarization, Next-best Actions, Risk Narrative Drafting, and Duplicate Detection) that can be powered by Google Gemini, OpenAI, Anthropic Claude, or Gemma 4. 
+The Digital Archivist includes optional AI features (Auto-Tagging, Summarization, Next-best Actions, Risk Narrative Drafting, and Duplicate Detection) that can be powered by Google Gemini, OpenAI, Anthropic Claude, Groq, or any OpenAI-compatible endpoint (Gemma slot, Groc slot).
 
 ### Enabling AI Features
 1. Log in as an Admin.
 2. Navigate to the **Settings** tab in the sidebar.
-3. Toggle "Enable AI Features" and select your preferred AI Provider.
-4. Optionally control AI workflow capabilities (next-best action, risk narrative, duplicate detection) and require human approval before AI outputs are treated as approved.
+3. Toggle **Enable AI** (master switch), choose **Active AI provider**, then enable each **product** (Auto-tag, AI summarize, next-best actions, risk narrative, duplicate detection) independently.
+4. Optionally require human approval before AI drafts are treated as approved.
+
+After upgrading, **save settings once** so Firestore includes the new fields (`aiAutoTagEnabled`, `aiSummarizeEnabled`). Deploy updated **`firestore.rules`** if clients write `settings/global` directly.
 
 ### Multi-Model Chat Setup (for future clones)
 Use this checklist if you are re-implementing model selection in a fresh clone:
@@ -216,7 +218,7 @@ Use this checklist if you are re-implementing model selection in a fresh clone:
 2. Add a shared `AI_MODEL_OPTIONS` list in `src/constants.tsx` (model ID + human label + short description).
 3. In the AI interaction UI (record/chat workflows), add `selectedModel` state and a `<select>` bound to the options for the active provider.
 4. Pass `selectedModel` into every AI send/generate call on the client.
-5. Update `api.generateAI(...)` (or equivalent client API helper) to accept `model: string` and include it in the `/api/ai/generate` POST body.
+5. Update `api.generateAI(...)` (or equivalent client API helper) to accept `model: string` and include it in the `/api/ai/generate` POST body (plus a `feature` key: `autoTag`, `summarize`, `nextBestAction`, or `riskNarrative` for server-side capability checks).
 6. Update the server route (`/api/ai/generate`) to require `model` and forward it into the provider SDK request body (`model` field) so the chosen model is actually used.
 
 ### Secure API Key Configuration
@@ -236,10 +238,17 @@ OPENAI_API_KEY=your_openai_api_key
 # Anthropic (Claude 3.7 Sonnet)
 ANTHROPIC_API_KEY=your_anthropic_api_key
 
-# Gemma 4 (via OpenAI-compatible endpoint like Groq or Together AI)
+# Gemma (any OpenAI-compatible chat endpoint — self-hosted, Together, etc.)
 GEMMA_API_KEY=your_gemma_api_key
-GEMMA_BASE_URL=https://api.groq.com/openai/v1 # Example using Groq
-GEMMA_MODEL_NAME=gemma2-9b-it # Example model name
+GEMMA_BASE_URL=https://example.com/v1
+
+# Groq (first-class provider in app settings — use model IDs from https://console.groq.com/docs/models)
+GROQ_API_KEY=your_groq_api_key
+# GROQ_BASE_URL=https://api.groq.com/openai/v1  # optional; this is the default
+
+# Groc (separate OpenAI-compatible slot)
+GROC_API_KEY=
+GROC_BASE_URL=
 
 # Optional server-only alias for the Firebase Web API key used to verify ID tokens
 # (if omitted, server falls back to VITE_FIREBASE_API_KEY at runtime)

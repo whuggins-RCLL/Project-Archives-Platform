@@ -20,6 +20,8 @@ export default function SettingsView({
   const [settings, setSettings] = useState<Settings>({
     aiEnabled: false,
     activeProvider: 'gemini',
+    aiAutoTagEnabled: true,
+    aiSummarizeEnabled: true,
     aiNextBestActionEnabled: true,
     aiRiskNarrativeEnabled: true,
     aiDuplicateDetectionEnabled: true,
@@ -333,11 +335,11 @@ export default function SettingsView({
             </div>
           </div>
 
-          {/* AI Enable Toggle */}
+          {/* AI master toggle */}
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-bold text-on-surface">Enable AI Features</h3>
-              <p className="text-sm text-on-surface-variant">Turn on AI summaries, next-best actions, risk drafts, and duplicate detection.</p>
+              <h3 className="font-bold text-on-surface">Enable AI</h3>
+              <p className="text-sm text-on-surface-variant">Master switch for server-side AI. Turn on individual products below.</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
@@ -345,7 +347,14 @@ export default function SettingsView({
                 className="sr-only peer"
                 checked={settings.aiEnabled}
                 disabled={readOnly}
-                onChange={(e) => setSettings({ ...settings, aiEnabled: e.target.checked })}
+                onChange={(e) => {
+                  const on = e.target.checked;
+                  setSettings((prev) => ({
+                    ...prev,
+                    aiEnabled: on,
+                    ...(on ? { aiAutoTagEnabled: true, aiSummarizeEnabled: true } : {}),
+                  }));
+                }}
               />
               <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
             </label>
@@ -375,7 +384,34 @@ export default function SettingsView({
 
 
           <div className={`transition-opacity space-y-4 ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
-            <h3 className="font-bold text-on-surface">Workflow Capabilities</h3>
+            <h3 className="font-bold text-on-surface">Project record</h3>
+            <p className="text-xs text-on-surface-variant -mt-2 mb-1">Inline tools on the project detail view.</p>
+            {[
+              { key: 'aiAutoTagEnabled', title: 'Auto-tag from project context', desc: 'Show the Auto-Tag control next to tags when you have edit access.' },
+              { key: 'aiSummarizeEnabled', title: 'AI executive summary', desc: 'Show AI Summarize next to the executive summary field.' },
+            ].map((feature) => (
+              <div key={feature.key} className="flex items-center justify-between bg-surface-container-low rounded-lg p-3">
+                <div>
+                  <div className="text-sm font-bold">{feature.title}</div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">{feature.desc}</div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={settings[feature.key as keyof Settings] as boolean}
+                    disabled={readOnly}
+                    onChange={(e) => setSettings({ ...settings, [feature.key]: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            ))}
+          </div>
+
+          <div className={`transition-opacity space-y-4 ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
+            <h3 className="font-bold text-on-surface">Decision support drafts</h3>
+            <p className="text-xs text-on-surface-variant -mt-2 mb-1">Buttons under AI Decision Support Workflow on the project record.</p>
             {[
               { key: 'aiNextBestActionEnabled', title: 'Next-best action suggestions', desc: 'Generate prioritized recommendations for project owners.' },
               { key: 'aiRiskNarrativeEnabled', title: 'Risk narrative drafts', desc: 'Draft board-ready risk narratives with mitigations.' },

@@ -55,7 +55,11 @@ const generateUniqueProjectCode = async (): Promise<string> => {
 
 export interface Settings {
   aiEnabled: boolean;
-  activeProvider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc';
+  activeProvider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc' | 'groq';
+  /** When master AI is on, controls Auto-Tag on project records. */
+  aiAutoTagEnabled: boolean;
+  /** When master AI is on, controls AI Summarize on project records. */
+  aiSummarizeEnabled: boolean;
   aiNextBestActionEnabled: boolean;
   aiRiskNarrativeEnabled: boolean;
   aiDuplicateDetectionEnabled: boolean;
@@ -177,9 +181,12 @@ export const api = {
       const docSnap = await getDoc(docRef);
       if (docSnap.exists()) {
         const data = docSnap.data() as Partial<Settings>;
+        const aiEnabled = data.aiEnabled ?? false;
         return {
-          aiEnabled: data.aiEnabled ?? false,
+          aiEnabled,
           activeProvider: data.activeProvider ?? 'gemini',
+          aiAutoTagEnabled: data.aiAutoTagEnabled ?? aiEnabled,
+          aiSummarizeEnabled: data.aiSummarizeEnabled ?? aiEnabled,
           aiNextBestActionEnabled: data.aiNextBestActionEnabled ?? true,
           aiRiskNarrativeEnabled: data.aiRiskNarrativeEnabled ?? true,
           aiDuplicateDetectionEnabled: data.aiDuplicateDetectionEnabled ?? true,
@@ -197,6 +204,8 @@ export const api = {
       return {
         aiEnabled: false,
         activeProvider: 'gemini',
+        aiAutoTagEnabled: false,
+        aiSummarizeEnabled: false,
         aiNextBestActionEnabled: true,
         aiRiskNarrativeEnabled: true,
         aiDuplicateDetectionEnabled: true,
@@ -241,7 +250,13 @@ export const api = {
     }
   },
 
-  generateAI: async (prompt: string, provider: string, model: string, systemInstruction?: string): Promise<string> => {
+  generateAI: async (
+    prompt: string,
+    provider: string,
+    model: string,
+    systemInstruction?: string,
+    feature?: 'autoTag' | 'summarize' | 'nextBestAction' | 'riskNarrative',
+  ): Promise<string> => {
     try {
       const currentUser = auth.currentUser;
       if (!currentUser) {
@@ -255,7 +270,7 @@ export const api = {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ prompt, provider, model, systemInstruction })
+        body: JSON.stringify({ prompt, provider, model, systemInstruction, feature })
       });
 
       if (!response.ok) {

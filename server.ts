@@ -81,7 +81,9 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
   }
 }
 
-const ALLOWED_PROVIDERS = new Set(["gemini", "openai", "anthropic", "gemma", "groc"]);
+const ALLOWED_PROVIDERS = new Set(["gemini", "openai", "anthropic", "gemma", "groc", "groq"]);
+const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1";
+const AI_FEATURE_KEYS = new Set(["autoTag", "summarize", "nextBestAction", "riskNarrative"]);
 const AI_RATE_LIMIT_WINDOW_MS = 60_000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 20;
 const allowedOrigins = getAllowedCorsOrigins();
@@ -114,6 +116,8 @@ type RateLimitEntry = {
 type AppSettings = {
   aiEnabled: boolean;
   activeProvider: string;
+  aiAutoTagEnabled: boolean;
+  aiSummarizeEnabled: boolean;
   aiNextBestActionEnabled: boolean;
   aiRiskNarrativeEnabled: boolean;
   aiDuplicateDetectionEnabled: boolean;
@@ -720,6 +724,8 @@ function validateSettings(input: unknown): AppSettings | null {
 
   if (
     typeof source.aiEnabled !== "boolean" ||
+    (source.aiAutoTagEnabled !== undefined && typeof source.aiAutoTagEnabled !== "boolean") ||
+    (source.aiSummarizeEnabled !== undefined && typeof source.aiSummarizeEnabled !== "boolean") ||
     typeof source.aiNextBestActionEnabled !== "boolean" ||
     typeof source.aiRiskNarrativeEnabled !== "boolean" ||
     typeof source.aiDuplicateDetectionEnabled !== "boolean" ||
@@ -745,9 +751,17 @@ function validateSettings(input: unknown): AppSettings | null {
     return null;
   }
 
+  const aiEnabled = source.aiEnabled;
+  const aiAutoTagEnabled =
+    typeof source.aiAutoTagEnabled === "boolean" ? source.aiAutoTagEnabled : aiEnabled;
+  const aiSummarizeEnabled =
+    typeof source.aiSummarizeEnabled === "boolean" ? source.aiSummarizeEnabled : aiEnabled;
+
   return {
-    aiEnabled: source.aiEnabled,
+    aiEnabled,
     activeProvider: source.activeProvider,
+    aiAutoTagEnabled,
+    aiSummarizeEnabled,
     aiNextBestActionEnabled: source.aiNextBestActionEnabled,
     aiRiskNarrativeEnabled: source.aiRiskNarrativeEnabled,
     aiDuplicateDetectionEnabled: source.aiDuplicateDetectionEnabled,
@@ -767,6 +781,8 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
   return {
     aiEnabled: { booleanValue: settings.aiEnabled },
     activeProvider: { stringValue: settings.activeProvider },
+    aiAutoTagEnabled: { booleanValue: settings.aiAutoTagEnabled },
+    aiSummarizeEnabled: { booleanValue: settings.aiSummarizeEnabled },
     aiNextBestActionEnabled: { booleanValue: settings.aiNextBestActionEnabled },
     aiRiskNarrativeEnabled: { booleanValue: settings.aiRiskNarrativeEnabled },
     aiDuplicateDetectionEnabled: { booleanValue: settings.aiDuplicateDetectionEnabled },
@@ -789,6 +805,8 @@ function fromFirestoreFields(
   return {
     aiEnabled: fields.aiEnabled?.booleanValue,
     activeProvider: fields.activeProvider?.stringValue,
+    aiAutoTagEnabled: fields.aiAutoTagEnabled?.booleanValue,
+    aiSummarizeEnabled: fields.aiSummarizeEnabled?.booleanValue,
     aiNextBestActionEnabled: fields.aiNextBestActionEnabled?.booleanValue,
     aiRiskNarrativeEnabled: fields.aiRiskNarrativeEnabled?.booleanValue,
     aiDuplicateDetectionEnabled: fields.aiDuplicateDetectionEnabled?.booleanValue,
@@ -1416,7 +1434,39 @@ app.post("/api/ai/generate", async (req, res) => {
       return res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
     }
 
-    const { prompt, provider, model, systemInstruction } = req.body;
+    const { prompt, provider, model, systemInstruction, feature } = req.body;
+
+    if (typeof feature !== "string" || !AI_FEATURE_KEYS.has(feature)) {
+      return res.status(400).json({ error: "Invalid or missing AI feature key" });
+    }
+
+    const storedSettings = await fetchFirestoreSettings();
+    const masterAiOn = storedSettings.aiEnabled === true;
+    const autoTagAllowed =
+      typeof storedSettings.aiAutoTagEnabled === "boolean"
+        ? storedSettings.aiAutoTagEnabled
+        : masterAiOn;
+    const summarizeAllowed =
+      typeof storedSettings.aiSummarizeEnabled === "boolean"
+        ? storedSettings.aiSummarizeEnabled
+        : masterAiOn;
+    const nextBestAllowed = storedSettings.aiNextBestActionEnabled === true;
+    const riskAllowed = storedSettings.aiRiskNarrativeEnabled === true;
+    if (!masterAiOn) {
+      return res.status(403).json({ error: "AI features are disabled in settings." });
+    }
+    if (feature === "autoTag" && !autoTagAllowed) {
+      return res.status(403).json({ error: "Auto-tag is disabled in settings." });
+    }
+    if (feature === "summarize" && !summarizeAllowed) {
+      return res.status(403).json({ error: "AI summarize is disabled in settings." });
+    }
+    if (feature === "nextBestAction" && !nextBestAllowed) {
+      return res.status(403).json({ error: "Next-best action AI is disabled in settings." });
+    }
+    if (feature === "riskNarrative" && !riskAllowed) {
+      return res.status(403).json({ error: "Risk narrative AI is disabled in settings." });
+    }
 
     if (typeof prompt !== "string" || prompt.trim().length === 0) {
       return res.status(400).json({ error: "Prompt is required" });
@@ -1447,6 +1497,7 @@ app.post("/api/ai/generate", async (req, res) => {
       actorEmail: verifiedUser.email,
       provider,
       model,
+      feature,
       promptLength: prompt.length,
       hasSystemInstruction: typeof systemInstruction === "string" && systemInstruction.length > 0,
       ip: clientIp,
@@ -1517,6 +1568,25 @@ app.post("/api/ai/generate", async (req, res) => {
       const response = await openai.chat.completions.create({
         model,
         messages
+      });
+      responseText = response.choices[0]?.message?.content || "";
+    } else if (provider === "groq") {
+      const groqKey = process.env.GROQ_API_KEY;
+      if (!groqKey) {
+        throw new Error("Groq provider is not configured");
+      }
+      const baseURL = (process.env.GROQ_BASE_URL || DEFAULT_GROQ_BASE_URL).replace(/\/$/, "");
+      const openai = new OpenAI({
+        apiKey: groqKey,
+        baseURL,
+      });
+      const messages: Array<{ role: "system" | "user"; content: string }> = [];
+      if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
+      messages.push({ role: "user", content: prompt });
+
+      const response = await openai.chat.completions.create({
+        model,
+        messages,
       });
       responseText = response.choices[0]?.message?.content || "";
     }

@@ -222,11 +222,17 @@ export default function RecordView({ projects, loading: projectsLoading, project
 
   const handleAutoTag = async () => {
     if (!isAdmin) return;
-    if (!project || !settings?.aiEnabled) return;
+    if (!project || !settings?.aiEnabled || !settings.aiAutoTagEnabled) return;
     setGeneratingTags(true);
     try {
       const prompt = `Based on the following project description, generate 3-5 relevant tags. Return ONLY a comma-separated list of tags, nothing else. Description: ${project.description}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, "You are an expert project manager. Generate concise, relevant tags.");
+      const response = await api.generateAI(
+        prompt,
+        settings.activeProvider,
+        selectedModel,
+        "You are an expert project manager. Generate concise, relevant tags.",
+        "autoTag",
+      );
       const newTags = response.split(',').map(t => t.trim()).filter(t => t && !project.tags.includes(t));
       if (newTags.length > 0) {
         setProject({ ...project, tags: [...project.tags, ...newTags].slice(0, 20) });
@@ -244,12 +250,18 @@ export default function RecordView({ projects, loading: projectsLoading, project
 
   const handleSummarize = async () => {
     if (!isAdmin) return;
-    if (!project || !settings?.aiEnabled) return;
+    if (!project || !settings?.aiEnabled || !settings.aiSummarizeEnabled) return;
     setGeneratingSummary(true);
     try {
       const commentsText = comments.map(c => `${c.author.name}: ${c.text}`).join('\n');
       const prompt = `Summarize the following project and its recent comments into a concise executive summary (2-3 sentences max). \n\nProject Title: ${project.title}\nCurrent Description: ${project.description}\n\nRecent Comments:\n${commentsText}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, "You are an executive assistant. Provide a concise, professional summary.");
+      const response = await api.generateAI(
+        prompt,
+        settings.activeProvider,
+        selectedModel,
+        "You are an executive assistant. Provide a concise, professional summary.",
+        "summarize",
+      );
       setProject({ ...project, description: response.trim() });
     } catch (error) {
       console.error(error);
@@ -298,7 +310,13 @@ Status: ${project.status}
 Priority: ${project.priority}
 Risk: ${project.riskFactor}
 Description: ${project.description}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, 'You are a PMO copilot. Return strict JSON only.');
+      const response = await api.generateAI(
+        prompt,
+        settings.activeProvider,
+        selectedModel,
+        'You are a PMO copilot. Return strict JSON only.',
+        'nextBestAction',
+      );
       const parsed = parseJsonBlock<{ confidence?: number; explanation?: string; actions?: AIDraftRecommendation[] }>(response, {});
       const actions = (parsed.actions ?? []).slice(0, 4).map((item, index) => ({
         id: `act-${Date.now()}-${index}`,
@@ -337,7 +355,13 @@ Status: ${project.status}
 Risk: ${project.riskFactor}
 Dependencies: ${(project.dependencies ?? []).map((d) => `${d.description} (${d.status})`).join('; ') || 'none'}
 Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.required && !c.approved).length}`;
-      const response = await api.generateAI(prompt, settings.activeProvider, selectedModel, 'You are an enterprise risk analyst. Return strict JSON only.');
+      const response = await api.generateAI(
+        prompt,
+        settings.activeProvider,
+        selectedModel,
+        'You are an enterprise risk analyst. Return strict JSON only.',
+        'riskNarrative',
+      );
       const parsed = parseJsonBlock<{ confidence?: number; explanation?: string; riskNarrative?: string }>(response, {});
 
       applyDraft({
@@ -610,7 +634,7 @@ Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.require
               <div className="col-span-2">
                 <div className="flex justify-between items-end mb-2">
                   <p className="block text-xs font-bold text-on-surface-variant uppercase">Tags</p>
-                  {settings?.aiEnabled && isAdmin && (
+                  {settings?.aiEnabled && settings.aiAutoTagEnabled && isAdmin && (
                     <button 
                       onClick={handleAutoTag}
                       disabled={generatingTags}
@@ -675,7 +699,7 @@ Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.require
               <div>
                 <div className="flex justify-between items-end mb-2">
                   <label htmlFor="record-project-summary" className="block text-xs font-bold text-on-surface-variant uppercase">Executive Summary</label>
-                  {settings?.aiEnabled && isAdmin && (
+                  {settings?.aiEnabled && settings.aiSummarizeEnabled && isAdmin && (
                     <button 
                       onClick={handleSummarize}
                       disabled={generatingSummary}
