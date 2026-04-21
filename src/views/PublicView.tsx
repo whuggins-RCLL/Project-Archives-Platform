@@ -55,7 +55,7 @@ function formatLastUpdated(project: Project): string {
   return `Last updated ${sourceDate.toLocaleDateString()}`;
 }
 
-export default function PublicView() {
+export default function PublicView({ embedded = false }: { embedded?: boolean }) {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState<ProjectFilterQuery>(DEFAULT_FILTER_QUERY);
@@ -81,32 +81,34 @@ export default function PublicView() {
 
   return (
     <div className="min-h-screen bg-surface font-body text-on-surface">
-      {/* Header */}
-      <header className="sticky top-0 z-10 border-b border-outline-variant/20 bg-surface-container-lowest/85 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <div className="flex min-w-0 items-center gap-3">
-            {branding.logoUrl ? (
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-white shadow-sm">
-                <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
+      {/* Header — hidden when embedded inside the signed-in app (Topbar shows context) */}
+      {!embedded && (
+        <header className="sticky top-0 z-10 border-b border-outline-variant/20 bg-surface-container-lowest/85 backdrop-blur">
+          <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div className="flex min-w-0 items-center gap-3">
+              {branding.logoUrl ? (
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-white shadow-sm">
+                  <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
+                </div>
+              ) : (
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary shadow-sm">
+                  <FolderArchive className="h-5 w-5 text-white" aria-hidden />
+                </div>
+              )}
+              <div className="min-w-0">
+                <h1 className="truncate font-headline text-lg font-bold leading-tight text-brand-dark">{branding.portalName || APP_CONFIG.portalName}</h1>
+                <p className="truncate text-xs text-on-surface-variant">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
               </div>
-            ) : (
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-primary shadow-sm">
-                <FolderArchive className="h-5 w-5 text-white" aria-hidden />
-              </div>
-            )}
-            <div className="min-w-0">
-              <h1 className="truncate font-headline text-lg font-bold leading-tight text-brand-dark">{branding.portalName || APP_CONFIG.portalName}</h1>
-              <p className="truncate text-xs text-on-surface-variant">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
             </div>
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-2 text-sm font-medium text-on-surface-variant transition-colors hover:text-primary"
+            >
+              Team login <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-          <Link
-            to="/login"
-            className="inline-flex items-center gap-2 text-sm font-medium text-on-surface-variant transition-colors hover:text-primary"
-          >
-            Team login <ArrowRight className="h-4 w-4" />
-          </Link>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* Hero Section */}
       <section className="relative isolate overflow-hidden bg-brand-dark text-white">

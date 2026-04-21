@@ -5,10 +5,12 @@ import { auth } from '../lib/firebase';
 import { useMemo, useState } from 'react';
 import type { ThemeMode } from '../lib/api';
 import type { ResolvedTheme } from '../hooks/useBranding';
+import { AppRole, RolePreviewMode, roleLabel as roleLabelFromKey } from '../lib/roles';
 
 export default function Topbar({
   roleLabel,
   rawRole,
+  actualRoleLabel,
   roleError,
   refreshingRole,
   onRefreshPermissions,
@@ -23,9 +25,14 @@ export default function Topbar({
   themeMode,
   resolvedTheme,
   onChangeTheme,
+  canUseRolePreview,
+  rolePreviewMode,
+  onRolePreviewModeChange,
 }: {
   roleLabel: string,
   rawRole: string,
+  /** The user's real signed-in role label (unchanged while previewing). */
+  actualRoleLabel: string,
   roleError: string | null,
   refreshingRole: boolean,
   onRefreshPermissions: () => Promise<void>,
@@ -44,6 +51,9 @@ export default function Topbar({
   themeMode: ThemeMode;
   resolvedTheme: ResolvedTheme;
   onChangeTheme: (next: ThemeMode) => void;
+  canUseRolePreview: boolean;
+  rolePreviewMode: RolePreviewMode;
+  onRolePreviewModeChange: (mode: RolePreviewMode) => void;
 }) {
   const navigate = useNavigate();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -81,8 +91,30 @@ export default function Topbar({
     : themeMode.charAt(0).toUpperCase() + themeMode.slice(1);
   const ThemeIcon = themeMode === 'system' ? Laptop : themeMode === 'dark' ? Moon : Sun;
 
+  const previewSelectValue =
+    rolePreviewMode === 'off'
+      ? 'off'
+      : rolePreviewMode === 'public'
+        ? 'public'
+        : rolePreviewMode;
+
+  const onPreviewSelectChange = (value: string) => {
+    if (value === 'off') {
+      onRolePreviewModeChange('off');
+      return;
+    }
+    if (value === 'public') {
+      onRolePreviewModeChange('public');
+      return;
+    }
+    if (value === 'owner' || value === 'admin' || value === 'collaborator' || value === 'viewer') {
+      onRolePreviewModeChange(value as AppRole);
+    }
+  };
+
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between gap-4 border-b border-outline-variant/20 bg-surface-container-lowest/85 px-4 backdrop-blur-xl sm:px-6 lg:px-10">
+    <header className="sticky top-0 z-30 w-full border-b border-outline-variant/20 bg-surface-container-lowest/85 backdrop-blur-xl">
+      <div className="flex h-16 w-full items-center justify-between gap-4 px-4 sm:px-6 lg:px-10">
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <div className="relative w-full max-w-md">
           <label htmlFor="topbar-search" className="sr-only">Search archives</label>
@@ -166,6 +198,11 @@ export default function Topbar({
           <div className="hidden text-right md:block">
             <p className="text-xs font-semibold text-on-surface">{auth.currentUser?.displayName || 'Librarian Alpha'}</p>
             <p className="text-[10px] text-on-surface-variant" title={`Role key: ${rawRole}`}>{roleLabel}</p>
+            {canUseRolePreview && rolePreviewMode !== 'off' && (
+              <p className="text-[9px] font-medium text-amber-700" title="Your signed-in role">
+                Account: {actualRoleLabel}
+              </p>
+            )}
             {showRoleDebug && (
               <p className="text-[9px] text-on-surface-variant/70" title="Role debug source">
                 Token: {tokenRoleSnapshot} · Mirror: {mirrorRoleSnapshot ?? 'none'}
@@ -189,6 +226,39 @@ export default function Topbar({
           </button>
         </div>
       </div>
+      </div>
+      {canUseRolePreview && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-amber-200/50 bg-amber-50/90 px-4 py-2 text-sm dark:border-amber-400/20 dark:bg-amber-950/30 sm:px-6 lg:px-10">
+          <label htmlFor="role-preview-select" className="shrink-0 font-medium text-on-surface-variant">
+            View as
+          </label>
+          <select
+            id="role-preview-select"
+            className="rounded-md border border-outline-variant/40 bg-surface-container-lowest px-2 py-1.5 text-sm text-on-surface shadow-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+            value={previewSelectValue}
+            onChange={(e) => onPreviewSelectChange(e.target.value)}
+          >
+            <option value="off">Your access ({actualRoleLabel})</option>
+            <option value="viewer">{roleLabelFromKey('viewer')}</option>
+            <option value="collaborator">{roleLabelFromKey('collaborator')}</option>
+            <option value="admin">{roleLabelFromKey('admin')}</option>
+            <option value="owner">{roleLabelFromKey('owner')}</option>
+            <option value="public">Public page (signed out)</option>
+          </select>
+          {rolePreviewMode !== 'off' && (
+            <p className="text-xs text-on-surface-variant">
+              {rolePreviewMode === 'public' ? (
+                <>Showing the public homepage while you stay signed in.</>
+              ) : (
+                <>
+                  UI matches <span className="font-semibold text-on-surface">{roleLabelFromKey(rolePreviewMode as AppRole)}</span>
+                  {' '}(permissions are simulated).
+                </>
+              )}
+            </p>
+          )}
+        </div>
+      )}
     </header>
   );
 }
