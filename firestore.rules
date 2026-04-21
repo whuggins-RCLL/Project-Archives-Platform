@@ -188,7 +188,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'googleCalendarEnabled', 'googleCalendarId', 'googleCalendarUrl', 'googleCalendarTimezone', 'googleDriveEnabled', 'googleDriveId', 'googleDriveUrl', 'googleDriveFolderId']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] &&
              data.aiAutoTagEnabled is bool &&
@@ -207,7 +207,15 @@ service cloud.firestore {
              data.brandDarkColor is string &&
              data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$') &&
              (!('customFooter' in data) || (data.customFooter is string && data.customFooter.size() <= 500)) &&
-             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254));
+             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254)) &&
+             (!('googleCalendarEnabled' in data) || data.googleCalendarEnabled is bool) &&
+             (!('googleCalendarId' in data) || (data.googleCalendarId is string && data.googleCalendarId.size() <= 254)) &&
+             (!('googleCalendarUrl' in data) || (data.googleCalendarUrl is string && data.googleCalendarUrl.size() <= 500)) &&
+             (!('googleCalendarTimezone' in data) || (data.googleCalendarTimezone is string && data.googleCalendarTimezone.size() <= 64)) &&
+             (!('googleDriveEnabled' in data) || data.googleDriveEnabled is bool) &&
+             (!('googleDriveId' in data) || (data.googleDriveId is string && data.googleDriveId.size() <= 100)) &&
+             (!('googleDriveUrl' in data) || (data.googleDriveUrl is string && data.googleDriveUrl.size() <= 500)) &&
+             (!('googleDriveFolderId' in data) || (data.googleDriveFolderId is string && data.googleDriveFolderId.size() <= 100));
     }
 
     function currentPrivacyMode() {

@@ -98,6 +98,16 @@ const ADMIN_SETTINGS_TIMEOUT_MS = 8_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
 const MAX_PROMPT_LENGTH = 4_000;
 const MAX_SYSTEM_INSTRUCTION_LENGTH = 2_000;
+const INTEGRATIONS_TIMEOUT_MS = 15_000;
+const INTEGRATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
+const INTEGRATIONS_RATE_LIMIT_MAX_REQUESTS = 30;
+const DRIVE_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+const DRIVE_METADATA_MAX_BYTES = 8 * 1024;
+const GOOGLE_SCOPE_CALENDAR = "https://www.googleapis.com/auth/calendar";
+const GOOGLE_SCOPE_DRIVE = "https://www.googleapis.com/auth/drive";
+const GOOGLE_CALENDAR_ID_MAX_LENGTH = 254;
+const GOOGLE_DRIVE_ID_MAX_LENGTH = 100;
+const GOOGLE_URL_MAX_LENGTH = 500;
 const CLIENT_FIREBASE_ENV_KEYS = [
   "VITE_FIREBASE_API_KEY",
   "VITE_FIREBASE_AUTH_DOMAIN",
@@ -130,6 +140,14 @@ type AppSettings = {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  googleCalendarEnabled?: boolean;
+  googleCalendarId?: string;
+  googleCalendarUrl?: string;
+  googleCalendarTimezone?: string;
+  googleDriveEnabled?: boolean;
+  googleDriveId?: string;
+  googleDriveUrl?: string;
+  googleDriveFolderId?: string;
 };
 
 type VerifiedUser = {
@@ -718,6 +736,23 @@ async function verifyFirebaseUser(idToken: string): Promise<VerifiedUser | null>
   }
 }
 
+const GOOGLE_CALENDAR_ID_PATTERN = /^[\w!#$%&'*+/=?^`{|}~.-]+@[\w.-]+$/;
+const GOOGLE_RESOURCE_ID_PATTERN = /^[A-Za-z0-9_-]{10,100}$/;
+const GOOGLE_TIMEZONE_PATTERN = /^[A-Za-z0-9_+\-/]{1,64}$/;
+
+function validateOptionalGoogleString(
+  value: unknown,
+  options: { maxLength: number; pattern?: RegExp },
+): { ok: true; value: string } | { ok: false } {
+  if (value === undefined || value === null || value === "") return { ok: true, value: "" };
+  if (typeof value !== "string") return { ok: false };
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return { ok: true, value: "" };
+  if (trimmed.length > options.maxLength) return { ok: false };
+  if (options.pattern && !options.pattern.test(trimmed)) return { ok: false };
+  return { ok: true, value: trimmed };
+}
+
 function validateSettings(input: unknown): AppSettings | null {
   if (!input || typeof input !== "object") return null;
   const source = input as Record<string, unknown>;
@@ -746,8 +781,33 @@ function validateSettings(input: unknown): AppSettings | null {
     typeof source.brandDarkColor !== "string" ||
     !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
-    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254))
+    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254)) ||
+    (source.googleCalendarEnabled !== undefined && typeof source.googleCalendarEnabled !== "boolean") ||
+    (source.googleDriveEnabled !== undefined && typeof source.googleDriveEnabled !== "boolean")
   ) {
+    return null;
+  }
+
+  const calendarId = validateOptionalGoogleString(source.googleCalendarId, {
+    maxLength: GOOGLE_CALENDAR_ID_MAX_LENGTH,
+    pattern: GOOGLE_CALENDAR_ID_PATTERN,
+  });
+  const calendarUrl = validateOptionalGoogleString(source.googleCalendarUrl, { maxLength: GOOGLE_URL_MAX_LENGTH });
+  const calendarTimezone = validateOptionalGoogleString(source.googleCalendarTimezone, {
+    maxLength: 64,
+    pattern: GOOGLE_TIMEZONE_PATTERN,
+  });
+  const driveId = validateOptionalGoogleString(source.googleDriveId, {
+    maxLength: GOOGLE_DRIVE_ID_MAX_LENGTH,
+    pattern: GOOGLE_RESOURCE_ID_PATTERN,
+  });
+  const driveUrl = validateOptionalGoogleString(source.googleDriveUrl, { maxLength: GOOGLE_URL_MAX_LENGTH });
+  const driveFolderId = validateOptionalGoogleString(source.googleDriveFolderId, {
+    maxLength: GOOGLE_DRIVE_ID_MAX_LENGTH,
+    pattern: GOOGLE_RESOURCE_ID_PATTERN,
+  });
+
+  if (!calendarId.ok || !calendarUrl.ok || !calendarTimezone.ok || !driveId.ok || !driveUrl.ok || !driveFolderId.ok) {
     return null;
   }
 
@@ -774,6 +834,14 @@ function validateSettings(input: unknown): AppSettings | null {
     brandDarkColor: source.brandDarkColor,
     customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
     helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
+    googleCalendarEnabled: source.googleCalendarEnabled === true,
+    googleCalendarId: calendarId.value,
+    googleCalendarUrl: calendarUrl.value,
+    googleCalendarTimezone: calendarTimezone.value,
+    googleDriveEnabled: source.googleDriveEnabled === true,
+    googleDriveId: driveId.value,
+    googleDriveUrl: driveUrl.value,
+    googleDriveFolderId: driveFolderId.value,
   };
 }
 
@@ -795,6 +863,14 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     brandDarkColor: { stringValue: settings.brandDarkColor },
     ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
     ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
+    googleCalendarEnabled: { booleanValue: settings.googleCalendarEnabled === true },
+    googleCalendarId: { stringValue: settings.googleCalendarId || "" },
+    googleCalendarUrl: { stringValue: settings.googleCalendarUrl || "" },
+    googleCalendarTimezone: { stringValue: settings.googleCalendarTimezone || "" },
+    googleDriveEnabled: { booleanValue: settings.googleDriveEnabled === true },
+    googleDriveId: { stringValue: settings.googleDriveId || "" },
+    googleDriveUrl: { stringValue: settings.googleDriveUrl || "" },
+    googleDriveFolderId: { stringValue: settings.googleDriveFolderId || "" },
   };
 }
 
@@ -819,6 +895,14 @@ function fromFirestoreFields(
     brandDarkColor: fields.brandDarkColor?.stringValue,
     customFooter: fields.customFooter?.stringValue,
     helpContactEmail: fields.helpContactEmail?.stringValue,
+    googleCalendarEnabled: fields.googleCalendarEnabled?.booleanValue,
+    googleCalendarId: fields.googleCalendarId?.stringValue,
+    googleCalendarUrl: fields.googleCalendarUrl?.stringValue,
+    googleCalendarTimezone: fields.googleCalendarTimezone?.stringValue,
+    googleDriveEnabled: fields.googleDriveEnabled?.booleanValue,
+    googleDriveId: fields.googleDriveId?.stringValue,
+    googleDriveUrl: fields.googleDriveUrl?.stringValue,
+    googleDriveFolderId: fields.googleDriveFolderId?.stringValue,
   };
 }
 
@@ -1199,7 +1283,12 @@ app.use(
     },
   }),
 );
-app.use(express.json({ limit: "16kb" }));
+app.use((req, res, next) => {
+  // Drive upload routes have their own json parser with a higher limit; skip the global 16kb cap here.
+  if (req.path === "/api/admin/drive/files" && (req.method === "POST" || req.method === "PUT")) return next();
+  if (req.path.startsWith("/api/admin/drive/files/") && req.method === "PUT") return next();
+  return express.json({ limit: "16kb" })(req, res, next);
+});
 app.set("trust proxy", getTrustProxySetting());
 
 if (!hasUpstash) {
@@ -2021,6 +2110,782 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
     return res.json({ success: true, message: "Permissions updated. User should refresh access claims." });
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
+  }
+});
+
+type ProjectSyncCandidate = {
+  id: string;
+  code: string;
+  title: string;
+  description: string;
+  status: string;
+  ownerName: string;
+  dueDate: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+function getServiceAccountEmail(): string | null {
+  try {
+    return getServiceAccount().clientEmail;
+  } catch {
+    return null;
+  }
+}
+
+function extractProjectFromFirestoreDoc(raw: Record<string, unknown>): ProjectSyncCandidate | null {
+  const id = typeof raw.id === "string" ? raw.id : "";
+  if (!id) return null;
+  const code = typeof raw.code === "string" ? raw.code : "";
+  const title = typeof raw.title === "string" ? raw.title : "";
+  const description = typeof raw.description === "string" ? raw.description : "";
+  const status = typeof raw.status === "string" ? raw.status : "";
+  const owner = raw.owner as { name?: string } | undefined;
+  const ownerName = owner?.name || "Unassigned";
+
+  const dueDateRaw = raw.dueDate;
+  const dueDate = typeof dueDateRaw === "string" && dueDateRaw.trim().length > 0 ? dueDateRaw.trim() : null;
+  const createdAt = typeof raw.createdAt === "string" ? raw.createdAt : null;
+  const updatedAt = typeof raw.updatedAt === "string" ? raw.updatedAt : null;
+
+  return { id, code, title, description, status, ownerName, dueDate, createdAt, updatedAt };
+}
+
+async function fetchAllProjectsForSync(): Promise<ProjectSyncCandidate[]> {
+  const results: ProjectSyncCandidate[] = [];
+  let pageToken: string | undefined = undefined;
+  do {
+    const suffix: string = pageToken ? `?pageSize=500&pageToken=${encodeURIComponent(pageToken)}` : "?pageSize=500";
+    const result = await firestoreCall(`projects${suffix}`);
+    const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+    for (const doc of documents) {
+      const parsed = parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+      const candidate = extractProjectFromFirestoreDoc(parsed);
+      if (candidate) results.push(candidate);
+    }
+    const nextPageToken = typeof result.nextPageToken === "string" ? result.nextPageToken : "";
+    pageToken = nextPageToken.length > 0 ? nextPageToken : undefined;
+  } while (pageToken);
+  return results;
+}
+
+function normalizeDueDateForCalendar(dueDate: string): { date: string } | { dateTime: string; timeZone?: string } | null {
+  const trimmed = dueDate.trim();
+  if (!trimmed) return null;
+  const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(trimmed);
+  if (dateOnlyMatch) {
+    return { date: trimmed };
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return { dateTime: parsed.toISOString() };
+}
+
+function addOneDayToDateString(dateString: string): string {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + 1);
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+type CalendarEvent = {
+  id?: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  status?: string;
+  start?: { date?: string; dateTime?: string; timeZone?: string };
+  end?: { date?: string; dateTime?: string; timeZone?: string };
+  extendedProperties?: { private?: Record<string, string> };
+  htmlLink?: string;
+};
+
+async function googleApiFetch(
+  url: string,
+  options: {
+    method?: string;
+    scope: string;
+    body?: unknown;
+    contentType?: string;
+    rawBody?: Buffer | Uint8Array | string;
+    acceptJson?: boolean;
+  },
+): Promise<Response> {
+  const token = await getGoogleAccessToken(options.scope);
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  if (options.acceptJson !== false) {
+    headers.Accept = "application/json";
+  }
+
+  let body: BodyInit | undefined;
+  if (options.rawBody !== undefined) {
+    headers["Content-Type"] = options.contentType || "application/octet-stream";
+    body = options.rawBody as BodyInit;
+  } else if (options.body !== undefined) {
+    headers["Content-Type"] = options.contentType || "application/json";
+    body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
+  }
+
+  return fetch(url, {
+    method: options.method || "GET",
+    headers,
+    body,
+  });
+}
+
+async function googleJsonRequest<T = Record<string, unknown>>(
+  url: string,
+  options: { method?: string; scope: string; body?: unknown },
+): Promise<T> {
+  const response = await googleApiFetch(url, options);
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json")
+    ? await response.json().catch(() => ({}))
+    : await response.text().catch(() => "");
+  if (!response.ok) {
+    const message = typeof payload === "object" && payload !== null
+      ? ((payload as { error?: { message?: string } }).error?.message || `Google API error ${response.status}`)
+      : `Google API error ${response.status}`;
+    throw new Error(message);
+  }
+  return payload as T;
+}
+
+async function getCalendarMetadata(calendarId: string): Promise<{ id: string; summary?: string; timeZone?: string }> {
+  return googleJsonRequest(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}`, {
+    method: "GET",
+    scope: GOOGLE_SCOPE_CALENDAR,
+  });
+}
+
+async function findCalendarEventByProjectId(
+  calendarId: string,
+  projectId: string,
+): Promise<CalendarEvent | null> {
+  const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
+  url.searchParams.set("privateExtendedProperty", `projectId=${projectId}`);
+  url.searchParams.set("showDeleted", "false");
+  url.searchParams.set("maxResults", "5");
+  const data = await googleJsonRequest<{ items?: CalendarEvent[] }>(url.toString(), {
+    method: "GET",
+    scope: GOOGLE_SCOPE_CALENDAR,
+  });
+  return (data.items && data.items[0]) || null;
+}
+
+function buildCalendarEventPayload(
+  project: ProjectSyncCandidate,
+  timezone: string | undefined,
+): CalendarEvent | null {
+  if (!project.dueDate) return null;
+  const start = normalizeDueDateForCalendar(project.dueDate);
+  if (!start) return null;
+
+  let end: CalendarEvent["end"];
+  if ("date" in start && start.date) {
+    end = { date: addOneDayToDateString(start.date) };
+  } else if ("dateTime" in start && start.dateTime) {
+    const endTime = new Date(new Date(start.dateTime).getTime() + 60 * 60 * 1000);
+    end = { dateTime: endTime.toISOString() };
+    if (timezone) {
+      (end as { timeZone?: string }).timeZone = timezone;
+      (start as { timeZone?: string }).timeZone = timezone;
+    }
+  }
+
+  const summary = `${project.code ? `[${project.code}] ` : ""}${project.title || "Untitled project"}`;
+  const description = [
+    project.description || "",
+    "",
+    project.status ? `Stage: ${project.status}` : "",
+    project.ownerName ? `Owner: ${project.ownerName}` : "",
+    project.code ? `Code: ${project.code}` : "",
+  ].filter(Boolean).join("\n").slice(0, 8000);
+
+  return {
+    summary: summary.slice(0, 250),
+    description,
+    start,
+    end,
+    extendedProperties: {
+      private: {
+        projectId: project.id,
+        projectCode: project.code,
+        source: "digital-archivist",
+      },
+    },
+  };
+}
+
+type SyncOutcome = {
+  projectId: string;
+  code: string;
+  title: string;
+  action: "created" | "updated" | "skipped-no-date" | "skipped-invalid-date" | "failed";
+  eventId?: string;
+  htmlLink?: string;
+  message?: string;
+};
+
+async function syncProjectsToCalendar(
+  calendarId: string,
+  timezone: string | undefined,
+  projects: ProjectSyncCandidate[],
+): Promise<{
+  calendarId: string;
+  totals: { evaluated: number; created: number; updated: number; skipped: number; failed: number };
+  outcomes: SyncOutcome[];
+}> {
+  const outcomes: SyncOutcome[] = [];
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const project of projects) {
+    if (!project.dueDate) {
+      skipped += 1;
+      outcomes.push({ projectId: project.id, code: project.code, title: project.title, action: "skipped-no-date" });
+      continue;
+    }
+    const payload = buildCalendarEventPayload(project, timezone);
+    if (!payload) {
+      skipped += 1;
+      outcomes.push({
+        projectId: project.id,
+        code: project.code,
+        title: project.title,
+        action: "skipped-invalid-date",
+        message: `Could not parse dueDate "${project.dueDate}"`,
+      });
+      continue;
+    }
+
+    try {
+      const existing = await findCalendarEventByProjectId(calendarId, project.id);
+      if (existing?.id) {
+        const updatedEvent = await googleJsonRequest<CalendarEvent>(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(existing.id)}`,
+          { method: "PATCH", scope: GOOGLE_SCOPE_CALENDAR, body: payload },
+        );
+        updated += 1;
+        outcomes.push({
+          projectId: project.id,
+          code: project.code,
+          title: project.title,
+          action: "updated",
+          eventId: updatedEvent.id,
+          htmlLink: updatedEvent.htmlLink,
+        });
+      } else {
+        const createdEvent = await googleJsonRequest<CalendarEvent>(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+          { method: "POST", scope: GOOGLE_SCOPE_CALENDAR, body: payload },
+        );
+        created += 1;
+        outcomes.push({
+          projectId: project.id,
+          code: project.code,
+          title: project.title,
+          action: "created",
+          eventId: createdEvent.id,
+          htmlLink: createdEvent.htmlLink,
+        });
+      }
+    } catch (error) {
+      failed += 1;
+      outcomes.push({
+        projectId: project.id,
+        code: project.code,
+        title: project.title,
+        action: "failed",
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }
+
+  return {
+    calendarId,
+    totals: { evaluated: projects.length, created, updated, skipped, failed },
+    outcomes,
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sanitizeDriveMetadata(input: unknown, allowedKeys: string[]): Record<string, unknown> | null {
+  if (!isPlainObject(input)) return null;
+  const output: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    if (!(key in input)) continue;
+    const value = input[key];
+    if (key === "parents") {
+      if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0 || entry.length > GOOGLE_DRIVE_ID_MAX_LENGTH)) {
+        return null;
+      }
+      output.parents = value;
+      continue;
+    }
+    if (key === "properties" || key === "appProperties") {
+      if (!isPlainObject(value)) return null;
+      const entries = Object.entries(value);
+      if (entries.length > 30) return null;
+      const cleaned: Record<string, string> = {};
+      for (const [k, v] of entries) {
+        if (typeof k !== "string" || k.length === 0 || k.length > 124) return null;
+        if (typeof v !== "string" || v.length > 124) return null;
+        cleaned[k] = v;
+      }
+      output[key] = cleaned;
+      continue;
+    }
+    if (typeof value !== "string" || value.length > 1000) return null;
+    output[key] = value;
+  }
+  return output;
+}
+
+async function checkIntegrationsRateLimit(userId: string, ip: string): Promise<boolean> {
+  const result = await checkRateLimitDistributed(`${userId}:${ip}`, {
+    maxRequests: INTEGRATIONS_RATE_LIMIT_MAX_REQUESTS,
+    windowMs: INTEGRATIONS_RATE_LIMIT_WINDOW_MS,
+    namespace: "admin-integrations-rate-limit",
+  });
+  return result.allowed;
+}
+
+async function requireAdminOrOwner(req: express.Request, res: express.Response): Promise<VerifiedUser | null> {
+  const token = getBearerToken(req.headers.authorization);
+  if (!token) {
+    res.status(401).json({ error: "Authentication required" });
+    return null;
+  }
+  const verifiedUser = await verifyFirebaseUser(token);
+  if (!verifiedUser) {
+    res.status(401).json({ error: "Invalid or expired auth token" });
+    return null;
+  }
+  const adminGate = requireInternalAdmin(verifiedUser);
+  if (adminGate.ok === false) {
+    res.status(adminGate.status).json({ error: adminGate.error });
+    return null;
+  }
+  if (!await checkIntegrationsRateLimit(verifiedUser.uid, getClientIp(req))) {
+    res.status(429).json({ error: "Rate limit exceeded. Please wait and try again." });
+    return null;
+  }
+  return verifiedUser;
+}
+
+app.get("/api/admin/integrations/status", async (req, res) => {
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    return res.json({
+      serviceAccountEmail: getServiceAccountEmail(),
+      calendar: {
+        enabled: settings.googleCalendarEnabled === true,
+        calendarId: settings.googleCalendarId || "",
+        calendarUrl: settings.googleCalendarUrl || "",
+        timezone: settings.googleCalendarTimezone || "",
+      },
+      drive: {
+        enabled: settings.googleDriveEnabled === true,
+        driveId: settings.googleDriveId || "",
+        driveUrl: settings.googleDriveUrl || "",
+        folderId: settings.googleDriveFolderId || "",
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to read integration status" });
+  }
+});
+
+app.post("/api/admin/calendar/test", async (req, res) => {
+  const requestId = randomUUID();
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    const calendarId = (settings.googleCalendarId || "").trim();
+    if (!calendarId) return res.status(400).json({ error: "No calendar is configured in settings." });
+
+    const metadata = await withTimeout(
+      getCalendarMetadata(calendarId),
+      INTEGRATIONS_TIMEOUT_MS,
+      "Calendar request timed out",
+    );
+    auditLog("admin_calendar_test_ok", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      calendarId,
+    });
+    return res.json({
+      ok: true,
+      calendarId: metadata.id,
+      summary: metadata.summary || null,
+      timezone: metadata.timeZone || null,
+      serviceAccountEmail: getServiceAccountEmail(),
+    });
+  } catch (error) {
+    auditLog("admin_calendar_test_failed", {
+      requestId,
+      message: error instanceof Error ? error.message : "unknown",
+    }, "error");
+    return res.status(502).json({
+      error: error instanceof Error ? error.message : "Unable to reach Google Calendar",
+      serviceAccountEmail: getServiceAccountEmail(),
+    });
+  }
+});
+
+app.post("/api/admin/calendar/sync", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    if (settings.googleCalendarEnabled !== true) {
+      return res.status(400).json({ error: "Calendar integration is disabled in settings." });
+    }
+    const calendarId = (settings.googleCalendarId || "").trim();
+    if (!calendarId) return res.status(400).json({ error: "No calendar is configured in settings." });
+
+    const projectIdFilter = typeof req.body?.projectId === "string" ? req.body.projectId.trim() : "";
+
+    const projects = await withTimeout(
+      fetchAllProjectsForSync(),
+      INTEGRATIONS_TIMEOUT_MS,
+      "Calendar sync fetch timed out",
+    );
+    const targetProjects = projectIdFilter ? projects.filter((p) => p.id === projectIdFilter) : projects;
+
+    const report = await withTimeout(
+      syncProjectsToCalendar(calendarId, settings.googleCalendarTimezone, targetProjects),
+      INTEGRATIONS_TIMEOUT_MS * 2,
+      "Calendar sync timed out",
+    );
+
+    auditLog("admin_calendar_sync_completed", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      ip: clientIp,
+      calendarId,
+      totals: report.totals,
+      scope: projectIdFilter ? "single" : "all",
+    });
+    return res.json(report);
+  } catch (error) {
+    auditLog("admin_calendar_sync_failed", {
+      requestId,
+      message: error instanceof Error ? error.message : "unknown",
+    }, "error");
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Unable to sync calendar" });
+  }
+});
+
+app.get("/api/admin/drive/files", async (req, res) => {
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    const driveId = (settings.googleDriveId || "").trim();
+    if (!driveId) return res.status(400).json({ error: "No shared drive is configured in settings." });
+
+    const pageSizeRaw = typeof req.query.pageSize === "string" ? Number(req.query.pageSize) : 50;
+    const pageSize = Number.isInteger(pageSizeRaw) && pageSizeRaw > 0 && pageSizeRaw <= 200 ? pageSizeRaw : 50;
+    const pageToken = typeof req.query.pageToken === "string" && req.query.pageToken.length < 2000 ? req.query.pageToken : "";
+    const q = typeof req.query.q === "string" && req.query.q.length < 500 ? req.query.q : "";
+    const folderId = typeof req.query.folderId === "string" && GOOGLE_RESOURCE_ID_PATTERN.test(req.query.folderId)
+      ? req.query.folderId
+      : "";
+    const defaultFolder = (settings.googleDriveFolderId || "").trim();
+
+    const url = new URL("https://www.googleapis.com/drive/v3/files");
+    url.searchParams.set("corpora", "drive");
+    url.searchParams.set("driveId", driveId);
+    url.searchParams.set("includeItemsFromAllDrives", "true");
+    url.searchParams.set("supportsAllDrives", "true");
+    url.searchParams.set("pageSize", String(pageSize));
+    url.searchParams.set(
+      "fields",
+      "nextPageToken,files(id,name,mimeType,parents,modifiedTime,size,webViewLink,iconLink,trashed,owners(displayName,emailAddress))",
+    );
+    const effectiveFolder = folderId || defaultFolder;
+    const qClauses: string[] = [];
+    if (effectiveFolder) qClauses.push(`'${effectiveFolder.replace(/'/g, "\\'")}' in parents`);
+    if (q) qClauses.push(q);
+    qClauses.push("trashed = false");
+    url.searchParams.set("q", qClauses.join(" and "));
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const data = await withTimeout(
+      googleJsonRequest<{ files?: unknown[]; nextPageToken?: string }>(url.toString(), {
+        method: "GET",
+        scope: GOOGLE_SCOPE_DRIVE,
+      }),
+      INTEGRATIONS_TIMEOUT_MS,
+      "Drive list timed out",
+    );
+    return res.json({ files: data.files || [], nextPageToken: data.nextPageToken || null });
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Unable to list drive files" });
+  }
+});
+
+app.get("/api/admin/drive/files/:fileId", async (req, res) => {
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    if (!(settings.googleDriveId || "").trim()) {
+      return res.status(400).json({ error: "No shared drive is configured in settings." });
+    }
+    const fileId = req.params.fileId;
+    if (!GOOGLE_RESOURCE_ID_PATTERN.test(fileId)) return res.status(400).json({ error: "Invalid file id" });
+    const download = req.query.alt === "media";
+
+    if (download) {
+      const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media&supportsAllDrives=true`;
+      const response = await googleApiFetch(url, { method: "GET", scope: GOOGLE_SCOPE_DRIVE, acceptJson: false });
+      if (!response.ok) {
+        const message = await response.text().catch(() => "");
+        return res.status(response.status).json({ error: message || `Drive download error ${response.status}` });
+      }
+      const contentType = response.headers.get("content-type") || "application/octet-stream";
+      const contentLength = response.headers.get("content-length");
+      res.setHeader("Content-Type", contentType);
+      if (contentLength) res.setHeader("Content-Length", contentLength);
+      const arrayBuffer = await response.arrayBuffer();
+      return res.send(Buffer.from(arrayBuffer));
+    }
+
+    const url = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true&fields=id,name,mimeType,parents,modifiedTime,size,webViewLink,webContentLink,iconLink,trashed,owners(displayName,emailAddress)`;
+    const data = await withTimeout(
+      googleJsonRequest(url, { method: "GET", scope: GOOGLE_SCOPE_DRIVE }),
+      INTEGRATIONS_TIMEOUT_MS,
+      "Drive get timed out",
+    );
+    return res.json(data);
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Unable to get drive file" });
+  }
+});
+
+const ALLOWED_DRIVE_METADATA_KEYS = [
+  "name",
+  "mimeType",
+  "description",
+  "parents",
+  "starred",
+  "properties",
+  "appProperties",
+];
+
+app.post("/api/admin/drive/files", express.json({ limit: `${DRIVE_UPLOAD_MAX_BYTES}b` }), async (req, res) => {
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    const driveId = (settings.googleDriveId || "").trim();
+    if (!driveId) return res.status(400).json({ error: "No shared drive is configured in settings." });
+
+    const metadataInput = sanitizeDriveMetadata(req.body?.metadata, ALLOWED_DRIVE_METADATA_KEYS);
+    if (!metadataInput) return res.status(400).json({ error: "Invalid metadata payload" });
+    if (typeof metadataInput.name !== "string" || metadataInput.name.length === 0) {
+      return res.status(400).json({ error: "metadata.name is required" });
+    }
+
+    if (!metadataInput.parents) {
+      const defaultFolder = (settings.googleDriveFolderId || "").trim() || driveId;
+      metadataInput.parents = [defaultFolder];
+    }
+
+    const contentBase64 = typeof req.body?.contentBase64 === "string" ? req.body.contentBase64 : "";
+    const contentMimeType = typeof req.body?.contentMimeType === "string" ? req.body.contentMimeType : "application/octet-stream";
+
+    let createdFile: Record<string, unknown>;
+    if (contentBase64) {
+      const buffer = Buffer.from(contentBase64, "base64");
+      if (buffer.length > DRIVE_UPLOAD_MAX_BYTES) {
+        return res.status(413).json({ error: "File exceeds maximum upload size" });
+      }
+      const boundary = `----archivist-${randomUUID()}`;
+      const metadataPart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadataInput)}\r\n`;
+      const fileHeader = `--${boundary}\r\nContent-Type: ${contentMimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+      const footer = `\r\n--${boundary}--`;
+      const body = Buffer.concat([
+        Buffer.from(metadataPart, "utf8"),
+        Buffer.from(fileHeader, "utf8"),
+        Buffer.from(contentBase64, "utf8"),
+        Buffer.from(footer, "utf8"),
+      ]);
+      const url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,mimeType,parents,modifiedTime,size,webViewLink";
+      const response = await googleApiFetch(url, {
+        method: "POST",
+        scope: GOOGLE_SCOPE_DRIVE,
+        rawBody: body,
+        contentType: `multipart/related; boundary=${boundary}`,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return res.status(response.status).json({
+          error: (payload as { error?: { message?: string } }).error?.message || `Drive upload error ${response.status}`,
+        });
+      }
+      createdFile = payload as Record<string, unknown>;
+    } else {
+      if (Buffer.byteLength(JSON.stringify(metadataInput), "utf8") > DRIVE_METADATA_MAX_BYTES) {
+        return res.status(413).json({ error: "Metadata payload too large" });
+      }
+      const url = "https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,name,mimeType,parents,modifiedTime,webViewLink";
+      createdFile = await googleJsonRequest<Record<string, unknown>>(url, {
+        method: "POST",
+        scope: GOOGLE_SCOPE_DRIVE,
+        body: metadataInput,
+      });
+    }
+
+    auditLog("admin_drive_file_created", {
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      fileId: createdFile.id,
+      name: metadataInput.name,
+    });
+    return res.status(201).json(createdFile);
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Unable to create drive file" });
+  }
+});
+
+app.put("/api/admin/drive/files/:fileId", express.json({ limit: `${DRIVE_UPLOAD_MAX_BYTES}b` }), async (req, res) => {
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    if (!(settings.googleDriveId || "").trim()) {
+      return res.status(400).json({ error: "No shared drive is configured in settings." });
+    }
+    const fileId = req.params.fileId;
+    if (!GOOGLE_RESOURCE_ID_PATTERN.test(fileId)) return res.status(400).json({ error: "Invalid file id" });
+
+    const metadataInput = req.body?.metadata !== undefined
+      ? sanitizeDriveMetadata(req.body.metadata, ALLOWED_DRIVE_METADATA_KEYS.filter((key) => key !== "parents"))
+      : {};
+    if (metadataInput === null) return res.status(400).json({ error: "Invalid metadata payload" });
+
+    const addParents = typeof req.body?.addParents === "string" && GOOGLE_RESOURCE_ID_PATTERN.test(req.body.addParents)
+      ? req.body.addParents
+      : "";
+    const removeParents = typeof req.body?.removeParents === "string" && GOOGLE_RESOURCE_ID_PATTERN.test(req.body.removeParents)
+      ? req.body.removeParents
+      : "";
+
+    const contentBase64 = typeof req.body?.contentBase64 === "string" ? req.body.contentBase64 : "";
+    const contentMimeType = typeof req.body?.contentMimeType === "string" ? req.body.contentMimeType : "application/octet-stream";
+
+    let updatedFile: Record<string, unknown>;
+    const fieldsParam = "id,name,mimeType,parents,modifiedTime,size,webViewLink";
+
+    if (contentBase64) {
+      const buffer = Buffer.from(contentBase64, "base64");
+      if (buffer.length > DRIVE_UPLOAD_MAX_BYTES) {
+        return res.status(413).json({ error: "File exceeds maximum upload size" });
+      }
+      const boundary = `----archivist-${randomUUID()}`;
+      const metadataPart = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadataInput || {})}\r\n`;
+      const fileHeader = `--${boundary}\r\nContent-Type: ${contentMimeType}\r\nContent-Transfer-Encoding: base64\r\n\r\n`;
+      const footer = `\r\n--${boundary}--`;
+      const body = Buffer.concat([
+        Buffer.from(metadataPart, "utf8"),
+        Buffer.from(fileHeader, "utf8"),
+        Buffer.from(contentBase64, "utf8"),
+        Buffer.from(footer, "utf8"),
+      ]);
+      const url = new URL(`https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(fileId)}`);
+      url.searchParams.set("uploadType", "multipart");
+      url.searchParams.set("supportsAllDrives", "true");
+      url.searchParams.set("fields", fieldsParam);
+      if (addParents) url.searchParams.set("addParents", addParents);
+      if (removeParents) url.searchParams.set("removeParents", removeParents);
+      const response = await googleApiFetch(url.toString(), {
+        method: "PATCH",
+        scope: GOOGLE_SCOPE_DRIVE,
+        rawBody: body,
+        contentType: `multipart/related; boundary=${boundary}`,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        return res.status(response.status).json({
+          error: (payload as { error?: { message?: string } }).error?.message || `Drive update error ${response.status}`,
+        });
+      }
+      updatedFile = payload as Record<string, unknown>;
+    } else {
+      if (Object.keys(metadataInput || {}).length === 0 && !addParents && !removeParents) {
+        return res.status(400).json({ error: "No updates supplied" });
+      }
+      const url = new URL(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`);
+      url.searchParams.set("supportsAllDrives", "true");
+      url.searchParams.set("fields", fieldsParam);
+      if (addParents) url.searchParams.set("addParents", addParents);
+      if (removeParents) url.searchParams.set("removeParents", removeParents);
+      updatedFile = await googleJsonRequest<Record<string, unknown>>(url.toString(), {
+        method: "PATCH",
+        scope: GOOGLE_SCOPE_DRIVE,
+        body: metadataInput || {},
+      });
+    }
+
+    auditLog("admin_drive_file_updated", {
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      fileId,
+    });
+    return res.json(updatedFile);
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Unable to update drive file" });
+  }
+});
+
+app.delete("/api/admin/drive/files/:fileId", async (req, res) => {
+  try {
+    const verifiedUser = await requireAdminOrOwner(req, res);
+    if (!verifiedUser) return;
+    const settings = await fetchFirestoreSettings();
+    if (!(settings.googleDriveId || "").trim()) {
+      return res.status(400).json({ error: "No shared drive is configured in settings." });
+    }
+    const fileId = req.params.fileId;
+    if (!GOOGLE_RESOURCE_ID_PATTERN.test(fileId)) return res.status(400).json({ error: "Invalid file id" });
+
+    const response = await googleApiFetch(
+      `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`,
+      { method: "DELETE", scope: GOOGLE_SCOPE_DRIVE, acceptJson: false },
+    );
+    if (!response.ok && response.status !== 204) {
+      const message = await response.text().catch(() => "");
+      return res.status(response.status).json({ error: message || `Drive delete error ${response.status}` });
+    }
+    auditLog("admin_drive_file_deleted", {
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      fileId,
+    });
+    return res.status(204).send();
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : "Unable to delete drive file" });
   }
 });
 
