@@ -278,7 +278,7 @@ Because the app now uses an Express backend to secure the API keys, you must dep
 2. Ensure Vercel is configured to run the `dist/server.cjs` file.
 3. Add the AI API keys and (optionally) `FIREBASE_WEB_API_KEY` as server-side environment variables.
 4. `/api/ai/generate` now requires a Firebase ID token for an authenticated user with `admin: true` custom claim.
-5. Configure `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`; production startup now fails if these are missing so rate limiting remains distributed across instances.
+5. Configure `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` for **distributed** rate limiting across serverless instances. If they are missing in production, the server still starts but logs a warning and falls back to per-instance in-memory limits (less reliable under load).
 6. The API includes request-size limits and distributed rate limiting (including `/api/admin/settings` and `/api/admin/operations/run`), plus timeout guards on admin mutation/digest endpoints; tune these values in `server.ts` as needed.
 
 ## Data Visibility & Access Model
