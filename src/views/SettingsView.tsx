@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, Bot, Key, Shield } from 'lucide-react';
-import { api, Settings } from '../lib/api';
+import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
 
 export default function SettingsView({
@@ -82,8 +82,11 @@ export default function SettingsView({
       onSettingsUpdated?.(settings);
       setToast({ type: 'success', message: 'Settings saved successfully.' });
     } catch (error) {
-      console.error('Failed to save settings');
-      setToast({ type: 'error', message: 'Failed to save settings. Ensure you have admin privileges.' });
+      console.error('Failed to save settings', error);
+      setToast({
+        type: 'error',
+        message: getErrorMessage(error, 'Failed to save settings. Try again, or use Refresh permissions if your role was recently updated.'),
+      });
     } finally {
       setSaving(false);
     }

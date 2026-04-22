@@ -1,6 +1,6 @@
 import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api, Settings } from '../lib/api';
+import { api, getErrorMessage, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
@@ -84,7 +84,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       onBack();
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: 'Failed to save changes. Please try again.' });
+      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to save changes. Please try again.') });
     } finally {
       setSavingProject(false);
     }
@@ -98,7 +98,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       onBack();
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: 'Failed to delete project. Please try again.' });
+      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to delete project. Please try again.') });
     } finally {
       setIsDeleteModalOpen(false);
     }
@@ -120,7 +120,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       setAttachments([]);
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: 'Failed to post comment. Please try again.' });
+      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to post comment. Please try again.') });
     } finally {
       setAddingComment(false);
     }
@@ -243,7 +243,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       }
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: 'Failed to generate tags. Check API configuration.' });
+      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to generate tags. Check global settings and API configuration.') });
     } finally {
       setGeneratingTags(false);
     }
@@ -266,7 +266,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       setProject({ ...project, description: response.trim() });
     } catch (error) {
       console.error(error);
-      alert("Failed to generate summary. Check API configuration.");
+      window.alert(getErrorMessage(error, 'Failed to generate summary. Check global settings and API configuration.'));
     } finally {
       setGeneratingSummary(false);
     }
@@ -372,7 +372,7 @@ Description: ${project.description}`;
       });
     } catch (error) {
       console.error(error);
-      alert('Failed to generate next-best actions.');
+      window.alert(getErrorMessage(error, 'Failed to generate next-best actions.'));
     } finally {
       setGeneratingActions(false);
     }
@@ -411,7 +411,7 @@ Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.require
       });
     } catch (error) {
       console.error(error);
-      alert('Failed to generate risk narrative.');
+      window.alert(getErrorMessage(error, 'Failed to generate risk narrative.'));
     } finally {
       setGeneratingRiskNarrative(false);
     }
@@ -450,7 +450,7 @@ Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.require
       });
     } catch (error) {
       console.error(error);
-      alert('Failed to run duplicate detection.');
+      window.alert(getErrorMessage(error, 'Failed to run duplicate detection.'));
     } finally {
       setGeneratingDuplicates(false);
     }
@@ -494,7 +494,7 @@ Description: ${project.description}`;
       });
     } catch (error) {
       console.error(error);
-      alert('Failed to generate project management approach.');
+      window.alert(getErrorMessage(error, 'Failed to generate project management approach.'));
     } finally {
       setGeneratingPmApproach(false);
     }

@@ -11,14 +11,20 @@ enum OperationType {
   GET = 'get',
 }
 
+export function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  return fallback;
+}
+
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {
-  const errorMessage = error instanceof Error ? error.message : 'Unknown Firestore error';
-  console.error('Firestore error', {
-    operationType,
-    path,
-    errorMessage,
-  });
-  throw new Error(`Failed to ${operationType} resource`);
+  if (error instanceof Error) {
+    console.error('Operation error', { operationType, path, message: error.message });
+    throw error;
+  }
+  console.error('Operation error', { operationType, path, error });
+  throw new Error(`Failed to ${operationType} resource${path != null && path.length > 0 ? ` (${path})` : ''}`);
 }
 
 const formatProjectCodeTimestamp = (date: Date): string => {
