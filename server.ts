@@ -2023,6 +2023,11 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
   }
 });
 
+// Ensure API callers never receive the SPA shell for unknown API routes.
+app.use("/api", (_req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
 export default app;
 
 if (!isVercel) {
