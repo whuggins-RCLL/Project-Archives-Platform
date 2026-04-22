@@ -410,6 +410,22 @@ function getAllowedCorsOrigins(): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Browsers always send an Origin for cross-origin fetches. On Vercel, the SPA and API share one hostname,
+ * but CORS must still allow that Origin. A missing CORS_ALLOWED_ORIGINS used to make cors() call
+ * callback(new Error("CORS origin denied")) for every browser request, producing 500s before route handlers.
+ */
+function isBrowserOriginSameSiteAsRequest(origin: string | undefined, req: express.Request): boolean {
+  if (!origin) return false;
+  const host = req.get("x-forwarded-host") || req.get("host");
+  if (!host) return false;
+  try {
+    return new URL(origin).hostname === host.split(":")[0];
+  } catch {
+    return false;
+  }
+}
+
 function getTrustProxySetting(): boolean | number {
   const configured = process.env.TRUST_PROXY;
   if (!configured) {
@@ -1180,23 +1196,22 @@ async function bootstrapOwnersFromEnv(): Promise<void> {
 }
 
 app.use(
-  cors({
-    origin(origin, callback) {
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
-
-      const isAllowedByConfig = allowedOrigins.includes(origin);
-      const isAllowedDevOrigin = !isProduction && devOrigins.includes(origin);
-
-      if (isAllowedByConfig || isAllowedDevOrigin) {
-        callback(null, true);
-        return;
-      }
-
-      callback(new Error("CORS origin denied"));
-    },
+  // Dynamic options: first argument is the incoming request (see cors `middlewareWrapper`).
+  cors((req, callback) => {
+    const origin = req.header("Origin") || undefined;
+    if (!origin) {
+      callback(null, { origin: true });
+      return;
+    }
+    if (allowedOrigins.includes(origin) || (!isProduction && devOrigins.includes(origin))) {
+      callback(null, { origin: true });
+      return;
+    }
+    if (isBrowserOriginSameSiteAsRequest(origin, req)) {
+      callback(null, { origin: true });
+      return;
+    }
+    callback(new Error("CORS origin denied"));
   }),
 );
 app.use(express.json({ limit: "16kb" }));
