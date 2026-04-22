@@ -1228,6 +1228,10 @@ app.get("/api/health", (req, res) => {
 });
 
 app.get("/api/debug/env", (req, res) => {
+  // Never expose environment/secret diagnostics in production deployments.
+  if (isProduction || isVercel) {
+    return res.status(404).json({ error: "Not found" });
+  }
   const saRaw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON || "";
   let saJsonValid = false;
   let saJsonError: string | null = null;
