@@ -92,7 +92,8 @@ const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS = 15;
 const ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS = 6;
-const ADMIN_SETTINGS_MAX_BODY_BYTES = 8 * 1024;
+/** Must fit a max-size logoDataUrl (~150k) plus other fields; was 8kb and caused 500s on save (entity too large). */
+const ADMIN_SETTINGS_MAX_BODY_BYTES = 320 * 1024;
 const ADMIN_OPERATIONS_MAX_BODY_BYTES = 2 * 1024;
 const ADMIN_SETTINGS_TIMEOUT_MS = 8_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
@@ -342,7 +343,7 @@ async function checkRateLimitDistributed(
   if (!incrResponse.ok) {
     throw new Error("Upstash rate limit increment failed");
   }
-  const incrData = (await incrResponse.json()) as { result?: number };
+  const incrData = (await safeJson(incrResponse)) as { result?: number };
   const requestCount = Number(incrData.result ?? 0);
 
   if (requestCount === 1) {
@@ -385,6 +386,16 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number, timeoutMessag
     return await Promise.race([work, timeoutPromise]);
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function safeJson(response: Response): Promise<unknown> {
+  const text = await response.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return {};
   }
 }
 
@@ -944,11 +955,30 @@ async function fetchFirestoreSettings(): Promise<Partial<AppSettings>> {
   }
 }
 
+/** Commit settings: PATCH existing doc, or create `settings/global` if missing (first deploy / empty project). */
 async function saveFirestoreSettings(settings: AppSettings): Promise<void> {
-  await firestoreCall("settings/global", {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
+  const projectId = getFirebaseProjectId();
+  const fields = toFirestoreFields(settings);
+  const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
+  const globalPath = "settings/global";
+  let response = await fetch(`${base}/${globalPath}`, {
     method: "PATCH",
-    body: { fields: toFirestoreFields(settings) },
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
   });
+  if (response.status === 404) {
+    const createUrl = `${base}/settings?documentId=global`;
+    response = await fetch(createUrl, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    });
+  }
+  const data = (await response.json().catch(() => ({}))) as { error?: { message?: string; status?: string } };
+  if (!response.ok) {
+    throw new Error(data.error?.message || "Firestore write failed for global settings");
+  }
 }
 
 function validateRole(input: unknown): AppRole | null {
@@ -1207,7 +1237,25 @@ app.use(
     callback(new Error("CORS origin denied"));
   }),
 );
-app.use(express.json({ limit: "16kb" }));
+// Logo uploads in settings can approach validateSettings' 150k cap; 16kb caused PayloadTooLarge / unhandled 500s on save
+app.use(express.json({ limit: "350kb" }));
+app.use((
+  err: unknown,
+  _req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) => {
+  const e = err as { statusCode?: number; type?: string; message?: string };
+  if (e?.type === "entity.too.large" || (e?.statusCode === 413 && res.headersSent === false)) {
+    res.status(413).json({ error: "Request body too large. Remove or use a smaller logo image and try again." });
+    return;
+  }
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  next(err);
+});
 app.set("trust proxy", getTrustProxySetting());
 
 if (!hasUpstash) {
