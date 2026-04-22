@@ -221,10 +221,6 @@ function getBearerToken(authHeader: string | undefined): string | null {
   return token;
 }
 
-function claimIsTrue(claims: Record<string, unknown>, key: string): boolean {
-  return claims[key] === true;
-}
-
 function normalizeRoleFromClaims(claims: Record<string, unknown>): AppRole {
   const roleClaim = claims.role;
   if (roleClaim === "owner" || roleClaim === "admin" || roleClaim === "collaborator" || roleClaim === "viewer") {
@@ -267,10 +263,10 @@ function sanitizePermissionSet(input: unknown, role: AppRole): UserPermissionSet
   };
 }
 
-function claimIncludesGroup(claims: Record<string, unknown>, allowedGroups: string[]): boolean {
-  const groups = claims.groups;
-  if (!Array.isArray(groups)) return false;
-  return groups.some((group) => typeof group === "string" && allowedGroups.includes(group));
+function permissionClaimIsTrue(claims: Record<string, unknown>, key: UserPermissionKey): boolean {
+  const perms = claims.permissions;
+  if (!perms || typeof perms !== "object") return false;
+  return (perms as Record<string, unknown>)[key] === true;
 }
 
 function getAdminAuth(): admin.auth.Auth {
@@ -284,29 +280,26 @@ async function pause(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function isInternalUser(claims: Record<string, unknown>): boolean {
-  return (
-    claimIsTrue(claims, "admin") ||
-    claimIsTrue(claims, "domain_authorized") ||
-    claimIsTrue(claims, "org_member") ||
-    claimIncludesGroup(claims, ["internal", "staff", "team", "employee"])
-  );
-}
-
-function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; status: number; error: string } {
-  const role = normalizeRoleFromClaims(user.claims);
-  // Owners have super privileges — bypass the internal domain/group check entirely
-  if (isOwnerRole(role)) {
+/**
+ * Global settings and related admin APIs: align with `firestore.rules` `canManageSettings()` — owner/admin
+ * or explicit canManageSettings on the user mirror and/or ID token. Do **not** require org/domain/group
+ * flags (that blocked legitimate admins when deploying outside the original internal domain).
+ */
+async function requireCanManageGlobalSettings(
+  user: VerifiedUser,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const mirror = await getUserMirrorRoleAndPermissions(user.uid);
+  const role: AppRole = mirror.role ?? normalizeRoleFromClaims(user.claims);
+  if (isAdminRole(role)) {
     return { ok: true };
   }
-  if (!isInternalUser(user.claims)) {
-    return { ok: false, status: 403, error: "Internal domain/group authorization required" };
+  if (mirror.permissions?.canManageSettings) {
+    return { ok: true };
   }
-  const permissions = sanitizePermissionSet(user.claims.permissions, role);
-  if (!permissions.canManageSettings) {
-    return { ok: false, status: 403, error: "Admin or owner role required" };
+  if (permissionClaimIsTrue(user.claims, "canManageSettings")) {
+    return { ok: true };
   }
-  return { ok: true };
+  return { ok: false, status: 403, error: "Owner, admin, or settings management permission required" };
 }
 
 function checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
@@ -1430,7 +1423,7 @@ app.post("/api/ai/generate", async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
 
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireCanManageGlobalSettings(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1649,7 +1642,7 @@ app.post("/api/admin/settings", async (req, res) => {
     if (!verifiedUser) {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireCanManageGlobalSettings(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
@@ -1722,7 +1715,7 @@ app.post("/api/admin/operations/run", async (req, res) => {
       return res.status(401).json({ error: "Invalid or expired auth token" });
     }
 
-    const adminGate = requireInternalAdmin(verifiedUser);
+    const adminGate = await requireCanManageGlobalSettings(verifiedUser);
     if (adminGate.ok === false) {
       return res.status(adminGate.status).json({ error: adminGate.error });
     }
