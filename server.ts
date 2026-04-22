@@ -185,7 +185,6 @@ const STAGE_TARGET_DAYS: Record<string, number> = {
   "Pilot / Testing": 14,
   "Review / Approval": 10,
 };
-const DEFAULT_BOOTSTRAP_OWNER_EMAIL = "whuggins@law.stanford.edu";
 const DEFAULT_ELEVATED_PASSWORD = "ChangeMe1234";
 
 function getClientIp(req: express.Request): string {
@@ -294,9 +293,6 @@ function isInternalUser(claims: Record<string, unknown>): boolean {
 }
 
 function requireInternalAdmin(user: VerifiedUser): { ok: true } | { ok: false; status: number; error: string } {
-  if ((user.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
-    return { ok: true };
-  }
   const role = normalizeRoleFromClaims(user.claims);
   // Owners have super privileges — bypass the internal domain/group check entirely
   if (isOwnerRole(role)) {
@@ -1020,8 +1016,7 @@ function configuredOwnerEmails(): string[] {
     .split(",")
     .map((value) => value.trim().toLowerCase())
     .filter(Boolean);
-  if (configured.length > 0) return configured;
-  return [DEFAULT_BOOTSTRAP_OWNER_EMAIL];
+  return configured;
 }
 
 function isEmailEligibleForOwnerBootstrap(email: string | null | undefined): boolean {
@@ -1035,8 +1030,11 @@ function canClaimInitialOwnerAccess(user: VerifiedUser, ownerCount: number): boo
   if (ownerCount > 0) return false;
   if (isEmailEligibleForOwnerBootstrap(user.email)) return true;
   const ownerEmails = configuredOwnerEmails();
-  if (ownerEmails.length > 0) return false;
-  return true;
+  // If no bootstrap emails are configured:
+  // - Local/dev: allow self-service claim (convenience for first-run).
+  // - Production/Vercel: require explicit OWNER_EMAILS configuration.
+  if (ownerEmails.length === 0) return !isProduction && !isVercel;
+  return false;
 }
 
 async function getUserMirrorRoleAndPermissions(uid: string): Promise<{ role: AppRole | null; permissions: UserPermissionSet | null }> {
@@ -1092,9 +1090,6 @@ async function saveElevatedAccessConfig(config: { passwordHash: string; needsCha
 }
 
 async function resolveEffectiveRole(verifiedUser: VerifiedUser): Promise<AppRole> {
-  if ((verifiedUser.email || "").trim().toLowerCase() === DEFAULT_BOOTSTRAP_OWNER_EMAIL) {
-    return "owner";
-  }
   const mirror = await getUserMirrorRoleAndPermissions(verifiedUser.uid);
   if (mirror.role) return mirror.role;
   return normalizeRoleFromClaims(verifiedUser.claims);
