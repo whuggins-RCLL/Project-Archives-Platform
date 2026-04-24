@@ -16,6 +16,36 @@ const COLUMNS: { title: ProjectStatus; color: string; border: string }[] = [
   { title: 'Launched', color: 'bg-tertiary-fixed', border: 'border-tertiary-fixed-dim' }
 ];
 
+const STATUS_ALIASES: Record<string, ProjectStatus> = {
+  intake: 'Intake / Proposed',
+  proposed: 'Intake / Proposed',
+  'intake / proposed': 'Intake / Proposed',
+  'intake/proposed': 'Intake / Proposed',
+  scoping: 'Scoping',
+  active: 'In Progress',
+  'in progress': 'In Progress',
+  'in-progress': 'In Progress',
+  execution: 'In Progress',
+  'pilot / testing': 'Pilot / Testing',
+  'pilot/testing': 'Pilot / Testing',
+  pilot: 'Pilot / Testing',
+  testing: 'Pilot / Testing',
+  'review / approval': 'Review / Approval',
+  'review/approval': 'Review / Approval',
+  review: 'Review / Approval',
+  approval: 'Review / Approval',
+  launched: 'Launched',
+  complete: 'Launched',
+  completed: 'Launched',
+  done: 'Launched',
+};
+
+const normalizeProjectStatus = (status: string | undefined): ProjectStatus => {
+  if (!status) return 'Intake / Proposed';
+  const normalized = STATUS_ALIASES[status.trim().toLowerCase()];
+  return normalized ?? 'Intake / Proposed';
+};
+
 export default function KanbanView({ projects, loading, onProjectClick, onNewProject, isAdmin }: { projects: Project[], loading: boolean, onProjectClick: (id: string) => void, onNewProject: () => void, isAdmin: boolean }) {
   const [activeFilter, setActiveFilter] = useState<string | null>(null);
   const [filterQuery, setFilterQuery] = useState<ProjectFilterQuery>(DEFAULT_FILTER_QUERY);
@@ -78,7 +108,8 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
 
     if (keyboardDraggedProjectId !== project.id) return;
 
-    const columnIndex = COLUMNS.findIndex((column) => column.title === project.status);
+    const projectStatus = normalizeProjectStatus(project.status);
+    const columnIndex = COLUMNS.findIndex((column) => column.title === projectStatus);
     if (columnIndex < 0) return;
 
     if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
@@ -183,7 +214,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
         </p>
         <div className="flex h-full space-x-6 min-w-max">
           {COLUMNS.map(col => {
-            const colProjects = filteredProjects.filter(p => p.status === col.title);
+            const colProjects = filteredProjects.filter(p => normalizeProjectStatus(p.status) === col.title);
             const displayedProjects = getFilteredProjects(colProjects);
             
             return (
@@ -249,7 +280,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
                           )}
                           <span className="text-[10px] font-medium text-on-surface-variant">{project.owner.name}</span>
                         </div>
-                        {project.status === 'Launched' && (
+                        {normalizeProjectStatus(project.status) === 'Launched' && (
                           <div className="flex items-center space-x-1 text-tertiary-fixed-dim">
                             <CheckCircle2 className="w-4 h-4" />
                             <span className="text-[10px] font-bold">In Production</span>
