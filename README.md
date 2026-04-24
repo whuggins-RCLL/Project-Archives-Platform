@@ -104,6 +104,15 @@ In restricted CI/sandbox environments, npm registry advisory endpoints can be bl
 
 
 
+
+## Collaboration Playbook (Google Calendar + Shared Drive)
+
+For team operating standards around deadlines and shared project file storage, see:
+
+- [`docs/collaboration.md`](docs/collaboration.md)
+
+This playbook defines a shared calendar convention, Google Drive folder levels, naming rules, and weekly maintenance steps.
+
 ## Customizing Branding
 
 You can easily customize the software to match your organization's identity colors and naming.
