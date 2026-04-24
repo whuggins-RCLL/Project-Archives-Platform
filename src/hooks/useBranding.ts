@@ -19,13 +19,26 @@ const DEFAULT_SETTINGS: Settings = {
   logoDataUrl: '',
   primaryColor: '#002045',
   brandDarkColor: '#1A365D',
+  themePreference: 'system',
   customFooter: '',
   helpContactEmail: '',
 };
 
+function getReadableTextColor(hex: string): '#0f172a' | '#ffffff' {
+  const normalized = hex.replace('#', '');
+  if (normalized.length !== 6) return '#ffffff';
+  const red = parseInt(normalized.slice(0, 2), 16);
+  const green = parseInt(normalized.slice(2, 4), 16);
+  const blue = parseInt(normalized.slice(4, 6), 16);
+  const luminance = (0.299 * red + 0.587 * green + 0.114 * blue) / 255;
+  return luminance > 0.62 ? '#0f172a' : '#ffffff';
+}
+
 export function applyBrandingToDocument(settings: Pick<Settings, 'primaryColor' | 'brandDarkColor'>): void {
   document.documentElement.style.setProperty('--brand-primary', settings.primaryColor);
   document.documentElement.style.setProperty('--brand-dark', settings.brandDarkColor);
+  document.documentElement.style.setProperty('--brand-on-primary', getReadableTextColor(settings.primaryColor));
+  document.documentElement.style.setProperty('--brand-on-dark', getReadableTextColor(settings.brandDarkColor));
 }
 
 export function useBranding() {

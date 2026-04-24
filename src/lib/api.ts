@@ -78,6 +78,7 @@ export interface Settings {
   logoDataUrl?: string;
   primaryColor: string;
   brandDarkColor: string;
+  themePreference?: 'system' | 'light' | 'dark';
   customFooter?: string;
   helpContactEmail?: string;
 }
@@ -216,6 +217,7 @@ export const api = {
           logoDataUrl: data.logoDataUrl ?? '',
           primaryColor: data.primaryColor ?? '#002045',
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
+          themePreference: data.themePreference === 'light' || data.themePreference === 'dark' ? data.themePreference : 'system',
           customFooter: data.customFooter ?? '',
           helpContactEmail: data.helpContactEmail ?? '',
         };
@@ -237,6 +239,7 @@ export const api = {
         logoDataUrl: '',
         primaryColor: '#002045',
         brandDarkColor: '#1A365D',
+        themePreference: 'system',
         customFooter: '',
         helpContactEmail: '',
       };

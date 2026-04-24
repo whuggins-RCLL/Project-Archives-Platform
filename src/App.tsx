@@ -32,6 +32,11 @@ function InternalApp() {
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
+  const [isSidebarDesktopOpen, setIsSidebarDesktopOpen] = useState(() => window.localStorage.getItem('sidebar-desktop-open') !== 'false');
+  const [themePreference, setThemePreference] = useState<'system' | 'light' | 'dark'>(() => {
+    const savedTheme = window.localStorage.getItem('theme-preference');
+    return savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'system';
+  });
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [elevatedStatus, setElevatedStatus] = useState<{ required: boolean; needsChange: boolean }>({ required: false, needsChange: false });
@@ -63,6 +68,26 @@ function InternalApp() {
   useEffect(() => {
     applyBrandingToDocument(settings);
   }, [settings.primaryColor, settings.brandDarkColor]);
+
+  useEffect(() => {
+    if (settings.themePreference === 'light' || settings.themePreference === 'dark' || settings.themePreference === 'system') {
+      setThemePreference(settings.themePreference);
+    }
+  }, [settings.themePreference]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (themePreference === 'system') {
+      root.removeAttribute('data-theme');
+    } else {
+      root.setAttribute('data-theme', themePreference);
+    }
+    window.localStorage.setItem('theme-preference', themePreference);
+  }, [themePreference]);
+
+  useEffect(() => {
+    window.localStorage.setItem('sidebar-desktop-open', String(isSidebarDesktopOpen));
+  }, [isSidebarDesktopOpen]);
 
   useEffect(() => {
     if (isViewerOnly && currentView !== 'portfolio') {
@@ -225,7 +250,12 @@ function InternalApp() {
       case 'record':
         return <RecordView projects={projects} loading={loadingProjects} projectId={selectedProjectId} onBack={() => setCurrentView('kanban')} isAdmin={canEditContent} />;
       case 'settings':
-        return <SettingsView canManageSettings={canManageSettings} canViewSettings={canViewSettings} loadingRole={loadingRole} onRoleRefreshRequested={refreshRoleClaims} onSettingsUpdated={(next) => applyBrandingToDocument(next)} />;
+        return <SettingsView canManageSettings={canManageSettings} canViewSettings={canViewSettings} loadingRole={loadingRole} onRoleRefreshRequested={refreshRoleClaims} refreshingRole={refreshingRole} roleError={roleError} onSettingsUpdated={(next) => {
+          applyBrandingToDocument(next);
+          if (next.themePreference === 'light' || next.themePreference === 'dark' || next.themePreference === 'system') {
+            setThemePreference(next.themePreference);
+          }
+        }} />;
       case 'admin-users':
         return <AdminUsersView canManageRoles={canManageRoles} onRoleRefreshRequested={refreshRoleClaims} currentRole={rawRole} />;
       case 'help':
@@ -345,10 +375,11 @@ function InternalApp() {
         canManageRoles={canManageRoles}
         viewerOnlyMode={isViewerOnly}
         isMobileOpen={isSidebarMobileOpen}
+        isDesktopOpen={isSidebarDesktopOpen}
         onMobileClose={() => setIsSidebarMobileOpen(false)}
         branding={branding}
       />
-      <div className="flex-1 lg:ml-64 flex flex-col">
+      <div className={`flex-1 flex flex-col transition-[margin] duration-200 ${isSidebarDesktopOpen ? 'lg:ml-64' : 'lg:ml-0'}`}>
         <button
           onClick={() => setIsSidebarMobileOpen((prev) => !prev)}
           className="lg:hidden fixed top-4 left-4 z-[60] p-2 rounded-md bg-surface-container-low border border-outline-variant/30 text-on-surface"
@@ -359,12 +390,13 @@ function InternalApp() {
         <Topbar
           roleLabel={roleLabel}
           rawRole={rawRole}
-          roleError={roleError}
-          refreshingRole={refreshingRole}
-          onRefreshPermissions={refreshRoleClaims}
           onOpenSettings={() => setCurrentView('settings')}
           canViewSettings={!isViewerOnly && canViewSettings}
           canManageSettings={!isViewerOnly && canManageSettings}
+          onToggleSidebar={() => setIsSidebarDesktopOpen((prev) => !prev)}
+          isSidebarOpen={isSidebarDesktopOpen}
+          themePreference={themePreference}
+          onThemePreferenceChange={setThemePreference}
           branding={branding}
         />
         <main

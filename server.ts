@@ -131,6 +131,7 @@ type AppSettings = {
   logoDataUrl: string;
   primaryColor: string;
   brandDarkColor: string;
+  themePreference?: "system" | "light" | "dark";
   customFooter?: string;
   helpContactEmail?: string;
 };
@@ -798,6 +799,7 @@ function validateSettings(input: unknown): AppSettings | null {
     !source.primaryColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     typeof source.brandDarkColor !== "string" ||
     !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/) ||
+    (source.themePreference !== undefined && source.themePreference !== "system" && source.themePreference !== "light" && source.themePreference !== "dark") ||
     (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
     (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254))
   ) {
@@ -827,6 +829,7 @@ function validateSettings(input: unknown): AppSettings | null {
     logoDataUrl: source.logoDataUrl,
     primaryColor: source.primaryColor,
     brandDarkColor: source.brandDarkColor,
+    themePreference: source.themePreference === "light" || source.themePreference === "dark" ? source.themePreference : "system",
     customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
     helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
   };
@@ -850,6 +853,7 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     logoDataUrl: { stringValue: settings.logoDataUrl },
     primaryColor: { stringValue: settings.primaryColor },
     brandDarkColor: { stringValue: settings.brandDarkColor },
+    ...(settings.themePreference !== undefined && { themePreference: { stringValue: settings.themePreference } }),
     ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
     ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
   };
@@ -878,6 +882,7 @@ function fromFirestoreFields(
     logoDataUrl: fields.logoDataUrl?.stringValue,
     primaryColor: fields.primaryColor?.stringValue,
     brandDarkColor: fields.brandDarkColor?.stringValue,
+    themePreference: fields.themePreference?.stringValue as AppSettings["themePreference"] | undefined,
     customFooter: fields.customFooter?.stringValue,
     helpContactEmail: fields.helpContactEmail?.stringValue,
   };
