@@ -5,6 +5,7 @@ import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dep
 import { withGovernanceDefaults } from '../lib/projectGovernance';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
 import { AI_MODEL_OPTIONS } from '../constants';
+import { INTEGRATION_CONFIG } from '../config';
 
 const DEFAULT_PROVIDER = 'gemini';
 
@@ -34,6 +35,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [commentError, setCommentError] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<Settings['activeProvider']>(DEFAULT_PROVIDER);
   const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
 
@@ -55,9 +57,11 @@ export default function RecordView({ projects, loading: projectsLoading, project
       (commentsData) => {
         setComments(commentsData);
         setLoadingComments(false);
+        setCommentError(null);
       },
       (error) => {
         console.error(error);
+        setCommentError(getErrorMessage(error, 'Unable to load comments for this project right now.'));
         setLoadingComments(false);
       }
     );
@@ -123,11 +127,14 @@ export default function RecordView({ projects, loading: projectsLoading, project
         mentions: extractMentions(newComment),
         attachments,
       });
+      setCommentError(null);
       setNewComment('');
       setAttachments([]);
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to post comment. Please try again.') });
+      const message = getErrorMessage(error, 'Failed to post comment. Please try again.');
+      setCommentError(message);
+      setToast({ type: 'error', message });
     } finally {
       setAddingComment(false);
     }
@@ -144,10 +151,14 @@ export default function RecordView({ projects, loading: projectsLoading, project
         mentions: extractMentions(draft),
         attachments: replyAttachments[parentId] ?? [],
       });
+      setCommentError(null);
       setReplyDrafts((prev) => ({ ...prev, [parentId]: '' }));
       setReplyAttachments((prev) => ({ ...prev, [parentId]: [] }));
     } catch (error) {
       console.error(error);
+      const message = getErrorMessage(error, 'Failed to send reply. Please try again.');
+      setCommentError(message);
+      setToast({ type: 'error', message });
     }
   };
 
@@ -160,19 +171,35 @@ export default function RecordView({ projects, loading: projectsLoading, project
     if (!editDraft.trim()) return;
     try {
       await api.updateCommentText(comment, editDraft.trim());
+      setCommentError(null);
       setEditingCommentId(null);
       setEditDraft('');
     } catch (error) {
       console.error(error);
+      const message = getErrorMessage(error, 'Unable to save comment edit.');
+      setCommentError(message);
+      setToast({ type: 'error', message });
     }
   };
 
   const handleToggleReaction = async (comment: Comment, emoji: string) => {
     try {
       await api.toggleCommentReaction(comment, emoji);
+      setCommentError(null);
     } catch (error) {
       console.error(error);
+      const message = getErrorMessage(error, 'Unable to update comment reaction.');
+      setCommentError(message);
+      setToast({ type: 'error', message });
     }
+  };
+
+  const normalizeGoogleDriveUrl = (url: string): string => {
+    const fileMatch = url.match(/\/file\/d\/([^/]+)/i);
+    if (fileMatch) return `https://drive.google.com/file/d/${fileMatch[1]}/view`;
+    const folderMatch = url.match(/\/folders\/([^/?]+)/i);
+    if (folderMatch) return `https://drive.google.com/drive/folders/${folderMatch[1]}`;
+    return url;
   };
 
   const handleAddAttachment = (target: 'root' | string) => {
@@ -643,6 +670,21 @@ Description: ${project.description}`;
   const pendingApprovals = (project?.approvalCheckpoints ?? []).filter((checkpoint) => checkpoint.required && !checkpoint.approved).length;
   const blockedDependencies = (project?.dependencies ?? []).filter((dependency) => dependency.status === 'At Risk').length;
   const currentUserId = api.getCurrentUserId();
+  const canComment = isAdmin;
+  const relevantLinks = [
+    INTEGRATION_CONFIG.githubBaseUrl ? {
+      key: 'github',
+      icon: <LinkIcon className="w-4 h-4" />,
+      label: 'Project repository',
+      href: `${INTEGRATION_CONFIG.githubBaseUrl}/${project.code.toLowerCase()}`,
+    } : null,
+    INTEGRATION_CONFIG.googleDriveFolderBaseUrl ? {
+      key: 'drive',
+      icon: <FileText className="w-4 h-4" />,
+      label: 'Google Drive workspace',
+      href: normalizeGoogleDriveUrl(`${INTEGRATION_CONFIG.googleDriveFolderBaseUrl}/${project.code}`),
+    } : null,
+  ].filter((link): link is { key: string; icon: JSX.Element; label: string; href: string } => Boolean(link));
 
   const topLevelComments = comments.filter((comment) => !comment.parentId);
   const repliesByParent = comments.reduce<Record<string, Comment[]>>((acc, comment) => {
@@ -1274,13 +1316,24 @@ Description: ${project.description}`;
             <div className="mt-6">
               <label className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Relevant Links</label>
               <div className="space-y-2">
-                <div className="flex items-center gap-3 text-sm text-primary font-medium hover:underline cursor-pointer">
-                  <LinkIcon className="w-5 h-5" />
-                  https://github.com/archivist/{project.code.toLowerCase()}
-                </div>
-                <div className="flex items-center gap-3 text-sm text-primary font-medium hover:underline cursor-pointer">
-                  <FileText className="w-5 h-5" />
-                  Legal Review: AI Ethics Framework.pdf
+                {relevantLinks.length === 0 ? (
+                  <div className="text-xs text-on-surface-variant bg-surface-container-low rounded-md p-3">
+                    No external links are configured. Add <code>VITE_PROJECT_GITHUB_BASE_URL</code> and/or <code>VITE_PROJECT_DRIVE_FOLDER_BASE_URL</code> to enable them.
+                  </div>
+                ) : relevantLinks.map((link) => (
+                  <a
+                    key={link.key}
+                    className="flex items-center gap-2 text-sm text-primary font-medium hover:underline"
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {link.icon}
+                    {link.label}
+                  </a>
+                ))}
+                <div className="text-[11px] text-on-surface-variant">
+                  Legacy placeholder links were removed to avoid dead navigation.
                 </div>
               </div>
             </div>
@@ -1288,7 +1341,7 @@ Description: ${project.description}`;
         </div>
 
         <div className="col-span-12 lg:col-span-4 space-y-6">
-          <div className="bg-surface-container-lowest rounded-lg shadow-sm flex flex-col h-[600px]">
+          <div className="modern-card bg-surface-container-lowest rounded-xl flex flex-col h-[600px]">
             <div className="p-6 border-b border-outline-variant/10">
               <h3 className="font-headline font-bold text-lg flex items-center gap-2">
                 <MessageSquare className="w-5 h-5 text-primary" />
@@ -1297,6 +1350,11 @@ Description: ${project.description}`;
               <p className="text-xs text-on-surface-variant mt-1">Mentions, edits, threaded replies, reactions, and attachments</p>
             </div>
             <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+              {commentError && (
+                <div className="rounded-md border border-error/30 bg-error-container/40 text-on-error-container p-3 text-xs">
+                  {commentError}
+                </div>
+              )}
               {comments.length === 0 && (
                 <div className="text-center text-sm text-on-surface-variant mt-10">No comments yet.</div>
               )}
@@ -1351,16 +1409,17 @@ Description: ${project.description}`;
                               <button
                                 key={emoji}
                                 onClick={() => handleToggleReaction(comment, emoji)}
+                                disabled={!canComment}
                                 className={`text-[11px] px-2 py-1 rounded-full border ${isActive ? 'bg-primary/10 border-primary text-primary' : 'border-outline-variant text-on-surface-variant'}`}
                               >
                                 {emoji} {count > 0 ? count : ''}
                               </button>
                             );
                           })}
-                          <button onClick={() => handleToggleReaction(comment, '❤️')} className="text-[11px] text-on-surface-variant flex items-center gap-1 hover:text-primary">
+                          <button onClick={() => handleToggleReaction(comment, '❤️')} disabled={!canComment} className="text-[11px] text-on-surface-variant flex items-center gap-1 hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed">
                             <SmilePlus className="w-3 h-3" /> React
                           </button>
-                          {canEdit && editingCommentId !== comment.id && (
+                          {canComment && canEdit && editingCommentId !== comment.id && (
                             <button onClick={() => beginEdit(comment)} className="text-[11px] text-on-surface-variant flex items-center gap-1 hover:text-primary">
                               <Pencil className="w-3 h-3" /> Edit
                             </button>
@@ -1405,16 +1464,17 @@ Description: ${project.description}`;
                           placeholder="Reply in thread…"
                           value={replyDrafts[comment.id] ?? ''}
                           onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [comment.id]: e.target.value }))}
-                          onKeyDown={(e) => e.key === 'Enter' && handleReply(comment.id)}
+                          onKeyDown={(e) => e.key === 'Enter' && canComment && handleReply(comment.id)}
+                          disabled={!canComment}
                         />
                         <div className="mt-2 flex items-center justify-between">
                           <div className="flex items-center gap-2 text-[11px]">
-                            <button onClick={() => setAttachmentModalTarget(comment.id)} className="text-on-surface-variant hover:text-primary flex items-center gap-1">
+                            <button onClick={() => setAttachmentModalTarget(comment.id)} disabled={!canComment} className="text-on-surface-variant hover:text-primary flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                               <Paperclip className="w-3 h-3" /> Attach
                             </button>
                             <span className="text-on-surface-variant">{(replyAttachments[comment.id] ?? []).length} file(s)</span>
                           </div>
-                          <button onClick={() => handleReply(comment.id)} className="text-[11px] font-bold text-primary">Reply</button>
+                          <button onClick={() => handleReply(comment.id)} disabled={!canComment} className="text-[11px] font-bold text-primary disabled:opacity-40 disabled:cursor-not-allowed">Reply</button>
                         </div>
                       </div>
                     </div>
@@ -1430,11 +1490,12 @@ Description: ${project.description}`;
                   type="text"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && !addingComment && handleAddComment()}
+                  onKeyDown={(e) => e.key === 'Enter' && !addingComment && canComment && handleAddComment()}
+                  disabled={!canComment}
                 />
                 <button
                   onClick={handleAddComment}
-                  disabled={addingComment}
+                  disabled={addingComment || !canComment}
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {addingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -1442,17 +1503,17 @@ Description: ${project.description}`;
               </div>
               <div className="flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setAttachmentModalTarget('root')} className="text-on-surface-variant hover:text-primary flex items-center gap-1">
+                  <button onClick={() => setAttachmentModalTarget('root')} disabled={!canComment} className="text-on-surface-variant hover:text-primary flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                     <Paperclip className="w-3 h-3" /> Attach file
                   </button>
                   <span className="text-on-surface-variant">{attachments.length} attachment(s)</span>
                 </div>
-                <span className="text-on-surface-variant">Mentions detected: {extractMentions(newComment).length}</span>
+                <span className="text-on-surface-variant">{canComment ? `Mentions detected: ${extractMentions(newComment).length}` : 'Read-only for your current role'}</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-outline-variant/10">
+          <div className="modern-card bg-surface-container-lowest p-6 rounded-xl">
             <label className="block text-[10px] font-bold text-on-surface-variant uppercase mb-4 tracking-widest">Project Health</label>
             <div className="space-y-4">
               <div className="flex justify-between items-center text-sm">
