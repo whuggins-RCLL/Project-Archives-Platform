@@ -143,6 +143,12 @@ type VerifiedUser = {
 type AppRole = "owner" | "admin" | "collaborator" | "viewer";
 type UserPermissionKey = "canManageRoles" | "canManageSettings" | "canEditContent" | "canViewInternalStats";
 type UserPermissionSet = Record<UserPermissionKey, boolean>;
+const ROLE_PRIORITY: Record<AppRole, number> = {
+  owner: 4,
+  admin: 3,
+  collaborator: 2,
+  viewer: 1,
+};
 
 type OperationProjectSignal = {
   projectId: string;
@@ -239,6 +245,17 @@ function isAdminRole(role: AppRole): boolean {
   return role === "owner" || role === "admin";
 }
 
+function selectMostPrivilegedRole(...roles: Array<AppRole | null | undefined>): AppRole {
+  let resolved: AppRole = "viewer";
+  for (const role of roles) {
+    if (!role) continue;
+    if (ROLE_PRIORITY[role] > ROLE_PRIORITY[resolved]) {
+      resolved = role;
+    }
+  }
+  return resolved;
+}
+
 function canManageSettings(role: AppRole): boolean {
   return isAdminRole(role);
 }
@@ -290,7 +307,8 @@ async function requireCanManageGlobalSettings(
   user: VerifiedUser,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const mirror = await getUserMirrorRoleAndPermissions(user.uid);
-  const role: AppRole = mirror.role ?? normalizeRoleFromClaims(user.claims);
+  const roleFromToken = normalizeRoleFromClaims(user.claims);
+  const role = selectMostPrivilegedRole(mirror.role, roleFromToken);
   if (isAdminRole(role)) {
     return { ok: true };
   }
