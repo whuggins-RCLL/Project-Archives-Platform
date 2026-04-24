@@ -41,6 +41,7 @@ export default function SettingsView({
     themePreference: 'system',
   });
   const [loading, setLoading] = useState(true);
+  const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
@@ -52,9 +53,12 @@ export default function SettingsView({
       try {
         const data = await api.getSettings();
         setSettings(data);
+        setSettingsLoadFailed(false);
         onSettingsUpdated?.(data);
       } catch (error) {
         console.error('Failed to fetch settings');
+        setSettingsLoadFailed(true);
+        setToast({ type: 'error', message: 'Unable to load saved settings right now. Save is disabled to prevent overwriting existing values.' });
       } finally {
         setLoading(false);
       }
@@ -80,6 +84,11 @@ export default function SettingsView({
     setSaving(true);
     if (readOnly) {
       setToast({ type: 'error', message: 'You have view-only access to settings.' });
+      setSaving(false);
+      return;
+    }
+    if (settingsLoadFailed) {
+      setToast({ type: 'error', message: 'Cannot save because current settings failed to load. Please refresh and try again.' });
       setSaving(false);
       return;
     }
@@ -511,11 +520,11 @@ export default function SettingsView({
         <div className="p-6 bg-surface-container-low border-t border-outline-variant/10 flex justify-end">
           <button
             onClick={handleSave}
-            disabled={saving || readOnly}
+            disabled={saving || readOnly || settingsLoadFailed}
             className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-70"
           >
             <Save className="w-4 h-4" />
-            {saving ? 'Saving...' : readOnly ? 'View Only' : 'Save Settings'}
+            {saving ? 'Saving...' : readOnly ? 'View Only' : settingsLoadFailed ? 'Load Failed' : 'Save Settings'}
           </button>
         </div>
       </div>
