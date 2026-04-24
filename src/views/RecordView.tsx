@@ -38,6 +38,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
   const [driveFiles, setDriveFiles] = useState<GoogleDriveFile[]>([]);
   const [loadingDriveFiles, setLoadingDriveFiles] = useState(false);
+  const [driveFilesError, setDriveFilesError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -1329,7 +1330,7 @@ Description: ${project.description}`;
                     </p>
                   </div>
                   <button
-                    onClick={() => void loadDriveFiles(project)}
+                    onClick={() => void loadGoogleDriveFiles()}
                     disabled={loadingDriveFiles}
                     className="text-xs font-bold text-primary flex items-center gap-1 disabled:opacity-60"
                   >

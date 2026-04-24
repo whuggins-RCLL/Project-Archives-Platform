@@ -146,6 +146,8 @@ type AppSettings = {
   googleDriveProjectManifestEnabled: boolean;
 };
 
+type GoogleDriveSubfolder = { label: string; folderId: string };
+
 type WorkspaceProject = {
   id?: string;
   code?: string;
@@ -1222,11 +1224,12 @@ function fromFirestoreFields(
   fields: Record<string, Record<string, unknown>> | undefined,
 ): Partial<AppSettings> {
   if (!fields) return {};
+  const providerValues = (fields.enabledProviders?.arrayValue as { values?: Array<{ stringValue?: string }> } | undefined)?.values;
   const driveSubfolders = parseFirestoreValue(fields.googleDriveSubfolders);
   return {
     aiEnabled: fields.aiEnabled?.booleanValue as boolean | undefined,
     activeProvider: fields.activeProvider?.stringValue as string | undefined,
-    enabledProviders: fields.enabledProviders?.arrayValue?.values
+    enabledProviders: providerValues
       ?.map((value) => value?.stringValue as string | undefined)
       .filter((value): value is string => typeof value === "string" && ALLOWED_PROVIDERS.has(value)),
     aiAutoTagEnabled: fields.aiAutoTagEnabled?.booleanValue as boolean | undefined,
