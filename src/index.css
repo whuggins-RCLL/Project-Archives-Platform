@@ -8,6 +8,7 @@
 :root {
   --brand-primary: #002045; /* Main primary color */
   --brand-dark: #1A365D; /* Darker shade for hero backgrounds and dark text */
+  --app-radius: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -101,6 +102,26 @@ body {
   color-scheme: light dark;
   background-color: var(--color-surface);
   color: var(--color-on-surface);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+textarea,
+select {
+  transition: all 140ms ease;
+}
+
+.modern-card {
+  border-radius: var(--app-radius);
+  border: 1px solid color-mix(in srgb, var(--color-outline-variant) 45%, transparent);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--color-brand-dark) 10%, transparent);
 }
 
 /* Custom scrollbar for kanban */
