@@ -41,11 +41,6 @@ export default function Sidebar({
       { id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' },
     ];
 
-  const handleHelpClick = () => {
-    window.open('/', '_blank', 'noopener,noreferrer');
-    onMobileClose();
-  };
-
   const handleLogout = async () => {
     await signOut(auth);
     onMobileClose();
@@ -131,7 +126,10 @@ export default function Sidebar({
         )}
         <div className="h-4"></div>
         <button
-          onClick={handleHelpClick}
+          onClick={() => {
+            setCurrentView('help');
+            onMobileClose();
+          }}
           className="w-full flex items-center space-x-3 px-4 py-2 text-slate-600 hover:text-brand-dark text-xs font-medium"
         >
           <HelpCircle className="w-4 h-4" />
