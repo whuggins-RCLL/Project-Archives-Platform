@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
+import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet, GoogleDriveFile } from '../types';
 import { buildPortfolioMetrics } from './portfolioAnalytics';
 
 enum OperationType {
@@ -80,6 +80,16 @@ export interface Settings {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  googleCalendarEnabled: boolean;
+  googleCalendarId: string;
+  googleCalendarEventPrefix?: string;
+  googleCalendarPostProjectDueDate: boolean;
+  googleCalendarPostMilestones: boolean;
+  googleDriveEnabled: boolean;
+  googleDriveSharedDriveId?: string;
+  googleDriveRootFolderId: string;
+  googleDriveSubfolders: Array<{ label: string; folderId: string }>;
+  googleDriveProjectManifestEnabled: boolean;
 }
 
 const ALLOWED_PROVIDERS = ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] as const;
@@ -218,6 +228,16 @@ export const api = {
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
           customFooter: data.customFooter ?? '',
           helpContactEmail: data.helpContactEmail ?? '',
+          googleCalendarEnabled: data.googleCalendarEnabled ?? false,
+          googleCalendarId: data.googleCalendarId ?? '',
+          googleCalendarEventPrefix: data.googleCalendarEventPrefix ?? '',
+          googleCalendarPostProjectDueDate: data.googleCalendarPostProjectDueDate ?? true,
+          googleCalendarPostMilestones: data.googleCalendarPostMilestones ?? true,
+          googleDriveEnabled: data.googleDriveEnabled ?? false,
+          googleDriveSharedDriveId: data.googleDriveSharedDriveId ?? '',
+          googleDriveRootFolderId: data.googleDriveRootFolderId ?? '',
+          googleDriveSubfolders: Array.isArray(data.googleDriveSubfolders) ? data.googleDriveSubfolders : [],
+          googleDriveProjectManifestEnabled: data.googleDriveProjectManifestEnabled ?? true,
         };
       }
       return {
@@ -239,6 +259,16 @@ export const api = {
         brandDarkColor: '#1A365D',
         customFooter: '',
         helpContactEmail: '',
+        googleCalendarEnabled: false,
+        googleCalendarId: '',
+        googleCalendarEventPrefix: '',
+        googleCalendarPostProjectDueDate: true,
+        googleCalendarPostMilestones: true,
+        googleDriveEnabled: false,
+        googleDriveSharedDriveId: '',
+        googleDriveRootFolderId: '',
+        googleDriveSubfolders: [],
+        googleDriveProjectManifestEnabled: true,
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');
@@ -268,6 +298,79 @@ export const api = {
       }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'settings/global');
+    }
+  },
+
+  syncProjectDatesToGoogleCalendar: async (project: Project): Promise<void> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/integrations/google/calendar/sync-project', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ project }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Google Calendar sync failed');
+    }
+  },
+
+  syncProjectManifestToGoogleDrive: async (project: Project): Promise<void> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/integrations/google/drive/sync-project', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ project }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Google Drive sync failed');
+    }
+  },
+
+  listGoogleDriveFilesForProject: async (project: Pick<Project, 'code' | 'title'>): Promise<GoogleDriveFile[]> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return [];
+    const idToken = await currentUser.getIdToken();
+    const params = new URLSearchParams({
+      projectCode: project.code,
+      projectTitle: project.title,
+    });
+    const response = await fetch(`/api/integrations/google/drive/files?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Google Drive files could not be loaded');
+    }
+    const payload = await response.json() as { files?: GoogleDriveFile[] };
+    return payload.files ?? [];
+  },
+
+  createProjectWorkspaceArtifacts: async (title: string): Promise<void> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/integrations/google/workspace/create-from-latest', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ title }),
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || 'Google Workspace artifact sync failed');
     }
   },
 
@@ -336,7 +439,10 @@ export const api = {
         updatedAt: serverTimestamp()
       };
       const docRef = await addDoc(collection(db, 'projects'), newProjectData);
-      return { id: docRef.id, ...newProjectData } as unknown as Project;
+      const createdProject = { id: docRef.id, ...newProjectData } as unknown as Project;
+      void api.syncProjectDatesToGoogleCalendar(createdProject).catch((error) => console.warn('Google Calendar sync skipped', error));
+      void api.syncProjectManifestToGoogleDrive(createdProject).catch((error) => console.warn('Google Drive sync skipped', error));
+      return createdProject;
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'projects');
     }
@@ -348,7 +454,10 @@ export const api = {
       const updateData = { ...updates, updatedAt: serverTimestamp() };
       await updateDoc(docRef, updateData);
       const updatedDoc = await getDoc(docRef);
-      return { id: updatedDoc.id, ...updatedDoc.data() } as Project;
+      const updatedProject = { id: updatedDoc.id, ...updatedDoc.data() } as Project;
+      void api.syncProjectDatesToGoogleCalendar(updatedProject).catch((error) => console.warn('Google Calendar sync skipped', error));
+      void api.syncProjectManifestToGoogleDrive(updatedProject).catch((error) => console.warn('Google Drive sync skipped', error));
+      return updatedProject;
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `projects/${id}`);
     }

@@ -141,6 +141,15 @@ export interface CommentAttachment {
   mimeType?: string;
 }
 
+export interface GoogleDriveFile {
+  id: string;
+  name: string;
+  webViewLink: string;
+  mimeType?: string;
+  modifiedTime?: string;
+  folderLabel?: string;
+}
+
 export interface CommentEditHistoryEntry {
   text: string;
   editedAt: string;

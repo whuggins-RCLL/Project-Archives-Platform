@@ -19,7 +19,7 @@ import LoginView from './views/LoginView';
 import SettingsView from './views/SettingsView';
 import AdminUsersView from './views/AdminUsersView';
 import HelpView from './views/HelpView';
-import { api } from './lib/api';
+import { api, getErrorMessage } from './lib/api';
 import { useUserRole } from './hooks/useUserRole';
 import { buildDefaultApprovalCheckpoints, buildDefaultMilestones } from './lib/projectGovernance';
 import { applyBrandingToDocument, useBranding } from './hooks/useBranding';
@@ -191,7 +191,7 @@ function InternalApp() {
   const handleNewProject = async () => {
     if (!newProjectTitle.trim()) return;
     try {
-      await api.createProject({
+      const createdProject = await api.createProject({
         title: newProjectTitle,
         description: 'New project description',
         status: 'Intake / Proposed',
@@ -205,6 +205,9 @@ function InternalApp() {
         milestones: buildDefaultMilestones(),
         dependencies: [],
         approvalCheckpoints: buildDefaultApprovalCheckpoints()
+      });
+      void api.createProjectWorkspaceArtifacts(createdProject.id).catch((error) => {
+        console.warn(getErrorMessage(error, 'Workspace sync skipped after project creation'));
       });
       setIsNewProjectModalOpen(false);
       setNewProjectTitle('');

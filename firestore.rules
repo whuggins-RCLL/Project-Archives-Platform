@@ -188,7 +188,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'enabledProviders', 'googleCalendarEnabled', 'googleCalendarId', 'googleCalendarEventPrefix', 'googleCalendarPostProjectDueDate', 'googleCalendarPostMilestones', 'googleDriveEnabled', 'googleDriveSharedDriveId', 'googleDriveRootFolderId', 'googleDriveSubfolders', 'googleDriveProjectManifestEnabled']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] &&
              data.aiAutoTagEnabled is bool &&
@@ -208,7 +208,18 @@ service cloud.firestore {
              data.brandDarkColor is string &&
              data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$') &&
              (!('customFooter' in data) || (data.customFooter is string && data.customFooter.size() <= 500)) &&
-             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254));
+             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254)) &&
+             (!('enabledProviders' in data) || (data.enabledProviders is list && data.enabledProviders.size() >= 1 && data.enabledProviders.size() <= 6)) &&
+             (!('googleCalendarEnabled' in data) || data.googleCalendarEnabled is bool) &&
+             (!('googleCalendarId' in data) || (data.googleCalendarId is string && data.googleCalendarId.size() <= 254)) &&
+             (!('googleCalendarEventPrefix' in data) || (data.googleCalendarEventPrefix is string && data.googleCalendarEventPrefix.size() <= 80)) &&
+             (!('googleCalendarPostProjectDueDate' in data) || data.googleCalendarPostProjectDueDate is bool) &&
+             (!('googleCalendarPostMilestones' in data) || data.googleCalendarPostMilestones is bool) &&
+             (!('googleDriveEnabled' in data) || data.googleDriveEnabled is bool) &&
+             (!('googleDriveSharedDriveId' in data) || (data.googleDriveSharedDriveId is string && data.googleDriveSharedDriveId.size() <= 200)) &&
+             (!('googleDriveRootFolderId' in data) || (data.googleDriveRootFolderId is string && data.googleDriveRootFolderId.size() <= 200)) &&
+             (!('googleDriveSubfolders' in data) || (data.googleDriveSubfolders is list && data.googleDriveSubfolders.size() <= 20)) &&
+             (!('googleDriveProjectManifestEnabled' in data) || data.googleDriveProjectManifestEnabled is bool);
     }
 
     function currentPrivacyMode() {

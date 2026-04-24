@@ -9,6 +9,7 @@ The Digital Archivist is a comprehensive Kanban and Portfolio management tool de
 - **Priority & Portfolio Views**: High-level overviews of project priorities, risk factors, and preservation scores.
 - **Detailed Project Records**: In-depth view of individual projects, including metadata, tags, governance checkpoints, and an advanced collaboration thread with mentions, edit history, reactions, nested replies, and attachments.
 - **AI Decision Support Workflows**: Generate next-best actions, risk narratives, and duplicate-project checks with confidence/explanation metadata and explicit human approval states.
+- **Google Workspace Integrations**: Admins can choose a preferred Google Calendar for project dates and connect Drive folders so project files are visible in the platform.
 - **Secure Authentication**: Google Workspace / Gmail authentication via Firebase to protect the internal dashboard.
 - **Real-time Database**: Powered by Firebase Firestore for seamless, real-time updates across all clients.
 
@@ -195,6 +196,9 @@ Because this project includes an Express server (`server.ts`) for secure AI/prov
    - `VITE_FIREBASE_MESSAGING_SENDER_ID`
    - `VITE_ALLOWED_DOMAIN` (optional)
    - Server-side AI/provider keys (`GEMINI_API_KEY`, `OPENAI_API_KEY`, `GROQ_API_KEY`, `GEMMA_API_KEY` / `GEMMA_BASE_URL`, etc.) if AI features are enabled
+   - `GOOGLE_WORKSPACE_SERVICE_ACCOUNT_JSON` (optional; required for Calendar/Drive sync unless you use ambient Google credentials)
+   - `GOOGLE_WORKSPACE_IMPERSONATED_USER` (optional; Workspace admin-delegated user for Calendar/Drive domain-wide delegation)
+   - Google Workspace integration variables (`FIREBASE_SERVICE_ACCOUNT_JSON`, optional `GOOGLE_WORKSPACE_IMPERSONATE_EMAIL`) if Calendar/Drive sync is enabled
 6. Click **Deploy**.
 
 **Important Post-Deployment Step:** Once Vercel provides your live production URL (for example `https://your-app.vercel.app`), add this domain to Firebase Authentication **Authorized domains** (Authentication → Settings → Authorized domains) so Google Sign-In works correctly.
@@ -210,6 +214,50 @@ The Digital Archivist includes optional AI features (Auto-Tagging, Summarization
 4. Optionally require human approval before AI drafts are treated as approved.
 
 After upgrading, **save settings once** so Firestore includes the new fields (`aiAutoTagEnabled`, `aiSummarizeEnabled`). Deploy updated **`firestore.rules`** if clients write `settings/global` directly.
+
+## Google Calendar and Drive Integration
+
+Admins can configure Google Workspace from **Settings -> Google Workspace Integrations**. These settings are stored in `settings/global`; no Google refresh tokens or user login settings are stored in the browser.
+
+### Server prerequisites
+
+The server uses the existing service-account credential path and Google REST APIs:
+
+```env
+# Required for server-side Calendar and Drive calls.
+FIREBASE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+
+# Optional, but recommended for Workspace domains.
+# Use a Workspace user that has access to the target calendar and Drive folders.
+GOOGLE_WORKSPACE_IMPERSONATE_EMAIL=workspace-automation@example.com
+```
+
+If you set `GOOGLE_WORKSPACE_IMPERSONATE_EMAIL`, enable domain-wide delegation for the service account and authorize these scopes in the Google Admin console:
+
+- `https://www.googleapis.com/auth/calendar.events`
+- `https://www.googleapis.com/auth/drive`
+
+If you do not impersonate a user, share the target calendar and Drive folders directly with the service account's `client_email`.
+
+### Calendar setup
+
+1. Create or choose the Google Calendar that should receive project dates.
+2. Share it with the service account email, or with the impersonated Workspace user.
+3. Copy the Calendar ID from Google Calendar settings.
+4. In **Settings -> Google Workspace Integrations**, turn on **Post project dates to Google Calendar** and paste the Calendar ID.
+5. Choose whether to post the project due date, milestone due dates, or both.
+
+When an admin saves a project, the app posts all configured project dates as all-day events. Events use stable IDs derived from the project and milestone IDs, so saving a project updates existing events instead of creating duplicates. Calendar failures are logged and shown as a non-blocking warning; the project save still succeeds.
+
+### Drive setup
+
+1. Create or choose a shared Drive and folder structure.
+2. Share the root folder and any subfolders with the service account email, or with the impersonated Workspace user.
+3. Copy folder IDs from Drive URLs. For shared drives, optionally copy the shared drive ID.
+4. In **Settings -> Google Workspace Integrations**, turn on **Connect Google Drive project files**, add the root folder ID, optional shared drive ID, and labeled subfolders.
+5. Open a project record to view matching Drive files in the **Google Drive Files** panel.
+
+The Drive panel searches the configured root and subfolders for file names containing the project code or title. If **Write a project manifest JSON file** is enabled, saving a project also writes `PROJECTCODE-project-manifest.json` into the root folder so external automations can discover project metadata.
 
 ### Multi-Model Chat Setup (for future clones)
 Use this checklist if you are re-implementing model selection in a fresh clone:

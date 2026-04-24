@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Bot, Key, Shield } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Bot, Key, Shield, CalendarDays, FolderOpen, Plus, Trash2 } from 'lucide-react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
 
@@ -34,6 +34,16 @@ export default function SettingsView({
     logoDataUrl: '',
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
+    googleCalendarEnabled: false,
+    googleCalendarId: '',
+    googleCalendarEventPrefix: '',
+    googleCalendarPostProjectDueDate: true,
+    googleCalendarPostMilestones: true,
+    googleDriveEnabled: false,
+    googleDriveSharedDriveId: '',
+    googleDriveRootFolderId: '',
+    googleDriveSubfolders: [],
+    googleDriveProjectManifestEnabled: true,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -130,6 +140,29 @@ export default function SettingsView({
     } finally {
       setClaimingOwner(false);
     }
+  };
+
+  const addGoogleDriveSubfolder = () => {
+    setSettings((prev) => ({
+      ...prev,
+      googleDriveSubfolders: [...(prev.googleDriveSubfolders ?? []), { label: '', folderId: '' }],
+    }));
+  };
+
+  const updateGoogleDriveSubfolder = (index: number, updates: { label?: string; folderId?: string }) => {
+    setSettings((prev) => ({
+      ...prev,
+      googleDriveSubfolders: (prev.googleDriveSubfolders ?? []).map((folder, folderIndex) => (
+        folderIndex === index ? { ...folder, ...updates } : folder
+      )),
+    }));
+  };
+
+  const removeGoogleDriveSubfolder = (index: number) => {
+    setSettings((prev) => ({
+      ...prev,
+      googleDriveSubfolders: (prev.googleDriveSubfolders ?? []).filter((_, folderIndex) => folderIndex !== index),
+    }));
   };
 
   return (
@@ -460,6 +493,209 @@ export default function SettingsView({
                 </label>
               </div>
             ))}
+          </div>
+
+                    {/* API Key Notice */}
+          <div className="border-t border-outline-variant/10 pt-8 space-y-6">
+            <div>
+              <h3 className="font-bold text-on-surface flex items-center gap-2">
+                <CalendarDays className="w-5 h-5 text-primary" />
+                Google Calendar project dates
+              </h3>
+              <p className="text-sm text-on-surface-variant mt-1">
+                Post project due dates and milestone due dates to the preferred shared calendar after records are saved.
+              </p>
+            </div>
+            <div className="rounded-lg bg-primary/5 border border-primary/20 p-4 text-xs text-on-surface-variant space-y-2">
+              <p className="font-bold text-on-surface">Mini setup instructions</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Create or choose a Google Calendar for project dates.</li>
+                <li>Share the calendar with the app service-account email and grant "Make changes to events".</li>
+                <li>Paste the Calendar ID from Google Calendar settings below, then save.</li>
+              </ol>
+            </div>
+            <div className="flex items-center justify-between bg-surface-container-low rounded-lg p-3">
+              <div>
+                <div className="text-sm font-bold">Enable Calendar posting</div>
+                <div className="text-xs text-on-surface-variant">When enabled, saves trigger a best-effort server sync.</div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={settings.googleCalendarEnabled}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, googleCalendarEnabled: e.target.checked })}
+                />
+                <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="settings-calendar-id" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Preferred Calendar ID</label>
+                <input
+                  id="settings-calendar-id"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.googleCalendarId}
+                  maxLength={254}
+                  disabled={readOnly}
+                  placeholder="primary or calendar-id@group.calendar.google.com"
+                  onChange={(e) => setSettings({ ...settings, googleCalendarId: e.target.value })}
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-calendar-prefix" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Event title prefix</label>
+                <input
+                  id="settings-calendar-prefix"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.googleCalendarEventPrefix ?? ''}
+                  maxLength={40}
+                  disabled={readOnly}
+                  placeholder="e.g. Project"
+                  onChange={(e) => setSettings({ ...settings, googleCalendarEventPrefix: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {[
+                { key: 'googleCalendarPostProjectDueDate', title: 'Post project due date', desc: 'Creates an all-day event for the project due date.' },
+                { key: 'googleCalendarPostMilestones', title: 'Post milestone dates', desc: 'Creates all-day events for milestones with due dates.' },
+              ].map((feature) => (
+                <label key={feature.key} className="flex items-start gap-3 bg-surface-container-low rounded-lg p-3">
+                  <input
+                    type="checkbox"
+                    checked={settings[feature.key as keyof Settings] as boolean}
+                    disabled={readOnly}
+                    onChange={(e) => setSettings({ ...settings, [feature.key]: e.target.checked })}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block text-sm font-bold">{feature.title}</span>
+                    <span className="block text-xs text-on-surface-variant">{feature.desc}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="border-t border-outline-variant/10 pt-8 space-y-6">
+            <div>
+              <h3 className="font-bold text-on-surface flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-primary" />
+                Google Drive shared files
+              </h3>
+              <p className="text-sm text-on-surface-variant mt-1">
+                Connect a shared drive or root folder so project records can surface matching Drive files and publish a project manifest.
+              </p>
+            </div>
+            <div className="rounded-lg bg-tertiary-container/30 border border-tertiary-fixed-dim/30 p-4 text-xs text-on-surface-variant space-y-2">
+              <p className="font-bold text-on-surface">Mini setup instructions</p>
+              <ol className="list-decimal pl-4 space-y-1">
+                <li>Share the Shared Drive or folder with the app service-account email and grant at least Viewer access.</li>
+                <li>Use Editor access if you want the platform to publish project manifest files.</li>
+                <li>Paste the Shared Drive ID and/or root folder ID. Add optional subfolders for common project areas.</li>
+              </ol>
+            </div>
+            <div className="flex items-center justify-between bg-surface-container-low rounded-lg p-3">
+              <div>
+                <div className="text-sm font-bold">Enable Drive lookup and posting</div>
+                <div className="text-xs text-on-surface-variant">Project records can list matching files and sync a manifest JSON file.</div>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={settings.googleDriveEnabled}
+                  disabled={readOnly}
+                  onChange={(e) => setSettings({ ...settings, googleDriveEnabled: e.target.checked })}
+                />
+                <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="settings-drive-shared-drive-id" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Shared Drive ID</label>
+                <input
+                  id="settings-drive-shared-drive-id"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.googleDriveSharedDriveId ?? ''}
+                  maxLength={128}
+                  disabled={readOnly}
+                  placeholder="Optional shared drive ID"
+                  onChange={(e) => setSettings({ ...settings, googleDriveSharedDriveId: e.target.value })}
+                />
+              </div>
+              <div>
+                <label htmlFor="settings-drive-root-folder-id" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Root folder ID</label>
+                <input
+                  id="settings-drive-root-folder-id"
+                  className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                  value={settings.googleDriveRootFolderId}
+                  maxLength={128}
+                  disabled={readOnly}
+                  placeholder="Folder containing project files"
+                  onChange={(e) => setSettings({ ...settings, googleDriveRootFolderId: e.target.value })}
+                />
+              </div>
+            </div>
+            <label className="flex items-start gap-3 bg-surface-container-low rounded-lg p-3">
+              <input
+                type="checkbox"
+                checked={settings.googleDriveProjectManifestEnabled}
+                disabled={readOnly}
+                onChange={(e) => setSettings({ ...settings, googleDriveProjectManifestEnabled: e.target.checked })}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-bold">Publish project manifest</span>
+                <span className="block text-xs text-on-surface-variant">Writes a small JSON summary into the root Drive folder when a project is saved.</span>
+              </span>
+            </label>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-on-surface-variant uppercase">Subfolders</label>
+                <button
+                  type="button"
+                  disabled={readOnly}
+                  onClick={addGoogleDriveSubfolder}
+                  className="text-xs font-bold text-primary flex items-center gap-1 disabled:opacity-50"
+                >
+                  <Plus className="w-3 h-3" /> Add subfolder
+                </button>
+              </div>
+              {(settings.googleDriveSubfolders ?? []).length === 0 && (
+                <p className="text-xs text-on-surface-variant">No subfolders configured yet.</p>
+              )}
+              {(settings.googleDriveSubfolders ?? []).map((folder, index) => (
+                <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-2 bg-surface-container-low rounded-lg p-3">
+                  <input
+                    className="md:col-span-5 bg-surface-container rounded p-2 text-xs"
+                    value={folder.label}
+                    maxLength={60}
+                    disabled={readOnly}
+                    placeholder="Label, e.g. Requirements"
+                    onChange={(e) => updateGoogleDriveSubfolder(index, { label: e.target.value })}
+                  />
+                  <input
+                    className="md:col-span-6 bg-surface-container rounded p-2 text-xs"
+                    value={folder.folderId}
+                    maxLength={128}
+                    disabled={readOnly}
+                    placeholder="Google Drive folder ID"
+                    onChange={(e) => updateGoogleDriveSubfolder(index, { folderId: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    disabled={readOnly}
+                    className="md:col-span-1 text-error text-xs font-bold flex items-center justify-center disabled:opacity-50"
+                    onClick={() => removeGoogleDriveSubfolder(index)}
+                    aria-label="Remove Google Drive subfolder"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
 
                     {/* API Key Notice */}

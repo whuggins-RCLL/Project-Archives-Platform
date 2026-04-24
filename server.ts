@@ -97,6 +97,7 @@ const ADMIN_SETTINGS_MAX_BODY_BYTES = 320 * 1024;
 const ADMIN_OPERATIONS_MAX_BODY_BYTES = 2 * 1024;
 const ADMIN_SETTINGS_TIMEOUT_MS = 20_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
+const GOOGLE_INTEGRATION_TIMEOUT_MS = 20_000;
 const MAX_PROMPT_LENGTH = 4_000;
 const MAX_SYSTEM_INSTRUCTION_LENGTH = 2_000;
 const CLIENT_FIREBASE_ENV_KEYS = [
@@ -133,6 +134,28 @@ type AppSettings = {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  googleCalendarEnabled: boolean;
+  googleCalendarId: string;
+  googleCalendarEventPrefix?: string;
+  googleCalendarPostProjectDueDate: boolean;
+  googleCalendarPostMilestones: boolean;
+  googleDriveEnabled: boolean;
+  googleDriveSharedDriveId?: string;
+  googleDriveRootFolderId: string;
+  googleDriveSubfolders: Array<{ label: string; folderId: string }>;
+  googleDriveProjectManifestEnabled: boolean;
+};
+
+type WorkspaceProject = {
+  id?: string;
+  code?: string;
+  title?: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  dueDate?: string;
+  owner?: { name?: string };
+  milestones?: Array<{ id?: string; title?: string; dueDate?: string; status?: string; stage?: string }>;
 };
 
 type VerifiedUser = {
@@ -144,6 +167,16 @@ type VerifiedUser = {
 type AppRole = "owner" | "admin" | "collaborator" | "viewer";
 type UserPermissionKey = "canManageRoles" | "canManageSettings" | "canEditContent" | "canViewInternalStats";
 type UserPermissionSet = Record<UserPermissionKey, boolean>;
+type FirestoreFieldValue = {
+  stringValue?: string;
+  booleanValue?: boolean;
+  integerValue?: string;
+  doubleValue?: number;
+  timestampValue?: string;
+  arrayValue?: { values?: FirestoreFieldValue[] };
+  mapValue?: { fields?: Record<string, FirestoreFieldValue> };
+  nullValue?: "NULL_VALUE";
+};
 const ROLE_PRIORITY: Record<AppRole, number> = {
   owner: 4,
   admin: 3,
@@ -505,6 +538,10 @@ function parseFirestoreValue(field: Record<string, unknown> | undefined): unknow
   if (typeof field.doubleValue === "number") return field.doubleValue;
   if (typeof field.booleanValue === "boolean") return field.booleanValue;
   if (field.timestampValue) return field.timestampValue;
+  if (field.arrayValue && typeof field.arrayValue === "object") {
+    const values = (field.arrayValue as { values?: Array<Record<string, unknown>> }).values || [];
+    return values.map((nested) => parseFirestoreValue(nested));
+  }
   if (field.mapValue && typeof field.mapValue === "object") {
     const mapFields = (field.mapValue as { fields?: Record<string, Record<string, unknown>> }).fields || {};
     return Object.fromEntries(Object.entries(mapFields).map(([key, nested]) => [key, parseFirestoreValue(nested)]));
@@ -537,6 +574,269 @@ async function fetchProjectsForOps(idToken: string): Promise<Record<string, unkn
 
   const data = (await response.json()) as { documents?: Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> };
   return (data.documents || []).map(parseFirestoreDocument);
+}
+
+async function fetchLatestProjectByTitle(title: string): Promise<Record<string, unknown> | null> {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
+  const projectId = getFirebaseProjectId();
+  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: "projects" }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "title" },
+            op: "EQUAL",
+            value: { stringValue: title },
+          },
+        },
+        limit: 1,
+      },
+    }),
+  });
+  const data = (await response.json().catch(() => ({}))) as Array<{ document?: { name?: string; fields?: Record<string, Record<string, unknown>> } }> | { error?: { message?: string } };
+  if (!response.ok || !Array.isArray(data)) {
+    throw new Error(!Array.isArray(data) ? data.error?.message || "Unable to read created project for workspace sync" : "Unable to read created project for workspace sync");
+  }
+  const document = data.find((entry) => entry.document)?.document;
+  return document ? parseFirestoreDocument(document) : null;
+}
+
+function toFirestoreValue(value: unknown): Record<string, unknown> {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "string") return { stringValue: value };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(toFirestoreValue) } };
+  }
+  if (typeof value === "object") {
+    return {
+      mapValue: {
+        fields: Object.fromEntries(
+          Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, toFirestoreValue(nested)]),
+        ),
+      },
+    };
+  }
+  return { stringValue: String(value) };
+}
+
+function getProjectRecord(input: unknown): Record<string, unknown> | null {
+  if (!input || typeof input !== "object") return null;
+  const project = (input as { project?: unknown }).project;
+  if (!project || typeof project !== "object") return null;
+  const source = project as Record<string, unknown>;
+  if (typeof source.id !== "string" || typeof source.code !== "string" || typeof source.title !== "string") return null;
+  return source;
+}
+
+async function requireCanEditProjectContent(
+  user: VerifiedUser,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  const mirror = await getUserMirrorRoleAndPermissions(user.uid);
+  const roleFromToken = normalizeRoleFromClaims(user.claims);
+  const role = selectMostPrivilegedRole(mirror.role, roleFromToken);
+  if (role === "owner" || role === "admin" || role === "collaborator") return { ok: true };
+  if (mirror.permissions?.canEditContent) return { ok: true };
+  if (permissionClaimIsTrue(user.claims, "canEditContent")) return { ok: true };
+  return { ok: false, status: 403, error: "Project edit permission required" };
+}
+
+function sanitizeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function projectFolderName(project: Record<string, unknown>): string {
+  const code = String(project.code || "project").trim();
+  const title = String(project.title || "Untitled").trim();
+  return `${code} - ${title}`.replace(/[\\/:*?"<>|]/g, "-").slice(0, 180);
+}
+
+function buildGoogleProjectDates(project: Record<string, unknown>, settings: Partial<AppSettings>): Array<{ key: string; summary: string; date: string; description: string }> {
+  const prefix = settings.googleCalendarEventPrefix ? `${settings.googleCalendarEventPrefix}: ` : "";
+  const title = String(project.title || "Untitled Project");
+  const code = String(project.code || "");
+  const description = `Project: ${title}\nCode: ${code}\nStatus: ${String(project.status || "Unknown")}`;
+  const events: Array<{ key: string; summary: string; date: string; description: string }> = [];
+  const dueDate = typeof project.dueDate === "string" ? project.dueDate : "";
+  if (settings.googleCalendarPostProjectDueDate !== false && dueDate) {
+    events.push({ key: "due", summary: `${prefix}${code} due: ${title}`, date: dueDate, description });
+  }
+  if (settings.googleCalendarPostMilestones !== false && Array.isArray(project.milestones)) {
+    for (const milestone of project.milestones) {
+      if (!milestone || typeof milestone !== "object") continue;
+      const source = milestone as Record<string, unknown>;
+      const date = typeof source.dueDate === "string" ? source.dueDate : "";
+      if (!date) continue;
+      const milestoneTitle = String(source.title || "Milestone");
+      events.push({
+        key: `milestone-${String(source.id || milestoneTitle).slice(0, 80)}`,
+        summary: `${prefix}${code} milestone: ${milestoneTitle}`,
+        date,
+        description: `${description}\nMilestone status: ${String(source.status || "Unknown")}`,
+      });
+    }
+  }
+  return events.slice(0, 50);
+}
+
+async function googleApiCall<T>(
+  url: string,
+  options: { method?: string; body?: unknown; scope?: string } = {},
+): Promise<T> {
+  const token = await getGoogleAccessToken(options.scope || "https://www.googleapis.com/auth/drive");
+  const response = await fetch(url, {
+    method: options.method || "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: { message?: string } }).error?.message || `Google API call failed (${response.status})`);
+  }
+  return data as T;
+}
+
+async function upsertGoogleCalendarEvents(project: Record<string, unknown>, settings: Partial<AppSettings>): Promise<number> {
+  if (!settings.googleCalendarEnabled || !settings.googleCalendarId) return 0;
+  const calendarId = encodeURIComponent(settings.googleCalendarId);
+  const dates = buildGoogleProjectDates(project, settings);
+  let synced = 0;
+  for (const event of dates) {
+    const privateExtendedProperty = `digitalArchivistKey=${String(project.id)}:${event.key}`;
+    const listUrl = `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events?privateExtendedProperty=${encodeURIComponent(privateExtendedProperty)}&maxResults=1`;
+    const existing = await googleApiCall<{ items?: Array<{ id?: string }> }>(listUrl, { scope: "https://www.googleapis.com/auth/calendar.events" });
+    const body = {
+      summary: event.summary,
+      description: event.description,
+      start: { date: event.date },
+      end: { date: event.date },
+      extendedProperties: { private: { digitalArchivistProjectId: String(project.id), digitalArchivistKey: `${String(project.id)}:${event.key}` } },
+    };
+    const existingId = existing.items?.[0]?.id;
+    if (existingId) {
+      await googleApiCall(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events/${encodeURIComponent(existingId)}`, {
+        method: "PATCH",
+        body,
+        scope: "https://www.googleapis.com/auth/calendar.events",
+      });
+    } else {
+      await googleApiCall(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`, {
+        method: "POST",
+        body,
+        scope: "https://www.googleapis.com/auth/calendar.events",
+      });
+    }
+    synced += 1;
+  }
+  return synced;
+}
+
+async function findOrCreateDriveProjectFolder(project: Record<string, unknown>, settings: Partial<AppSettings>): Promise<string | null> {
+  if (!settings.googleDriveEnabled || !settings.googleDriveRootFolderId) return null;
+  const name = projectFolderName(project);
+  const params = new URLSearchParams({
+    q: `'${sanitizeDriveQueryValue(settings.googleDriveRootFolderId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and name = '${sanitizeDriveQueryValue(name)}' and trashed = false`,
+    fields: "files(id,name,webViewLink)",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+  });
+  const existing = await googleApiCall<{ files?: Array<{ id?: string }> }>(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+  if (existing.files?.[0]?.id) return existing.files[0].id;
+  const created = await googleApiCall<{ id?: string }>("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", {
+    method: "POST",
+    body: {
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [settings.googleDriveRootFolderId],
+      ...(settings.googleDriveSharedDriveId ? { driveId: settings.googleDriveSharedDriveId } : {}),
+    },
+  });
+  return created.id || null;
+}
+
+async function syncGoogleDriveProjectManifest(project: Record<string, unknown>, settings: Partial<AppSettings>): Promise<string | null> {
+  if (!settings.googleDriveProjectManifestEnabled) return null;
+  const folderId = await findOrCreateDriveProjectFolder(project, settings);
+  if (!folderId) return null;
+  const manifestName = `${String(project.code || "project")} manifest.json`;
+  const params = new URLSearchParams({
+    q: `'${sanitizeDriveQueryValue(folderId)}' in parents and name = '${sanitizeDriveQueryValue(manifestName)}' and trashed = false`,
+    fields: "files(id,name,webViewLink)",
+    supportsAllDrives: "true",
+    includeItemsFromAllDrives: "true",
+  });
+  const existing = await googleApiCall<{ files?: Array<{ id?: string }> }>(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+  const metadata = { name: manifestName, mimeType: "application/json", parents: [folderId] };
+  const media = JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    project,
+  }, null, 2);
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/drive");
+  const boundary = `digital-archivist-${randomUUID()}`;
+  const body = [
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    JSON.stringify(metadata),
+    `--${boundary}`,
+    "Content-Type: application/json; charset=UTF-8",
+    "",
+    media,
+    `--${boundary}--`,
+  ].join("\r\n");
+  const existingId = existing.files?.[0]?.id;
+  const url = existingId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${encodeURIComponent(existingId)}?uploadType=multipart&supportsAllDrives=true`
+    : "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true";
+  const response = await fetch(url, {
+    method: existingId ? "PATCH" : "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+    },
+    body,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message || "Google Drive manifest upload failed");
+  return (data as { id?: string }).id || existingId || null;
+}
+
+async function listGoogleDriveProjectFiles(project: Record<string, unknown>, settings: Partial<AppSettings>): Promise<Array<Record<string, string>>> {
+  if (!settings.googleDriveEnabled || !settings.googleDriveRootFolderId) return [];
+  const folderId = await findOrCreateDriveProjectFolder(project, settings);
+  const parentIds = [folderId, ...(settings.googleDriveSubfolders || []).map((folder) => folder.folderId)].filter((id): id is string => Boolean(id));
+  if (parentIds.length === 0) return [];
+  const files: Array<Record<string, string>> = [];
+  for (const parentId of parentIds.slice(0, 12)) {
+    const params = new URLSearchParams({
+      q: `'${sanitizeDriveQueryValue(parentId)}' in parents and trashed = false`,
+      fields: "files(id,name,mimeType,webViewLink,modifiedTime)",
+      pageSize: "50",
+      orderBy: "modifiedTime desc",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    });
+    const result = await googleApiCall<{ files?: Array<Record<string, string>> }>(`https://www.googleapis.com/drive/v3/files?${params.toString()}`);
+    files.push(...(result.files || []));
+  }
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    if (!file.id || seen.has(file.id)) return false;
+    seen.add(file.id);
+    return true;
+  });
 }
 
 function buildOperationsDigest(projects: Record<string, unknown>[]): OperationsDigestReport {
@@ -770,6 +1070,22 @@ function validateSettings(input: unknown): AppSettings | null {
   const normalizedEnabledProviders = enabledProviders.filter(
     (provider): provider is string => typeof provider === "string" && ALLOWED_PROVIDERS.has(provider),
   );
+  const googleCalendarId = typeof source.googleCalendarId === "string" ? source.googleCalendarId.trim() : "";
+  const googleCalendarEventPrefix = typeof source.googleCalendarEventPrefix === "string" ? source.googleCalendarEventPrefix.trim() : "";
+  const googleDriveSharedDriveId = typeof source.googleDriveSharedDriveId === "string" ? source.googleDriveSharedDriveId.trim() : "";
+  const googleDriveRootFolderId = typeof source.googleDriveRootFolderId === "string" ? source.googleDriveRootFolderId.trim() : "";
+  const googleDriveSubfolders = Array.isArray(source.googleDriveSubfolders)
+    ? source.googleDriveSubfolders
+        .map((item) => {
+          if (!item || typeof item !== "object") return null;
+          const subfolder = item as Record<string, unknown>;
+          const label = typeof subfolder.label === "string" ? subfolder.label.trim() : "";
+          const folderId = typeof subfolder.folderId === "string" ? subfolder.folderId.trim() : "";
+          return label && folderId ? { label, folderId } : null;
+        })
+        .filter((item): item is GoogleDriveSubfolder => item !== null)
+        .slice(0, 20)
+    : [];
 
   if (
     typeof source.aiEnabled !== "boolean" ||
@@ -799,7 +1115,17 @@ function validateSettings(input: unknown): AppSettings | null {
     typeof source.brandDarkColor !== "string" ||
     !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
-    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254))
+    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254)) ||
+    typeof source.googleCalendarEnabled !== "boolean" ||
+    googleCalendarId.length > 256 ||
+    googleCalendarEventPrefix.length > 80 ||
+    typeof source.googleCalendarPostProjectDueDate !== "boolean" ||
+    typeof source.googleCalendarPostMilestones !== "boolean" ||
+    typeof source.googleDriveEnabled !== "boolean" ||
+    googleDriveSharedDriveId.length > 256 ||
+    googleDriveRootFolderId.length > 256 ||
+    googleDriveSubfolders.some((subfolder) => subfolder.label.length > 80 || subfolder.folderId.length > 256) ||
+    typeof source.googleDriveProjectManifestEnabled !== "boolean"
   ) {
     return null;
   }
@@ -829,10 +1155,26 @@ function validateSettings(input: unknown): AppSettings | null {
     brandDarkColor: source.brandDarkColor,
     customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
     helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
+    googleCalendarEnabled: source.googleCalendarEnabled,
+    googleCalendarId,
+    googleCalendarEventPrefix,
+    googleCalendarPostProjectDueDate: source.googleCalendarPostProjectDueDate,
+    googleCalendarPostMilestones: source.googleCalendarPostMilestones,
+    googleDriveEnabled: source.googleDriveEnabled,
+    googleDriveSharedDriveId,
+    googleDriveRootFolderId,
+    googleDriveSubfolders,
+    googleDriveProjectManifestEnabled: source.googleDriveProjectManifestEnabled,
   };
 }
 
-function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?: string; booleanValue?: boolean; arrayValue?: { values: Array<{ stringValue: string }> } }> {
+function toFirestoreFields(
+  settings: AppSettings,
+): Record<string, {
+  stringValue?: string;
+  booleanValue?: boolean;
+  arrayValue?: { values: Array<{ stringValue?: string; mapValue?: { fields: Record<string, { stringValue: string }> } }> };
+}> {
   return {
     aiEnabled: { booleanValue: settings.aiEnabled },
     activeProvider: { stringValue: settings.activeProvider },
@@ -852,34 +1194,66 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     brandDarkColor: { stringValue: settings.brandDarkColor },
     ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
     ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
+    googleCalendarEnabled: { booleanValue: settings.googleCalendarEnabled },
+    googleCalendarId: { stringValue: settings.googleCalendarId },
+    googleCalendarEventPrefix: { stringValue: settings.googleCalendarEventPrefix },
+    googleCalendarPostProjectDueDate: { booleanValue: settings.googleCalendarPostProjectDueDate },
+    googleCalendarPostMilestones: { booleanValue: settings.googleCalendarPostMilestones },
+    googleDriveEnabled: { booleanValue: settings.googleDriveEnabled },
+    googleDriveSharedDriveId: { stringValue: settings.googleDriveSharedDriveId },
+    googleDriveRootFolderId: { stringValue: settings.googleDriveRootFolderId },
+    googleDriveSubfolders: {
+      arrayValue: {
+        values: settings.googleDriveSubfolders.map((subfolder) => ({
+          mapValue: {
+            fields: {
+              label: { stringValue: subfolder.label },
+              folderId: { stringValue: subfolder.folderId },
+            },
+          },
+        })),
+      },
+    },
+    googleDriveProjectManifestEnabled: { booleanValue: settings.googleDriveProjectManifestEnabled },
   };
 }
 
 function fromFirestoreFields(
-  fields: Record<string, { stringValue?: string; booleanValue?: boolean; arrayValue?: { values?: Array<{ stringValue?: string }> } }> | undefined,
+  fields: Record<string, Record<string, unknown>> | undefined,
 ): Partial<AppSettings> {
   if (!fields) return {};
+  const driveSubfolders = parseFirestoreValue(fields.googleDriveSubfolders);
   return {
-    aiEnabled: fields.aiEnabled?.booleanValue,
-    activeProvider: fields.activeProvider?.stringValue,
+    aiEnabled: fields.aiEnabled?.booleanValue as boolean | undefined,
+    activeProvider: fields.activeProvider?.stringValue as string | undefined,
     enabledProviders: fields.enabledProviders?.arrayValue?.values
-      ?.map((value) => value?.stringValue)
+      ?.map((value) => value?.stringValue as string | undefined)
       .filter((value): value is string => typeof value === "string" && ALLOWED_PROVIDERS.has(value)),
-    aiAutoTagEnabled: fields.aiAutoTagEnabled?.booleanValue,
-    aiSummarizeEnabled: fields.aiSummarizeEnabled?.booleanValue,
-    aiNextBestActionEnabled: fields.aiNextBestActionEnabled?.booleanValue,
-    aiRiskNarrativeEnabled: fields.aiRiskNarrativeEnabled?.booleanValue,
-    aiDuplicateDetectionEnabled: fields.aiDuplicateDetectionEnabled?.booleanValue,
-    aiPmApproachEnabled: fields.aiPmApproachEnabled?.booleanValue,
-    aiRequireHumanApproval: fields.aiRequireHumanApproval?.booleanValue,
+    aiAutoTagEnabled: fields.aiAutoTagEnabled?.booleanValue as boolean | undefined,
+    aiSummarizeEnabled: fields.aiSummarizeEnabled?.booleanValue as boolean | undefined,
+    aiNextBestActionEnabled: fields.aiNextBestActionEnabled?.booleanValue as boolean | undefined,
+    aiRiskNarrativeEnabled: fields.aiRiskNarrativeEnabled?.booleanValue as boolean | undefined,
+    aiDuplicateDetectionEnabled: fields.aiDuplicateDetectionEnabled?.booleanValue as boolean | undefined,
+    aiPmApproachEnabled: fields.aiPmApproachEnabled?.booleanValue as boolean | undefined,
+    aiRequireHumanApproval: fields.aiRequireHumanApproval?.booleanValue as boolean | undefined,
     privacyMode: fields.privacyMode?.stringValue as AppSettings["privacyMode"] | undefined,
-    suiteName: fields.suiteName?.stringValue,
-    portalName: fields.portalName?.stringValue,
-    logoDataUrl: fields.logoDataUrl?.stringValue,
-    primaryColor: fields.primaryColor?.stringValue,
-    brandDarkColor: fields.brandDarkColor?.stringValue,
-    customFooter: fields.customFooter?.stringValue,
-    helpContactEmail: fields.helpContactEmail?.stringValue,
+    suiteName: fields.suiteName?.stringValue as string | undefined,
+    portalName: fields.portalName?.stringValue as string | undefined,
+    logoDataUrl: fields.logoDataUrl?.stringValue as string | undefined,
+    primaryColor: fields.primaryColor?.stringValue as string | undefined,
+    brandDarkColor: fields.brandDarkColor?.stringValue as string | undefined,
+    customFooter: fields.customFooter?.stringValue as string | undefined,
+    helpContactEmail: fields.helpContactEmail?.stringValue as string | undefined,
+    googleCalendarEnabled: fields.googleCalendarEnabled?.booleanValue as boolean | undefined,
+    googleCalendarId: fields.googleCalendarId?.stringValue as string | undefined,
+    googleCalendarEventPrefix: fields.googleCalendarEventPrefix?.stringValue as string | undefined,
+    googleCalendarPostProjectDueDate: fields.googleCalendarPostProjectDueDate?.booleanValue as boolean | undefined,
+    googleCalendarPostMilestones: fields.googleCalendarPostMilestones?.booleanValue as boolean | undefined,
+    googleDriveEnabled: fields.googleDriveEnabled?.booleanValue as boolean | undefined,
+    googleDriveSharedDriveId: fields.googleDriveSharedDriveId?.stringValue as string | undefined,
+    googleDriveRootFolderId: fields.googleDriveRootFolderId?.stringValue as string | undefined,
+    googleDriveSubfolders: Array.isArray(driveSubfolders) ? driveSubfolders as GoogleDriveSubfolder[] : undefined,
+    googleDriveProjectManifestEnabled: fields.googleDriveProjectManifestEnabled?.booleanValue as boolean | undefined,
   };
 }
 
@@ -1858,6 +2232,140 @@ app.post("/api/admin/settings", async (req, res) => {
       return res.status(503).json({ error: "Saving settings took too long. Check Firestore/Vercel and try again." });
     }
     return res.status(500).json({ error: detail });
+  }
+});
+
+app.post("/api/integrations/google/calendar/sync-project", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const editGate = await requireCanEditProjectContent(verifiedUser);
+    if (editGate.ok === false) return res.status(editGate.status).json({ error: editGate.error });
+    if (!enforceRequestSizeLimit(req, ADMIN_OPERATIONS_MAX_BODY_BYTES * 32)) {
+      return res.status(413).json({ error: "Project sync payload too large" });
+    }
+    const project = getProjectRecord(req.body);
+    if (!project) return res.status(400).json({ error: "Invalid project payload" });
+    const settings = await fetchFirestoreSettings();
+    const eventsSynced = await upsertGoogleCalendarEvents(project, settings);
+    auditLog("google_calendar_project_synced", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      projectId: project.id,
+      eventsSynced,
+      ip: clientIp,
+    });
+    return res.json({ success: true, eventsSynced });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Google Calendar sync failed";
+    auditLog("google_calendar_project_sync_failed", { requestId, message: detail, ip: clientIp }, "error");
+    return res.status(502).json({ error: detail });
+  }
+});
+
+app.post("/api/integrations/google/drive/sync-project", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const editGate = await requireCanEditProjectContent(verifiedUser);
+    if (editGate.ok === false) return res.status(editGate.status).json({ error: editGate.error });
+    if (!enforceRequestSizeLimit(req, ADMIN_OPERATIONS_MAX_BODY_BYTES * 32)) {
+      return res.status(413).json({ error: "Project sync payload too large" });
+    }
+    const project = getProjectRecord(req.body);
+    if (!project) return res.status(400).json({ error: "Invalid project payload" });
+    const settings = await fetchFirestoreSettings();
+    const manifestId = await syncGoogleDriveProjectManifest(project, settings);
+    auditLog("google_drive_project_synced", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      projectId: project.id,
+      manifestId,
+      ip: clientIp,
+    });
+    return res.json({ success: true, manifestId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Google Drive sync failed";
+    auditLog("google_drive_project_sync_failed", { requestId, message: detail, ip: clientIp }, "error");
+    return res.status(502).json({ error: detail });
+  }
+});
+
+app.post("/api/integrations/google/workspace/create-from-latest", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const editGate = await requireCanEditProjectContent(verifiedUser);
+    if (editGate.ok === false) return res.status(editGate.status).json({ error: editGate.error });
+    if (!enforceRequestSizeLimit(req, ADMIN_OPERATIONS_MAX_BODY_BYTES)) {
+      return res.status(413).json({ error: "Workspace sync payload too large" });
+    }
+    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+    if (!title) return res.status(400).json({ error: "Project title is required" });
+    const project = await fetchLatestProjectByTitle(title);
+    if (!project) return res.status(404).json({ error: "Created project was not found for workspace sync" });
+    const settings = await fetchFirestoreSettings();
+    const eventsSynced = await upsertGoogleCalendarEvents(project, settings);
+    const manifestId = await syncGoogleDriveProjectManifest(project, settings);
+    auditLog("google_workspace_project_synced", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      projectId: project.id,
+      eventsSynced,
+      manifestId,
+      ip: clientIp,
+    });
+    return res.json({ success: true, eventsSynced, manifestId });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Google Workspace sync failed";
+    auditLog("google_workspace_project_sync_failed", { requestId, message: detail, ip: clientIp }, "error");
+    return res.status(502).json({ error: detail });
+  }
+});
+
+app.get("/api/integrations/google/drive/files", async (req, res) => {
+  const requestId = randomUUID();
+  const clientIp = getClientIp(req);
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const editGate = await requireCanEditProjectContent(verifiedUser);
+    if (editGate.ok === false) return res.status(editGate.status).json({ error: editGate.error });
+    const projectCode = typeof req.query.projectCode === "string" ? req.query.projectCode : "";
+    const projectTitle = typeof req.query.projectTitle === "string" ? req.query.projectTitle : "";
+    if (!projectCode || !projectTitle) return res.status(400).json({ error: "Project code and title are required" });
+    const settings = await fetchFirestoreSettings();
+    const files = await listGoogleDriveProjectFiles({ id: projectCode, code: projectCode, title: projectTitle }, settings);
+    auditLog("google_drive_project_files_listed", {
+      requestId,
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email,
+      projectCode,
+      fileCount: files.length,
+      ip: clientIp,
+    });
+    return res.json({ files });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "Google Drive files could not be loaded";
+    auditLog("google_drive_project_files_list_failed", { requestId, message: detail, ip: clientIp }, "error");
+    return res.status(502).json({ error: detail });
   }
 });
 

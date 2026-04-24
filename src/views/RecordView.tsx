@@ -1,7 +1,7 @@
-import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil } from 'lucide-react';
+import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, FolderOpen, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
-import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
+import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId, GoogleDriveFile } from '../types';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
 import { AI_MODEL_OPTIONS } from '../constants';
@@ -36,6 +36,8 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<Settings['activeProvider']>(DEFAULT_PROVIDER);
   const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
+  const [driveFiles, setDriveFiles] = useState<GoogleDriveFile[]>([]);
+  const [loadingDriveFiles, setLoadingDriveFiles] = useState(false);
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -81,12 +83,14 @@ export default function RecordView({ projects, loading: projectsLoading, project
     if (!project) return;
     setSavingProject(true);
     try {
+      const projectForSync = project;
       if (settings?.privacyMode === 'public-read' && (project.aiDrafts?.length ?? 0) > 0) {
         const { aiDrafts: _omittedDrafts, ...projectWithoutDrafts } = project;
         await api.updateProject(project.id, projectWithoutDrafts);
       } else {
         await api.updateProject(project.id, project);
       }
+      void syncWorkspaceArtifacts(projectForSync);
       setToast({ type: 'success', message: 'Project saved successfully.' });
       onBack();
     } catch (error) {
@@ -94,6 +98,33 @@ export default function RecordView({ projects, loading: projectsLoading, project
       setToast({ type: 'error', message: getErrorMessage(error, 'Failed to save changes. Please try again.') });
     } finally {
       setSavingProject(false);
+    }
+  };
+
+  const syncWorkspaceArtifacts = async (savedProject: Project) => {
+    try {
+      if (settings?.googleCalendarEnabled) {
+        await api.syncProjectDatesToGoogleCalendar(savedProject);
+      }
+      if (settings?.googleDriveEnabled && settings.googleDriveProjectManifestEnabled) {
+        await api.syncProjectManifestToGoogleDrive(savedProject);
+      }
+    } catch (error) {
+      console.warn('Google Workspace sync skipped or failed', error);
+    }
+  };
+
+  const loadGoogleDriveFiles = async () => {
+    if (!project || !settings?.googleDriveEnabled) return;
+    setLoadingDriveFiles(true);
+    try {
+      const files = await api.listGoogleDriveFilesForProject(project);
+      setDriveFiles(files);
+      setDriveFilesError(null);
+    } catch (error) {
+      setDriveFilesError(getErrorMessage(error, 'Unable to load Google Drive files.'));
+    } finally {
+      setLoadingDriveFiles(false);
     }
   };
 
@@ -1284,6 +1315,49 @@ Description: ${project.description}`;
                 </div>
               </div>
             </div>
+
+            {settings?.googleDriveEnabled && (
+              <div className="mt-6 rounded-lg border border-outline-variant/20 bg-surface-container-low p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-bold flex items-center gap-2">
+                      <FolderOpen className="w-4 h-4 text-primary" />
+                      Google Drive Files
+                    </h3>
+                    <p className="text-xs text-on-surface-variant mt-1">
+                      Files are pulled from the shared Drive folders configured in Admin Settings. Name files with this project code or title to attach them to this record.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => void loadDriveFiles(project)}
+                    disabled={loadingDriveFiles}
+                    className="text-xs font-bold text-primary flex items-center gap-1 disabled:opacity-60"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${loadingDriveFiles ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </button>
+                </div>
+                {driveFilesError && <p className="text-xs text-error mt-3">{driveFilesError}</p>}
+                <div className="mt-3 space-y-2">
+                  {loadingDriveFiles && <p className="text-xs text-on-surface-variant">Loading Drive files...</p>}
+                  {!loadingDriveFiles && driveFiles.length === 0 && (
+                    <p className="text-xs text-on-surface-variant">No matching Drive files found yet.</p>
+                  )}
+                  {driveFiles.map((file) => (
+                    <a
+                      key={file.id}
+                      href={file.webViewLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center justify-between gap-3 rounded-md bg-surface-container-lowest p-3 text-sm hover:bg-surface-container"
+                    >
+                      <span className="font-medium text-primary truncate">{file.name}</span>
+                      <span className="text-[10px] text-on-surface-variant shrink-0">{file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString() : 'Drive'}</span>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         </div>
 

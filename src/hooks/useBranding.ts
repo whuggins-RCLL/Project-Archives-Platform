@@ -21,6 +21,16 @@ const DEFAULT_SETTINGS: Settings = {
   brandDarkColor: '#1A365D',
   customFooter: '',
   helpContactEmail: '',
+  googleCalendarEnabled: false,
+  googleCalendarId: '',
+  googleCalendarEventPrefix: '',
+  googleCalendarPostProjectDueDate: true,
+  googleCalendarPostMilestones: true,
+  googleDriveEnabled: false,
+  googleDriveSharedDriveId: '',
+  googleDriveRootFolderId: '',
+  googleDriveSubfolders: [],
+  googleDriveProjectManifestEnabled: true,
 };
 
 export function applyBrandingToDocument(settings: Pick<Settings, 'primaryColor' | 'brandDarkColor'>): void {
