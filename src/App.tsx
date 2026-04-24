@@ -18,6 +18,7 @@ import PublicView from './views/PublicView';
 import LoginView from './views/LoginView';
 import SettingsView from './views/SettingsView';
 import AdminUsersView from './views/AdminUsersView';
+import HelpView from './views/HelpView';
 import { api } from './lib/api';
 import { useUserRole } from './hooks/useUserRole';
 import { buildDefaultApprovalCheckpoints, buildDefaultMilestones } from './lib/projectGovernance';
@@ -51,8 +52,6 @@ function InternalApp() {
     roleLabel,
     refreshRoleClaims,
     rawRole,
-    tokenRoleSnapshot,
-    mirrorRoleSnapshot,
   } = useUserRole();
   const modalRef = useRef<HTMLDivElement | null>(null);
   const { branding, settings } = useBranding();
@@ -229,6 +228,8 @@ function InternalApp() {
         return <SettingsView canManageSettings={canManageSettings} canViewSettings={canViewSettings} loadingRole={loadingRole} onRoleRefreshRequested={refreshRoleClaims} onSettingsUpdated={(next) => applyBrandingToDocument(next)} />;
       case 'admin-users':
         return <AdminUsersView canManageRoles={canManageRoles} onRoleRefreshRequested={refreshRoleClaims} currentRole={rawRole} />;
+      case 'help':
+        return <HelpView />;
       default:
         return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={canEditContent} />;
     }
@@ -365,8 +366,6 @@ function InternalApp() {
           canViewSettings={!isViewerOnly && canViewSettings}
           canManageSettings={!isViewerOnly && canManageSettings}
           branding={branding}
-          tokenRoleSnapshot={tokenRoleSnapshot}
-          mirrorRoleSnapshot={mirrorRoleSnapshot}
         />
         <main
           ref={mainContentRef}
