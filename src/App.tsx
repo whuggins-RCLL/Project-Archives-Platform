@@ -26,6 +26,8 @@ import { applyBrandingToDocument, useBranding } from './hooks/useBranding';
 
 import { Project } from './types';
 
+const ELEVATED_ACCESS_STORAGE_KEY = 'elevated-access-ok';
+
 function InternalApp() {
   const [currentView, setCurrentView] = useState('kanban');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
@@ -54,7 +56,7 @@ function InternalApp() {
     rawRole,
   } = useUserRole();
   const modalRef = useRef<HTMLDivElement | null>(null);
-  const { branding, settings } = useBranding();
+  const { branding, settings, setSettings: setBrandingSettings } = useBranding();
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
@@ -80,7 +82,8 @@ function InternalApp() {
           setElevatedAuthenticated(true);
           return;
         }
-        const cached = window.sessionStorage.getItem('elevated-access-ok') === 'true';
+        const cached = window.localStorage.getItem(ELEVATED_ACCESS_STORAGE_KEY) === 'true'
+          || window.sessionStorage.getItem(ELEVATED_ACCESS_STORAGE_KEY) === 'true';
         setElevatedAuthenticated(cached);
       } catch {
         setElevatedStatus({ required: false, needsChange: false });
@@ -225,7 +228,18 @@ function InternalApp() {
       case 'record':
         return <RecordView projects={projects} loading={loadingProjects} projectId={selectedProjectId} onBack={() => setCurrentView('kanban')} isAdmin={canEditContent} />;
       case 'settings':
-        return <SettingsView canManageSettings={canManageSettings} canViewSettings={canViewSettings} loadingRole={loadingRole} onRoleRefreshRequested={refreshRoleClaims} onSettingsUpdated={(next) => applyBrandingToDocument(next)} />;
+        return (
+          <SettingsView
+            canManageSettings={canManageSettings}
+            canViewSettings={canViewSettings}
+            loadingRole={loadingRole}
+            onRoleRefreshRequested={refreshRoleClaims}
+            onSettingsUpdated={(next) => {
+              setBrandingSettings(next);
+              applyBrandingToDocument(next);
+            }}
+          />
+        );
       case 'admin-users':
         return <AdminUsersView canManageRoles={canManageRoles} onRoleRefreshRequested={refreshRoleClaims} currentRole={rawRole} />;
       case 'help':
@@ -240,7 +254,8 @@ function InternalApp() {
     try {
       const result = await api.loginElevatedAccess(elevatedPassword);
       setElevatedAuthenticated(true);
-      window.sessionStorage.setItem('elevated-access-ok', 'true');
+      window.localStorage.setItem(ELEVATED_ACCESS_STORAGE_KEY, 'true');
+      window.sessionStorage.setItem(ELEVATED_ACCESS_STORAGE_KEY, 'true');
       if (result.needsChange) {
         setElevatedStatus({ required: true, needsChange: true });
       }
@@ -457,11 +472,15 @@ export default function App() {
         if (allowedDomain && user.email && !user.email.endsWith(`@${allowedDomain}`)) {
           await signOut(auth);
           setIsAuthenticated(false);
+          window.localStorage.removeItem(ELEVATED_ACCESS_STORAGE_KEY);
+          window.sessionStorage.removeItem(ELEVATED_ACCESS_STORAGE_KEY);
         } else {
           setIsAuthenticated(true);
         }
       } else {
         setIsAuthenticated(false);
+        window.localStorage.removeItem(ELEVATED_ACCESS_STORAGE_KEY);
+        window.sessionStorage.removeItem(ELEVATED_ACCESS_STORAGE_KEY);
       }
       setIsLoading(false);
     });

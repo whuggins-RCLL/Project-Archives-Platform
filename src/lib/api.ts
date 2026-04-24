@@ -62,6 +62,7 @@ const generateUniqueProjectCode = async (): Promise<string> => {
 export interface Settings {
   aiEnabled: boolean;
   activeProvider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc' | 'groq';
+  enabledProviders: Array<'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc' | 'groq'>;
   /** When master AI is on, controls Auto-Tag on project records. */
   aiAutoTagEnabled: boolean;
   /** When master AI is on, controls AI Summarize on project records. */
@@ -80,6 +81,9 @@ export interface Settings {
   customFooter?: string;
   helpContactEmail?: string;
 }
+
+const ALLOWED_PROVIDERS = ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] as const;
+type ProviderId = typeof ALLOWED_PROVIDERS[number];
 
 
 export interface AddCommentOptions {
@@ -189,9 +193,16 @@ export const api = {
       if (docSnap.exists()) {
         const data = docSnap.data() as Partial<Settings>;
         const aiEnabled = data.aiEnabled ?? false;
+        const enabledProviders = Array.isArray(data.enabledProviders)
+          ? data.enabledProviders.filter((provider): provider is ProviderId => ALLOWED_PROVIDERS.includes(provider as ProviderId))
+          : [];
+        const activeProvider: ProviderId = enabledProviders.includes((data.activeProvider ?? 'gemini') as ProviderId)
+          ? ((data.activeProvider ?? 'gemini') as ProviderId)
+          : (enabledProviders[0] ?? 'gemini');
         return {
           aiEnabled,
-          activeProvider: data.activeProvider ?? 'gemini',
+          activeProvider,
+          enabledProviders: enabledProviders.length > 0 ? enabledProviders : [activeProvider],
           aiAutoTagEnabled: data.aiAutoTagEnabled ?? aiEnabled,
           aiSummarizeEnabled: data.aiSummarizeEnabled ?? aiEnabled,
           aiNextBestActionEnabled: data.aiNextBestActionEnabled ?? true,
@@ -212,6 +223,7 @@ export const api = {
       return {
         aiEnabled: false,
         activeProvider: 'gemini',
+        enabledProviders: ['gemini'],
         aiAutoTagEnabled: false,
         aiSummarizeEnabled: false,
         aiNextBestActionEnabled: true,

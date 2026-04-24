@@ -6,6 +6,8 @@ import { withGovernanceDefaults } from '../lib/projectGovernance';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
 import { AI_MODEL_OPTIONS } from '../constants';
 
+const DEFAULT_PROVIDER = 'gemini';
+
 export default function RecordView({ projects, loading: projectsLoading, projectId, onBack, isAdmin }: { projects: Project[], loading: boolean, projectId: string | null, onBack: () => void, isAdmin: boolean }) {
   const [project, setProject] = useState<Project | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -32,6 +34,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [tagDraft, setTagDraft] = useState('');
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<Settings['activeProvider']>(DEFAULT_PROVIDER);
   const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
 
   useEffect(() => {
@@ -62,12 +65,16 @@ export default function RecordView({ projects, loading: projectsLoading, project
   }, [projectId]);
 
   useEffect(() => {
-    if (!settings?.activeProvider) return;
-    const providerOptions = AI_MODEL_OPTIONS.filter((option) => option.provider === settings.activeProvider);
+    if (!settings) return;
+    const enabledProviders = settings.enabledProviders?.length ? settings.enabledProviders : [settings.activeProvider];
+    const nextProvider = enabledProviders.includes(selectedProvider) ? selectedProvider : enabledProviders[0];
+    if (!nextProvider) return;
+    setSelectedProvider(nextProvider);
+    const providerOptions = AI_MODEL_OPTIONS.filter((option) => option.provider === nextProvider);
     if (providerOptions.length > 0) {
       setSelectedModel(providerOptions[0].id);
     }
-  }, [settings?.activeProvider]);
+  }, [selectedProvider, settings]);
 
   const handleSave = async () => {
     if (!isAdmin) return;
@@ -229,7 +236,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       const prompt = `Based on the following project description, generate 3-5 relevant tags. Return ONLY a comma-separated list of tags, nothing else. Description: ${project.description}`;
       const response = await api.generateAI(
         prompt,
-        settings.activeProvider,
+        selectedProvider,
         selectedModel,
         "You are an expert project manager. Generate concise, relevant tags.",
         "autoTag",
@@ -258,7 +265,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       const prompt = `Summarize the following project and its recent comments into a concise executive summary (2-3 sentences max). \n\nProject Title: ${project.title}\nCurrent Description: ${project.description}\n\nRecent Comments:\n${commentsText}`;
       const response = await api.generateAI(
         prompt,
-        settings.activeProvider,
+        selectedProvider,
         selectedModel,
         "You are an executive assistant. Provide a concise, professional summary.",
         "summarize",
@@ -345,7 +352,7 @@ Risk: ${project.riskFactor}
 Description: ${project.description}`;
       const response = await api.generateAI(
         prompt,
-        settings.activeProvider,
+        selectedProvider,
         selectedModel,
         'You are a PMO copilot. Return strict JSON only.',
         'nextBestAction',
@@ -390,7 +397,7 @@ Dependencies: ${(project.dependencies ?? []).map((d) => `${d.description} (${d.s
 Pending approvals: ${(project.approvalCheckpoints ?? []).filter((c) => c.required && !c.approved).length}`;
       const response = await api.generateAI(
         prompt,
-        settings.activeProvider,
+        selectedProvider,
         selectedModel,
         'You are an enterprise risk analyst. Return strict JSON only.',
         'riskNarrative',
@@ -473,7 +480,7 @@ Dependencies: ${(project.dependencies ?? []).map((d) => `${d.description} (${d.s
 Description: ${project.description}`;
       const response = await api.generateAI(
         prompt,
-        settings.activeProvider,
+        selectedProvider,
         selectedModel,
         'You are a PMO advisor. Choose the most appropriate project management approach and tailor it to the project. Return strict JSON only.',
         'pmApproach',
@@ -867,6 +874,19 @@ Description: ${project.description}`;
             </h2>
             {settings?.aiEnabled && isAdmin && (
               <div className="mb-4 max-w-xl">
+                <label htmlFor="ai-provider-select" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
+                  AI Provider
+                </label>
+                <select
+                  id="ai-provider-select"
+                  className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2 text-sm focus:ring-2 focus:ring-primary outline-none mb-3"
+                  value={selectedProvider}
+                  onChange={(e) => setSelectedProvider(e.target.value as Settings['activeProvider'])}
+                >
+                  {(settings.enabledProviders?.length ? settings.enabledProviders : [settings.activeProvider]).map((providerId) => (
+                    <option key={providerId} value={providerId}>{providerId}</option>
+                  ))}
+                </select>
                 <label htmlFor="ai-model-select" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">
                   AI Model
                 </label>
@@ -877,7 +897,7 @@ Description: ${project.description}`;
                   onChange={(e) => setSelectedModel(e.target.value)}
                 >
                   {AI_MODEL_OPTIONS
-                    .filter((option) => option.provider === settings.activeProvider)
+                    .filter((option) => option.provider === selectedProvider)
                     .map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.label} — {option.description}

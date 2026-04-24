@@ -20,6 +20,7 @@ export default function SettingsView({
   const [settings, setSettings] = useState<Settings>({
     aiEnabled: false,
     activeProvider: 'gemini',
+    enabledProviders: ['gemini'],
     aiAutoTagEnabled: true,
     aiSummarizeEnabled: true,
     aiNextBestActionEnabled: true,
@@ -366,23 +367,42 @@ export default function SettingsView({
 
           {/* Provider Selection */}
           <div className={`transition-opacity ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
-            <h3 className="font-bold text-on-surface mb-3">Active AI Provider</h3>
+            <h3 className="font-bold text-on-surface mb-3">Enabled AI Providers</h3>
+            <p className="text-xs text-on-surface-variant -mt-2 mb-3">
+              Select one or more providers. Users can toggle providers while choosing models on project records.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {AI_PROVIDER_OPTIONS.map(provider => (
                 <div
                   key={provider.id}
-                  onClick={() => !readOnly && setSettings({ ...settings, activeProvider: provider.id })}
+                  onClick={() => {
+                    if (readOnly) return;
+                    const currentlyEnabled = settings.enabledProviders.includes(provider.id);
+                    if (currentlyEnabled && settings.enabledProviders.length === 1) return;
+                    const nextEnabledProviders = currentlyEnabled
+                      ? settings.enabledProviders.filter((id) => id !== provider.id)
+                      : [...settings.enabledProviders, provider.id];
+                    setSettings({
+                      ...settings,
+                      enabledProviders: nextEnabledProviders,
+                      activeProvider: nextEnabledProviders.includes(settings.activeProvider) ? settings.activeProvider : nextEnabledProviders[0],
+                    });
+                  }}
                   className={`p-4 rounded-lg border-2 transition-all ${
-                    settings.activeProvider === provider.id
+                    settings.enabledProviders.includes(provider.id)
                       ? 'border-primary bg-primary/5'
                       : 'border-outline-variant/20 hover:border-primary/30'
                   } ${readOnly ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
                 >
-                  <div className="font-bold text-sm">{provider.name}</div>
+                  <div className="font-bold text-sm flex items-center justify-between">
+                    <span>{provider.name}</span>
+                    {settings.enabledProviders.includes(provider.id) && <span className="text-[11px] uppercase text-primary">Enabled</span>}
+                  </div>
                   <div className="text-xs text-on-surface-variant mt-1">{provider.desc}</div>
                 </div>
               ))}
             </div>
+            <p className="text-xs text-on-surface-variant mt-2">At least one provider must remain enabled.</p>
           </div>
 
 

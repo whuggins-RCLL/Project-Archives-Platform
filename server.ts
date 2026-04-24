@@ -117,6 +117,7 @@ type RateLimitEntry = {
 type AppSettings = {
   aiEnabled: boolean;
   activeProvider: string;
+  enabledProviders: string[];
   aiAutoTagEnabled: boolean;
   aiSummarizeEnabled: boolean;
   aiNextBestActionEnabled: boolean;
@@ -763,6 +764,13 @@ function validateSettings(input: unknown): AppSettings | null {
   if (!input || typeof input !== "object") return null;
   const source = input as Record<string, unknown>;
 
+  const enabledProviders = Array.isArray(source.enabledProviders)
+    ? source.enabledProviders
+    : [source.activeProvider];
+  const normalizedEnabledProviders = enabledProviders.filter(
+    (provider): provider is string => typeof provider === "string" && ALLOWED_PROVIDERS.has(provider),
+  );
+
   if (
     typeof source.aiEnabled !== "boolean" ||
     (source.aiAutoTagEnabled !== undefined && typeof source.aiAutoTagEnabled !== "boolean") ||
@@ -774,6 +782,9 @@ function validateSettings(input: unknown): AppSettings | null {
     typeof source.aiRequireHumanApproval !== "boolean" ||
     typeof source.activeProvider !== "string" ||
     !ALLOWED_PROVIDERS.has(source.activeProvider) ||
+    normalizedEnabledProviders.length === 0 ||
+    normalizedEnabledProviders.some((provider) => !ALLOWED_PROVIDERS.has(provider)) ||
+    !normalizedEnabledProviders.includes(source.activeProvider) ||
     (source.privacyMode !== "public-read" && source.privacyMode !== "private-read") ||
     typeof source.suiteName !== "string" ||
     source.suiteName.trim().length === 0 ||
@@ -802,6 +813,7 @@ function validateSettings(input: unknown): AppSettings | null {
   return {
     aiEnabled,
     activeProvider: source.activeProvider,
+    enabledProviders: Array.from(new Set(normalizedEnabledProviders)),
     aiAutoTagEnabled,
     aiSummarizeEnabled,
     aiNextBestActionEnabled: source.aiNextBestActionEnabled,
@@ -820,10 +832,11 @@ function validateSettings(input: unknown): AppSettings | null {
   };
 }
 
-function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?: string; booleanValue?: boolean }> {
+function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?: string; booleanValue?: boolean; arrayValue?: { values: Array<{ stringValue: string }> } }> {
   return {
     aiEnabled: { booleanValue: settings.aiEnabled },
     activeProvider: { stringValue: settings.activeProvider },
+    enabledProviders: { arrayValue: { values: settings.enabledProviders.map((provider) => ({ stringValue: provider })) } },
     aiAutoTagEnabled: { booleanValue: settings.aiAutoTagEnabled },
     aiSummarizeEnabled: { booleanValue: settings.aiSummarizeEnabled },
     aiNextBestActionEnabled: { booleanValue: settings.aiNextBestActionEnabled },
@@ -843,12 +856,15 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
 }
 
 function fromFirestoreFields(
-  fields: Record<string, { stringValue?: string; booleanValue?: boolean }> | undefined,
+  fields: Record<string, { stringValue?: string; booleanValue?: boolean; arrayValue?: { values?: Array<{ stringValue?: string }> } }> | undefined,
 ): Partial<AppSettings> {
   if (!fields) return {};
   return {
     aiEnabled: fields.aiEnabled?.booleanValue,
     activeProvider: fields.activeProvider?.stringValue,
+    enabledProviders: fields.enabledProviders?.arrayValue?.values
+      ?.map((value) => value?.stringValue)
+      .filter((value): value is string => typeof value === "string" && ALLOWED_PROVIDERS.has(value)),
     aiAutoTagEnabled: fields.aiAutoTagEnabled?.booleanValue,
     aiSummarizeEnabled: fields.aiSummarizeEnabled?.booleanValue,
     aiNextBestActionEnabled: fields.aiNextBestActionEnabled?.booleanValue,
@@ -1582,6 +1598,9 @@ app.post("/api/ai/generate", async (req, res) => {
     const nextBestAllowed = storedSettings.aiNextBestActionEnabled === true;
     const riskAllowed = storedSettings.aiRiskNarrativeEnabled === true;
     const pmApproachAllowed = storedSettings.aiPmApproachEnabled === true;
+    const enabledProviders = Array.isArray(storedSettings.enabledProviders) && storedSettings.enabledProviders.length > 0
+      ? storedSettings.enabledProviders
+      : [storedSettings.activeProvider ?? "gemini"];
     if (!masterAiOn) {
       return res.status(403).json({ error: "AI features are disabled in settings." });
     }
@@ -1619,6 +1638,9 @@ app.post("/api/ai/generate", async (req, res) => {
 
     if (typeof provider !== "string" || !ALLOWED_PROVIDERS.has(provider)) {
       return res.status(400).json({ error: "Invalid provider" });
+    }
+    if (!enabledProviders.includes(provider)) {
+      return res.status(403).json({ error: "Selected provider is disabled in admin settings." });
     }
     if (typeof model !== "string" || model.trim().length === 0) {
       return res.status(400).json({ error: "Model is required" });
