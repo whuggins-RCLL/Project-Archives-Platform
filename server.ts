@@ -1050,7 +1050,11 @@ async function saveFirestoreSettings(settings: AppSettings): Promise<void> {
   const fields = toFirestoreFields(settings);
   const base = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databasePath}/documents`;
   const globalPath = "settings/global";
-  let response = await fetch(`${base}/${globalPath}`, {
+  const updateMaskParams = new URLSearchParams();
+  for (const fieldPath of Object.keys(fields)) {
+    updateMaskParams.append("updateMask.fieldPaths", fieldPath);
+  }
+  let response = await fetch(`${base}/${globalPath}?${updateMaskParams.toString()}`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ fields }),
@@ -1225,7 +1229,11 @@ async function saveElevatedAccessConfig(config: { passwordHash: string; needsCha
     elevatedPasswordHash: { stringValue: config.passwordHash },
     elevatedPasswordNeedsChange: { booleanValue: config.needsChange },
   };
-  let response = await fetch(`${base}/settings/global`, {
+  const updateMaskParams = new URLSearchParams();
+  for (const fieldPath of Object.keys(fields)) {
+    updateMaskParams.append("updateMask.fieldPaths", fieldPath);
+  }
+  let response = await fetch(`${base}/settings/global?${updateMaskParams.toString()}`, {
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ fields }),
