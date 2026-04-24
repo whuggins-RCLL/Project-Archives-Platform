@@ -562,11 +562,11 @@ function parseFirestoreDocument(document: { name?: string; fields?: Record<strin
 }
 
 async function fetchProjectsForOps(idToken: string): Promise<Record<string, unknown>[]> {
-  const projectId = process.env.VITE_FIREBASE_PROJECT_ID;
-  if (!projectId) throw new Error("VITE_FIREBASE_PROJECT_ID is not configured on the server");
+  const projectId = getFirebaseProjectId();
+  const databasePath = getFirestoreDatabasePathSegment();
 
   const response = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/projects?pageSize=500`,
+    `https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databasePath}/documents/projects?pageSize=500`,
     { headers: { Authorization: `Bearer ${idToken}` } },
   );
 
@@ -581,7 +581,8 @@ async function fetchProjectsForOps(idToken: string): Promise<Record<string, unkn
 async function fetchLatestProjectByTitle(title: string): Promise<Record<string, unknown> | null> {
   const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
   const projectId = getFirebaseProjectId();
-  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`, {
+  const databasePath = getFirestoreDatabasePathSegment();
+  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databasePath}/documents:runQuery`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
