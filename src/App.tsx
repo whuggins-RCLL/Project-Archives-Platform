@@ -19,6 +19,7 @@ import LoginView from './views/LoginView';
 import SettingsView from './views/SettingsView';
 import AdminUsersView from './views/AdminUsersView';
 import HelpView from './views/HelpView';
+import SiteTour from './components/SiteTour';
 import { api } from './lib/api';
 import { useUserRole } from './hooks/useUserRole';
 import { buildDefaultApprovalCheckpoints, buildDefaultMilestones } from './lib/projectGovernance';
@@ -27,6 +28,8 @@ import { applyBrandingToDocument, useBranding } from './hooks/useBranding';
 import { Project } from './types';
 
 const ELEVATED_ACCESS_STORAGE_KEY = 'elevated-access-ok';
+const SITE_TOUR_COMPLETED_KEY = 'site-tour-completed';
+const SITE_TOUR_DISMISSED_KEY = 'site-tour-dismissed';
 
 function InternalApp() {
   const [currentView, setCurrentView] = useState('kanban');
@@ -43,6 +46,7 @@ function InternalApp() {
   const [confirmElevatedPassword, setConfirmElevatedPassword] = useState('');
   const [elevatedError, setElevatedError] = useState<string | null>(null);
   const [checkingElevated, setCheckingElevated] = useState(true);
+  const [isSiteTourOpen, setIsSiteTourOpen] = useState(false);
   const {
     canEditContent,
     canManageRoles,
@@ -61,6 +65,17 @@ function InternalApp() {
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
   const isViewerOnly = rawRole === 'viewer';
+
+  useEffect(() => {
+    if (rawRole !== 'collaborator') {
+      setIsSiteTourOpen(false);
+      return;
+    }
+
+    const hasCompletedTour = window.localStorage.getItem(SITE_TOUR_COMPLETED_KEY) === 'true';
+    const hasDismissedTour = window.localStorage.getItem(SITE_TOUR_DISMISSED_KEY) === 'true';
+    setIsSiteTourOpen(!hasCompletedTour && !hasDismissedTour);
+  }, [rawRole]);
 
   useEffect(() => {
     if (!isBrandingHydrated) return;
@@ -187,6 +202,25 @@ function InternalApp() {
 
   const handleProjectsRefreshed = (refreshedProjects: Project[]) => {
     setProjects(refreshedProjects);
+  };
+
+  const handleTourComplete = (doNotShowAgain: boolean) => {
+    window.localStorage.setItem(SITE_TOUR_COMPLETED_KEY, 'true');
+    if (doNotShowAgain) {
+      window.localStorage.setItem(SITE_TOUR_DISMISSED_KEY, 'true');
+    } else {
+      window.localStorage.removeItem(SITE_TOUR_DISMISSED_KEY);
+    }
+    setIsSiteTourOpen(false);
+  };
+
+  const handleTourSkip = (doNotShowAgain: boolean) => {
+    if (doNotShowAgain) {
+      window.localStorage.setItem(SITE_TOUR_DISMISSED_KEY, 'true');
+    } else {
+      window.localStorage.removeItem(SITE_TOUR_DISMISSED_KEY);
+    }
+    setIsSiteTourOpen(false);
   };
 
   const handleNewProject = async () => {
@@ -443,6 +477,11 @@ function InternalApp() {
           </div>
         </div>
       )}
+      <SiteTour
+        isOpen={isSiteTourOpen}
+        onComplete={handleTourComplete}
+        onSkip={handleTourSkip}
+      />
     </div>
   );
 }
