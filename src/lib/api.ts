@@ -80,6 +80,8 @@ export interface Settings {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  googleDriveFolderBaseUrl?: string;
+  googleCalendarId?: string;
 }
 
 const ALLOWED_PROVIDERS = ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] as const;
@@ -218,6 +220,8 @@ export const api = {
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
           customFooter: data.customFooter ?? '',
           helpContactEmail: data.helpContactEmail ?? '',
+          googleDriveFolderBaseUrl: data.googleDriveFolderBaseUrl ?? '',
+          googleCalendarId: data.googleCalendarId ?? '',
         };
       }
       return {
@@ -239,6 +243,8 @@ export const api = {
         brandDarkColor: '#1A365D',
         customFooter: '',
         helpContactEmail: '',
+        googleDriveFolderBaseUrl: '',
+        googleCalendarId: '',
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');

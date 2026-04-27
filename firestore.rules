@@ -188,7 +188,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'googleDriveFolderBaseUrl', 'googleCalendarId']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] &&
              data.aiAutoTagEnabled is bool &&
@@ -208,7 +208,9 @@ service cloud.firestore {
              data.brandDarkColor is string &&
              data.brandDarkColor.matches('^#[0-9A-Fa-f]{6}$') &&
              (!('customFooter' in data) || (data.customFooter is string && data.customFooter.size() <= 500)) &&
-             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254));
+             (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254)) &&
+             (!('googleDriveFolderBaseUrl' in data) || (data.googleDriveFolderBaseUrl is string && data.googleDriveFolderBaseUrl.size() <= 500)) &&
+             (!('googleCalendarId' in data) || (data.googleCalendarId is string && data.googleCalendarId.size() <= 254));
     }
 
     function currentPrivacyMode() {

@@ -133,6 +133,8 @@ type AppSettings = {
   brandDarkColor: string;
   customFooter?: string;
   helpContactEmail?: string;
+  googleDriveFolderBaseUrl?: string;
+  googleCalendarId?: string;
 };
 
 type VerifiedUser = {
@@ -799,7 +801,9 @@ function validateSettings(input: unknown): AppSettings | null {
     typeof source.brandDarkColor !== "string" ||
     !source.brandDarkColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
-    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254))
+    (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254)) ||
+    (source.googleDriveFolderBaseUrl !== undefined && (typeof source.googleDriveFolderBaseUrl !== "string" || source.googleDriveFolderBaseUrl.length > 500)) ||
+    (source.googleCalendarId !== undefined && (typeof source.googleCalendarId !== "string" || source.googleCalendarId.length > 254))
   ) {
     return null;
   }
@@ -829,6 +833,8 @@ function validateSettings(input: unknown): AppSettings | null {
     brandDarkColor: source.brandDarkColor,
     customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
     helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
+    googleDriveFolderBaseUrl: typeof source.googleDriveFolderBaseUrl === "string" ? source.googleDriveFolderBaseUrl.trim() : undefined,
+    googleCalendarId: typeof source.googleCalendarId === "string" ? source.googleCalendarId.trim() : undefined,
   };
 }
 
@@ -852,6 +858,8 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     brandDarkColor: { stringValue: settings.brandDarkColor },
     ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
     ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
+    ...(settings.googleDriveFolderBaseUrl !== undefined && { googleDriveFolderBaseUrl: { stringValue: settings.googleDriveFolderBaseUrl } }),
+    ...(settings.googleCalendarId !== undefined && { googleCalendarId: { stringValue: settings.googleCalendarId } }),
   };
 }
 
@@ -880,6 +888,8 @@ function fromFirestoreFields(
     brandDarkColor: fields.brandDarkColor?.stringValue,
     customFooter: fields.customFooter?.stringValue,
     helpContactEmail: fields.helpContactEmail?.stringValue,
+    googleDriveFolderBaseUrl: fields.googleDriveFolderBaseUrl?.stringValue,
+    googleCalendarId: fields.googleCalendarId?.stringValue,
   };
 }
 
