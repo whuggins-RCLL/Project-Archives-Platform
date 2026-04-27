@@ -5,22 +5,28 @@ function stageIdPrefix(stage: string): string {
 }
 
 export function buildDefaultMilestones(): Milestone[] {
-  return PROJECT_STAGE_SEQUENCE.map((stage, index) => ({
-    id: `ms-${index + 1}`,
-    title: `${stage} milestone`,
-    stage,
-    status: index === 0 ? 'In Progress' : 'Not Started'
-  }));
+  const defaultStage = PROJECT_STAGE_SEQUENCE[0];
+  return [
+    {
+      id: 'ms-1',
+      title: `${defaultStage} milestone`,
+      stage: defaultStage,
+      status: 'In Progress'
+    }
+  ];
 }
 
 export function buildDefaultApprovalCheckpoints(): ApprovalCheckpoint[] {
-  return PROJECT_STAGE_SEQUENCE.map((stage) => ({
-    id: `ap-${stageIdPrefix(stage)}`,
-    stage,
-    name: `${stage} gate approval`,
-    required: true,
-    approved: false
-  }));
+  const defaultStage = PROJECT_STAGE_SEQUENCE[0];
+  return [
+    {
+      id: `ap-${stageIdPrefix(defaultStage)}`,
+      stage: defaultStage,
+      name: `${defaultStage} gate approval`,
+      required: true,
+      approved: false
+    }
+  ];
 }
 
 export function withGovernanceDefaults(project: Project): Project {
