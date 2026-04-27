@@ -402,7 +402,7 @@ export const api = {
         mentions: sanitizedMentions,
         reactions: {},
         attachments: sanitizedAttachments,
-        parentId: options.parentId,
+        ...(options.parentId ? { parentId: options.parentId } : {}),
         editHistory: [],
         createdAt: serverTimestamp()
       };
