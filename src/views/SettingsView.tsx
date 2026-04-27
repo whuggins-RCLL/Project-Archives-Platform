@@ -34,6 +34,8 @@ export default function SettingsView({
     logoDataUrl: '',
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
+    googleDriveFolderBaseUrl: '',
+    googleCalendarId: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -337,6 +339,38 @@ export default function SettingsView({
                 onChange={(e) => setSettings({ ...settings, helpContactEmail: e.target.value })}
               />
               <p className="text-xs text-on-surface-variant mt-1">Shown to users who need support. Leave blank to hide.</p>
+            </div>
+            <div className="pt-2 border-t border-outline-variant/10">
+              <h4 className="font-bold text-on-surface mb-2">Google integrations</h4>
+              <p className="text-xs text-on-surface-variant mb-3">Configure optional links used by each project record.</p>
+              <div className="space-y-4">
+                <div>
+                  <label htmlFor="settings-google-drive-url" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Google Drive base folder URL</label>
+                  <input
+                    id="settings-google-drive-url"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                    value={settings.googleDriveFolderBaseUrl ?? ''}
+                    maxLength={500}
+                    disabled={readOnly}
+                    placeholder="https://drive.google.com/drive/folders/..."
+                    onChange={(e) => setSettings({ ...settings, googleDriveFolderBaseUrl: e.target.value })}
+                  />
+                  <p className="text-xs text-on-surface-variant mt-1">Project code is appended to this base path for workspace links.</p>
+                </div>
+                <div>
+                  <label htmlFor="settings-google-calendar-id" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Shared Google Calendar ID (optional)</label>
+                  <input
+                    id="settings-google-calendar-id"
+                    className="w-full bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm"
+                    value={settings.googleCalendarId ?? ''}
+                    maxLength={254}
+                    disabled={readOnly}
+                    placeholder="team-calendar@group.calendar.google.com"
+                    onChange={(e) => setSettings({ ...settings, googleCalendarId: e.target.value })}
+                  />
+                  <p className="text-xs text-on-surface-variant mt-1">Enables “Add deadline to Google Calendar” when a project due date is set.</p>
+                </div>
+              </div>
             </div>
           </div>
 

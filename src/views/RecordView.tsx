@@ -1,4 +1,4 @@
-import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil } from 'lucide-react';
+import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
@@ -200,6 +200,26 @@ export default function RecordView({ projects, loading: projectsLoading, project
     const folderMatch = url.match(/\/folders\/([^/?]+)/i);
     if (folderMatch) return `https://drive.google.com/drive/folders/${folderMatch[1]}`;
     return url;
+  };
+
+  const toGoogleCalendarDate = (value: Date): string => (
+    `${value.getUTCFullYear()}${String(value.getUTCMonth() + 1).padStart(2, '0')}${String(value.getUTCDate()).padStart(2, '0')}`
+  );
+
+  const buildGoogleCalendarDeadlineUrl = (calendarId: string, dueDate: string, projectTitle: string, projectCode: string): string | null => {
+    const start = new Date(`${dueDate}T00:00:00Z`);
+    if (Number.isNaN(start.getTime())) return null;
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    const params = new URLSearchParams({
+      action: 'TEMPLATE',
+      text: `${projectCode} deadline: ${projectTitle}`,
+      dates: `${toGoogleCalendarDate(start)}/${toGoogleCalendarDate(end)}`,
+      details: `Project ${projectCode} deadline from Project Archives.`,
+      ctz: 'UTC',
+      src: calendarId,
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
   };
 
   const handleAddAttachment = (target: 'root' | string) => {
@@ -708,6 +728,12 @@ Description: ${project.description}`;
     );
   }
 
+  const driveBaseUrl = settings?.googleDriveFolderBaseUrl?.trim() || INTEGRATION_CONFIG.googleDriveFolderBaseUrl;
+  const calendarId = settings?.googleCalendarId?.trim() ?? '';
+  const calendarDeadlineUrl = project.dueDate
+    ? buildGoogleCalendarDeadlineUrl(calendarId, project.dueDate, project.title, project.code)
+    : null;
+
   const relevantLinks = [
     INTEGRATION_CONFIG.githubBaseUrl ? {
       key: 'github',
@@ -715,11 +741,17 @@ Description: ${project.description}`;
       label: 'Project repository',
       href: `${INTEGRATION_CONFIG.githubBaseUrl}/${project.code.toLowerCase()}`,
     } : null,
-    INTEGRATION_CONFIG.googleDriveFolderBaseUrl ? {
+    driveBaseUrl ? {
       key: 'drive',
       icon: <FileText className="w-4 h-4" />,
       label: 'Google Drive workspace',
-      href: normalizeGoogleDriveUrl(`${INTEGRATION_CONFIG.googleDriveFolderBaseUrl}/${project.code}`),
+      href: normalizeGoogleDriveUrl(`${driveBaseUrl}/${project.code}`),
+    } : null,
+    calendarId && calendarDeadlineUrl ? {
+      key: 'calendar',
+      icon: <CalendarPlus className="w-4 h-4" />,
+      label: 'Add deadline to Google Calendar',
+      href: calendarDeadlineUrl,
     } : null,
   ].filter((link): link is { key: string; icon: JSX.Element; label: string; href: string } => Boolean(link));
 
@@ -856,6 +888,17 @@ Description: ${project.description}`;
                   <option value="High">High</option>
                   <option value="Stable">Stable</option>
                 </select>
+              </div>
+              <div className="md:col-span-1">
+                <label htmlFor="record-project-due-date" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Project Deadline</label>
+                <input
+                  id="record-project-due-date"
+                  type="date"
+                  className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none"
+                  value={project.dueDate ?? ''}
+                  onChange={(e) => setProject({ ...project, dueDate: e.target.value })}
+                  disabled={!isAdmin}
+                />
               </div>
             </div>
           </section>
@@ -1327,7 +1370,7 @@ Description: ${project.description}`;
               <div className="space-y-2">
                 {relevantLinks.length === 0 ? (
                   <div className="text-xs text-on-surface-variant bg-surface-container-low rounded-md p-3">
-                    No external links are configured. Add <code>VITE_PROJECT_GITHUB_BASE_URL</code> and/or <code>VITE_PROJECT_DRIVE_FOLDER_BASE_URL</code> to enable them.
+                    No external links are configured. Set GitHub, Google Drive, or Google Calendar values in Admin → Settings.
                   </div>
                 ) : relevantLinks.map((link) => (
                   <a
@@ -1342,7 +1385,7 @@ Description: ${project.description}`;
                   </a>
                 ))}
                 <div className="text-[11px] text-on-surface-variant">
-                  Legacy placeholder links were removed to avoid dead navigation.
+                  Calendar link appears only when a project deadline and shared calendar ID are configured.
                 </div>
               </div>
             </div>
