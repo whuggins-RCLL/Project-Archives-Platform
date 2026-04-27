@@ -1,4 +1,4 @@
-import { Search, Settings, LogOut } from 'lucide-react';
+import { Search, Settings, LogOut, Compass } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
@@ -11,6 +11,7 @@ export default function Topbar({
   refreshingRole,
   onRefreshPermissions,
   onOpenSettings,
+  onOpenTour,
   canViewSettings,
   canManageSettings,
   branding,
@@ -21,6 +22,7 @@ export default function Topbar({
   refreshingRole: boolean,
   onRefreshPermissions: () => Promise<void>,
   onOpenSettings: () => void,
+  onOpenTour: () => void,
   canViewSettings: boolean,
   canManageSettings: boolean,
   branding: {
@@ -87,6 +89,14 @@ export default function Topbar({
           </button>
           {roleError && <p className="text-[10px] text-error">{roleError}</p>}
         </div>
+        <button
+          aria-label="Open site tour"
+          title="Open site tour"
+          onClick={onOpenTour}
+          className="p-2 rounded-full transition-colors text-slate-700 hover:bg-slate-100"
+        >
+          <Compass className="w-5 h-5" />
+        </button>
         <button
           aria-label="Open settings"
           title={

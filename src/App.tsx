@@ -19,6 +19,7 @@ import LoginView from './views/LoginView';
 import SettingsView from './views/SettingsView';
 import AdminUsersView from './views/AdminUsersView';
 import HelpView from './views/HelpView';
+import SiteTour from './components/SiteTour';
 import { api } from './lib/api';
 import { useUserRole } from './hooks/useUserRole';
 import { buildDefaultApprovalCheckpoints, buildDefaultMilestones } from './lib/projectGovernance';
@@ -27,6 +28,9 @@ import { applyBrandingToDocument, useBranding } from './hooks/useBranding';
 import { Project } from './types';
 
 const ELEVATED_ACCESS_STORAGE_KEY = 'elevated-access-ok';
+const SITE_TOUR_COMPLETED_KEY = 'site-tour-completed';
+const SITE_TOUR_DISMISSED_KEY = 'site-tour-dismissed';
+const TOUR_ELIGIBLE_ROLES = new Set(['owner', 'admin', 'collaborator']);
 
 function InternalApp() {
   const [currentView, setCurrentView] = useState('kanban');
@@ -43,6 +47,7 @@ function InternalApp() {
   const [confirmElevatedPassword, setConfirmElevatedPassword] = useState('');
   const [elevatedError, setElevatedError] = useState<string | null>(null);
   const [checkingElevated, setCheckingElevated] = useState(true);
+  const [isSiteTourOpen, setIsSiteTourOpen] = useState(false);
   const {
     canEditContent,
     canManageRoles,
@@ -61,6 +66,20 @@ function InternalApp() {
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
   const isViewerOnly = rawRole === 'viewer';
+  const tourStorageSuffix = auth.currentUser?.uid ?? 'anonymous';
+  const completedTourStorageKey = `${SITE_TOUR_COMPLETED_KEY}:${tourStorageSuffix}`;
+  const dismissedTourStorageKey = `${SITE_TOUR_DISMISSED_KEY}:${tourStorageSuffix}`;
+
+  useEffect(() => {
+    if (!TOUR_ELIGIBLE_ROLES.has(rawRole)) {
+      setIsSiteTourOpen(false);
+      return;
+    }
+
+    const hasCompletedTour = window.localStorage.getItem(completedTourStorageKey) === 'true';
+    const hasDismissedTour = window.localStorage.getItem(dismissedTourStorageKey) === 'true';
+    setIsSiteTourOpen(!hasCompletedTour && !hasDismissedTour);
+  }, [completedTourStorageKey, dismissedTourStorageKey, rawRole]);
 
   useEffect(() => {
     if (!isBrandingHydrated) return;
@@ -187,6 +206,25 @@ function InternalApp() {
 
   const handleProjectsRefreshed = (refreshedProjects: Project[]) => {
     setProjects(refreshedProjects);
+  };
+
+  const handleTourComplete = (doNotShowAgain: boolean) => {
+    window.localStorage.setItem(completedTourStorageKey, 'true');
+    if (doNotShowAgain) {
+      window.localStorage.setItem(dismissedTourStorageKey, 'true');
+    } else {
+      window.localStorage.removeItem(dismissedTourStorageKey);
+    }
+    setIsSiteTourOpen(false);
+  };
+
+  const handleTourSkip = (doNotShowAgain: boolean) => {
+    if (doNotShowAgain) {
+      window.localStorage.setItem(dismissedTourStorageKey, 'true');
+    } else {
+      window.localStorage.removeItem(dismissedTourStorageKey);
+    }
+    setIsSiteTourOpen(false);
   };
 
   const handleNewProject = async () => {
@@ -379,6 +417,7 @@ function InternalApp() {
           refreshingRole={refreshingRole}
           onRefreshPermissions={refreshRoleClaims}
           onOpenSettings={() => setCurrentView('settings')}
+          onOpenTour={() => setIsSiteTourOpen(true)}
           canViewSettings={!isViewerOnly && canViewSettings}
           canManageSettings={!isViewerOnly && canManageSettings}
           branding={branding}
@@ -443,6 +482,11 @@ function InternalApp() {
           </div>
         </div>
       )}
+      <SiteTour
+        isOpen={isSiteTourOpen}
+        onComplete={handleTourComplete}
+        onSkip={handleTourSkip}
+      />
     </div>
   );
 }
