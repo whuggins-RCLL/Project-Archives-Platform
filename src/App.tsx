@@ -56,15 +56,16 @@ function InternalApp() {
     rawRole,
   } = useUserRole();
   const modalRef = useRef<HTMLDivElement | null>(null);
-  const { branding, settings, setSettings: setBrandingSettings } = useBranding();
+  const { branding, settings, setSettings: setBrandingSettings, isBrandingHydrated } = useBranding();
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
   const isViewerOnly = rawRole === 'viewer';
 
   useEffect(() => {
+    if (!isBrandingHydrated) return;
     applyBrandingToDocument(settings);
-  }, [settings.primaryColor, settings.brandDarkColor]);
+  }, [isBrandingHydrated, settings.primaryColor, settings.brandDarkColor]);
 
   useEffect(() => {
     if (isViewerOnly && currentView !== 'portfolio') {
@@ -286,8 +287,8 @@ function InternalApp() {
     }
   };
 
-  if (checkingElevated) {
-    return <div className="min-h-screen flex items-center justify-center">Checking access...</div>;
+  if (checkingElevated || !isBrandingHydrated) {
+    return <div className="min-h-screen flex items-center justify-center">Loading dashboard...</div>;
   }
 
   if (elevatedStatus.required && !elevatedAuthenticated) {

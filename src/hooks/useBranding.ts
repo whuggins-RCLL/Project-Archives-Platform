@@ -30,6 +30,7 @@ export function applyBrandingToDocument(settings: Pick<Settings, 'primaryColor' 
 
 export function useBranding() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [isBrandingHydrated, setIsBrandingHydrated] = useState(false);
 
   useEffect(() => {
     api.getSettings()
@@ -39,6 +40,9 @@ export function useBranding() {
       })
       .catch(() => {
         applyBrandingToDocument(DEFAULT_SETTINGS);
+      })
+      .finally(() => {
+        setIsBrandingHydrated(true);
       });
   }, []);
 
@@ -50,5 +54,5 @@ export function useBranding() {
     logoUrl: settings.logoDataUrl || '',
   }), [settings]);
 
-  return { settings, setSettings, branding };
+  return { settings, setSettings, branding, isBrandingHydrated };
 }
