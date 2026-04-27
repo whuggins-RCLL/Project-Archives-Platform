@@ -345,7 +345,7 @@ function InternalApp() {
       <div className="min-h-screen flex items-center justify-center bg-surface p-6">
         <div className="w-full max-w-md rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 space-y-4">
           <h2 className="text-xl font-bold">Admin / Owner Access Password</h2>
-          <p className="text-sm text-on-surface-variant">Enter your elevated access password. Default: <code>ChangeMe1234</code></p>
+          <p className="text-sm text-on-surface-variant">Enter your elevated access password.</p>
           <input
             type="password"
             value={elevatedPassword}
@@ -367,7 +367,7 @@ function InternalApp() {
       <div className="min-h-screen flex items-center justify-center bg-surface p-6">
         <div className="w-full max-w-md rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 space-y-3">
           <h2 className="text-xl font-bold">Change Default Password</h2>
-          <p className="text-sm text-on-surface-variant">You must change the default password before continuing.</p>
+          <p className="text-sm text-on-surface-variant">You must change your initial elevated password before continuing.</p>
           <input
             type="password"
             value={elevatedPassword}

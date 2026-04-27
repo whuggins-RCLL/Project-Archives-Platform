@@ -196,7 +196,7 @@ const STAGE_TARGET_DAYS: Record<string, number> = {
   "Pilot / Testing": 14,
   "Review / Approval": 10,
 };
-const DEFAULT_ELEVATED_PASSWORD = "ChangeMe1234";
+const ELEVATED_ACCESS_INITIAL_PASSWORD_ENV = "ELEVATED_ACCESS_INITIAL_PASSWORD";
 
 function getClientIp(req: express.Request): string {
   const header = req.headers["x-forwarded-for"];
@@ -1215,18 +1215,37 @@ function safeCompareHash(left: string, right: string): boolean {
 }
 
 async function getElevatedAccessConfig(): Promise<{ passwordHash: string; needsChange: boolean }> {
+  const initialPassword = process.env[ELEVATED_ACCESS_INITIAL_PASSWORD_ENV];
+  const hasInitialPassword = typeof initialPassword === "string" && initialPassword.trim().length > 0;
+  if ((isProduction || isVercel) && !hasInitialPassword) {
+    throw new Error(
+      `${ELEVATED_ACCESS_INITIAL_PASSWORD_ENV} is required in production before elevated access can be used`,
+    );
+  }
   try {
     const result = await firestoreCall("settings/global");
     const parsed = parseFirestoreDocument(result as { name?: string; fields?: Record<string, Record<string, unknown>> });
     const passwordHash = typeof parsed.elevatedPasswordHash === "string" && parsed.elevatedPasswordHash.length > 0
       ? parsed.elevatedPasswordHash
-      : hashPassword(DEFAULT_ELEVATED_PASSWORD);
+      : hasInitialPassword
+        ? hashPassword(initialPassword!.trim())
+        : "";
+    if (!passwordHash) {
+      throw new Error(
+        `${ELEVATED_ACCESS_INITIAL_PASSWORD_ENV} is not configured; set it before first elevated login`,
+      );
+    }
     const needsChange = typeof parsed.elevatedPasswordNeedsChange === "boolean"
       ? parsed.elevatedPasswordNeedsChange
       : true;
     return { passwordHash, needsChange };
   } catch {
-    return { passwordHash: hashPassword(DEFAULT_ELEVATED_PASSWORD), needsChange: true };
+    if (!hasInitialPassword) {
+      throw new Error(
+        `${ELEVATED_ACCESS_INITIAL_PASSWORD_ENV} is not configured; set it before first elevated login`,
+      );
+    }
+    return { passwordHash: hashPassword(initialPassword!.trim()), needsChange: true };
   }
 }
 
