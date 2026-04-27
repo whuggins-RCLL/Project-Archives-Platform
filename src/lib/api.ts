@@ -85,6 +85,41 @@ export interface Settings {
 const ALLOWED_PROVIDERS = ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] as const;
 type ProviderId = typeof ALLOWED_PROVIDERS[number];
 
+const PROJECT_MUTABLE_FIELDS = [
+  'title',
+  'description',
+  'status',
+  'priority',
+  'tags',
+  'dueDate',
+  'createdAt',
+  'code',
+  'owner',
+  'progress',
+  'department',
+  'preservationScore',
+  'riskFactor',
+  'aiDrafts',
+  'pmApproach',
+  'milestones',
+  'dependencies',
+  'approvalCheckpoints',
+] as const;
+
+type MutableProjectField = typeof PROJECT_MUTABLE_FIELDS[number];
+
+const toProjectUpdatePayload = (updates: Partial<Project>): Partial<Project> => {
+  const payload: Record<string, unknown> = {};
+
+  for (const field of PROJECT_MUTABLE_FIELDS) {
+    if (field in updates && updates[field] !== undefined) {
+      payload[field] = updates[field as MutableProjectField];
+    }
+  }
+
+  return payload as Partial<Project>;
+};
+
 
 export interface AddCommentOptions {
   parentId?: string;
@@ -345,7 +380,7 @@ export const api = {
   updateProject: async (id: string, updates: Partial<Project>): Promise<Project> => {
     try {
       const docRef = doc(db, 'projects', id);
-      const updateData = { ...updates, updatedAt: serverTimestamp() };
+      const updateData = { ...toProjectUpdatePayload(updates), updatedAt: serverTimestamp() };
       await updateDoc(docRef, updateData);
       const updatedDoc = await getDoc(docRef);
       return { id: updatedDoc.id, ...updatedDoc.data() } as Project;
