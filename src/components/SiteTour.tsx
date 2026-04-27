@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 type SiteTourStep = {
   title: string;
@@ -37,6 +37,12 @@ export default function SiteTour({ isOpen, onComplete, onSkip }: SiteTourProps) 
   const totalSteps = TOUR_STEPS.length;
   const step = TOUR_STEPS[currentStep];
   const progressText = useMemo(() => `Step ${currentStep + 1} of ${totalSteps}`, [currentStep, totalSteps]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setCurrentStep(0);
+    setDoNotShowAgain(false);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
