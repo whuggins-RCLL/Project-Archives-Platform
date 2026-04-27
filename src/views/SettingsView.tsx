@@ -28,7 +28,7 @@ export default function SettingsView({
     aiDuplicateDetectionEnabled: true,
     aiPmApproachEnabled: true,
     aiRequireHumanApproval: true,
-    privacyMode: 'public-read',
+    privacyMode: 'private-read',
     suiteName: 'AI Librarian Suite',
     portalName: 'Project Archives',
     logoDataUrl: '',

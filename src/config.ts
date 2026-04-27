@@ -1,7 +1,7 @@
 export const APP_CONFIG = {
   // Brand Naming
   appName: "AI Librarian Suite",
-  orgName: "Stanford Law Library",
+  orgName: "Your Organization",
   portalName: "Project Archives",
   subHeading: "Stakeholder Portal",
   

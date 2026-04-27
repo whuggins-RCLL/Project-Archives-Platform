@@ -218,8 +218,8 @@ service cloud.firestore {
     }
 
     function canReadProjects() {
-      return !exists(/databases/$(database)/documents/settings/global) ||
-             currentPrivacyMode() == 'public-read' ||
+      return (exists(/databases/$(database)/documents/settings/global) &&
+             currentPrivacyMode() == 'public-read') ||
              isAuthenticated();
     }
 

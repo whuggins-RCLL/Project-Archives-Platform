@@ -15,7 +15,6 @@ import { refreshRoleWithRetry } from '../lib/roleClaims';
 import { api } from '../lib/api';
 
 export function useUserRole() {
-  const fallbackOwnerEmail = 'whuggins@law.stanford.edu';
   const [role, setRole] = useState<AppRole>('viewer');
   const [tokenRoleSnapshot, setTokenRoleSnapshot] = useState<AppRole>('viewer');
   const [mirrorRoleSnapshot, setMirrorRoleSnapshot] = useState<AppRole | null>(null);
@@ -64,12 +63,9 @@ export function useUserRole() {
       setMirrorRoleSnapshot(mirroredRole);
       setTokenPermissionsSnapshot(tokenPermissions ?? null);
       setMirrorPermissionsSnapshot(mirror?.permissions ?? null);
-      const emailIsFallbackOwner = (user.email || '').trim().toLowerCase() === fallbackOwnerEmail;
-      const resolvedTokenRole = emailIsFallbackOwner
-        ? 'owner'
-        : (mirroredRole && hasMinimumRole(mirroredRole, tokenRole)
-          ? mirroredRole
-          : tokenRole);
+      const resolvedTokenRole = mirroredRole && hasMinimumRole(mirroredRole, tokenRole)
+        ? mirroredRole
+        : tokenRole;
       const authoritativeRole = serverRoleRef.current;
       if (forceRefresh && authoritativeRole) {
         // During a forced refresh, prefer the server-reconciled role because

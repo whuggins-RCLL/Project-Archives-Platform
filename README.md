@@ -97,6 +97,7 @@ VITE_ALLOWED_DOMAIN=yourcompany.com
 # Required for role management, owner bootstrap, and Admin SDK writes
 FIREBASE_PROJECT_ID=YOUR_PROJECT_ID
 FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account",...}'
+ELEVATED_ACCESS_INITIAL_PASSWORD=<bootstrap-password-set-via-secret-manager>
 
 # Optional owner bootstrap allow-list (comma-separated)
 OWNER_EMAILS=owner1@yourorg.com,owner2@yourorg.com
@@ -239,7 +240,7 @@ Open `src/index.css` and modify the CSS variables under the `BRANDING CONFIGURAT
 
 ## Restricting Team Login Domain
 
-To ensure that only users from your organization can access the internal dashboard, you can restrict the Google Sign-In to a specific domain (e.g., `law.stanford.edu`).
+To ensure that only users from your organization can access the internal dashboard, you can restrict the Google Sign-In to a specific domain (e.g., `yourcompany.com`).
 
 1. Set the `VITE_ALLOWED_DOMAIN` environment variable in your `.env` file (and in Vercel).
 2. The login screen will automatically prompt Google to only allow accounts from that domain.
@@ -465,13 +466,13 @@ In practice, teams usually:
 
 ## Data Visibility & Access Model
 
-- `projects` are intentionally public-read to support the stakeholder dashboard.
+- Default posture is **private by default**: `projects` are readable only by authenticated users unless `settings/global.privacyMode` is explicitly set to `public-read`.
 - AI draft payloads (`aiDrafts`) are only valid when `settings/global.privacyMode` is `private-read`; in `public-read` mode they are blocked by Firestore rules to avoid exposing internal draft content.
 - Project writes are admin-only and validated against a strict allow-list to avoid sensitive fields.
 - `comments` are internal-only (`isAuthenticated()` read; create/update/delete restricted by ownership/admin), with optional mention/reaction/thread/attachment metadata validated by rules.
 - `settings` are authenticated-read and admin-write.
 
-If your organization needs private projects, change `allow read: if true` in `firestore.rules` to an authenticated/admin condition.
+If your organization needs public showcase behavior, explicitly set `settings/global.privacyMode` to `public-read` and review the deployment hardening checklist in `OPEN_SOURCE.md`.
 
 ## Project Structure
 

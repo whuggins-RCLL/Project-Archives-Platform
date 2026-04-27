@@ -10,7 +10,7 @@ Version	Supported
 Reporting a Vulnerability
 If you discover a security vulnerability, please report it privately by email:
 
-whuggins@law.stanford.edu
+security@your-organization.example
 
 Please include as much detail as possible to help us validate and address the issue quickly, such as:
 
@@ -44,5 +44,4 @@ If a report is accepted, we will prioritize remediation based on severity and af
 If a report is declined (e.g., not reproducible, out of scope, or not a security issue), we will provide a brief explanation.
 
 Thank you for helping keep this project and its users safe.
-
 

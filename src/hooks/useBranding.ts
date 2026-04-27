@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS: Settings = {
   aiDuplicateDetectionEnabled: true,
   aiPmApproachEnabled: true,
   aiRequireHumanApproval: true,
-  privacyMode: 'public-read',
+  privacyMode: 'private-read',
   suiteName: APP_CONFIG.appName,
   portalName: APP_CONFIG.portalName,
   logoDataUrl: '',
