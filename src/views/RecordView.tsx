@@ -671,21 +671,6 @@ Description: ${project.description}`;
   const blockedDependencies = (project?.dependencies ?? []).filter((dependency) => dependency.status === 'At Risk').length;
   const currentUserId = api.getCurrentUserId();
   const canComment = isAdmin;
-  const relevantLinks = [
-    INTEGRATION_CONFIG.githubBaseUrl ? {
-      key: 'github',
-      icon: <LinkIcon className="w-4 h-4" />,
-      label: 'Project repository',
-      href: `${INTEGRATION_CONFIG.githubBaseUrl}/${project.code.toLowerCase()}`,
-    } : null,
-    INTEGRATION_CONFIG.googleDriveFolderBaseUrl ? {
-      key: 'drive',
-      icon: <FileText className="w-4 h-4" />,
-      label: 'Google Drive workspace',
-      href: normalizeGoogleDriveUrl(`${INTEGRATION_CONFIG.googleDriveFolderBaseUrl}/${project.code}`),
-    } : null,
-  ].filter((link): link is { key: string; icon: JSX.Element; label: string; href: string } => Boolean(link));
-
   const topLevelComments = comments.filter((comment) => !comment.parentId);
   const repliesByParent = comments.reduce<Record<string, Comment[]>>((acc, comment) => {
     if (!comment.parentId) return acc;
@@ -712,7 +697,31 @@ Description: ${project.description}`;
     );
   }
 
-  if (projectsLoading || loadingComments || !project) return <div className="p-10">Loading project details...</div>;
+  if (projectsLoading || loadingComments) return <div className="p-10">Loading project details...</div>;
+
+  if (!project) {
+    return (
+      <div className="p-10 flex flex-col items-center justify-center h-full">
+        <h2 className="text-xl font-bold text-on-surface-variant mb-4">Project not found</h2>
+        <button onClick={onBack} className="px-6 py-2 bg-primary text-white rounded-lg">Back to Board</button>
+      </div>
+    );
+  }
+
+  const relevantLinks = [
+    INTEGRATION_CONFIG.githubBaseUrl ? {
+      key: 'github',
+      icon: <LinkIcon className="w-4 h-4" />,
+      label: 'Project repository',
+      href: `${INTEGRATION_CONFIG.githubBaseUrl}/${project.code.toLowerCase()}`,
+    } : null,
+    INTEGRATION_CONFIG.googleDriveFolderBaseUrl ? {
+      key: 'drive',
+      icon: <FileText className="w-4 h-4" />,
+      label: 'Google Drive workspace',
+      href: normalizeGoogleDriveUrl(`${INTEGRATION_CONFIG.googleDriveFolderBaseUrl}/${project.code}`),
+    } : null,
+  ].filter((link): link is { key: string; icon: JSX.Element; label: string; href: string } => Boolean(link));
 
   return (
     <div className="p-10 max-w-7xl mx-auto">
