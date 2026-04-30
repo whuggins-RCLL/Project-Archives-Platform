@@ -135,6 +135,9 @@ type AppSettings = {
   helpContactEmail?: string;
   googleDriveFolderBaseUrl?: string;
   googleCalendarId?: string;
+  heroQuickLinks?: Array<{ id: string; label: string; url: string }>;
+  heroNarrativeDraft?: string;
+  heroNarrativePublished?: string;
 };
 
 type VerifiedUser = {
@@ -803,10 +806,24 @@ function validateSettings(input: unknown): AppSettings | null {
     (source.customFooter !== undefined && (typeof source.customFooter !== "string" || source.customFooter.length > 500)) ||
     (source.helpContactEmail !== undefined && (typeof source.helpContactEmail !== "string" || source.helpContactEmail.length > 254)) ||
     (source.googleDriveFolderBaseUrl !== undefined && (typeof source.googleDriveFolderBaseUrl !== "string" || source.googleDriveFolderBaseUrl.length > 500)) ||
-    (source.googleCalendarId !== undefined && (typeof source.googleCalendarId !== "string" || source.googleCalendarId.length > 254))
+    (source.googleCalendarId !== undefined && (typeof source.googleCalendarId !== "string" || source.googleCalendarId.length > 254)) ||
+    (source.heroNarrativeDraft !== undefined && (typeof source.heroNarrativeDraft !== "string" || source.heroNarrativeDraft.length > 6000)) ||
+    (source.heroNarrativePublished !== undefined && (typeof source.heroNarrativePublished !== "string" || source.heroNarrativePublished.length > 6000)) ||
+    (source.heroQuickLinks !== undefined && (!Array.isArray(source.heroQuickLinks) || source.heroQuickLinks.length > 8))
   ) {
     return null;
   }
+
+
+  const heroQuickLinks = Array.isArray(source.heroQuickLinks)
+    ? source.heroQuickLinks.filter((item): item is { id: string; label: string; url: string } => {
+      if (!item || typeof item !== "object") return false;
+      const link = item as Record<string, unknown>;
+      return typeof link.id === "string" && link.id.length <= 60
+        && typeof link.label === "string" && link.label.trim().length > 0 && link.label.length <= 40
+        && typeof link.url === "string" && link.url.trim().length > 0 && link.url.length <= 500;
+    })
+    : [];
 
   const aiEnabled = source.aiEnabled;
   const aiAutoTagEnabled =
@@ -835,6 +852,9 @@ function validateSettings(input: unknown): AppSettings | null {
     helpContactEmail: typeof source.helpContactEmail === "string" ? source.helpContactEmail.trim() : undefined,
     googleDriveFolderBaseUrl: typeof source.googleDriveFolderBaseUrl === "string" ? source.googleDriveFolderBaseUrl.trim() : undefined,
     googleCalendarId: typeof source.googleCalendarId === "string" ? source.googleCalendarId.trim() : undefined,
+    heroQuickLinks,
+    heroNarrativeDraft: typeof source.heroNarrativeDraft === "string" ? source.heroNarrativeDraft.trim() : undefined,
+    heroNarrativePublished: typeof source.heroNarrativePublished === "string" ? source.heroNarrativePublished.trim() : undefined,
   };
 }
 
@@ -860,6 +880,9 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     ...(settings.helpContactEmail !== undefined && { helpContactEmail: { stringValue: settings.helpContactEmail } }),
     ...(settings.googleDriveFolderBaseUrl !== undefined && { googleDriveFolderBaseUrl: { stringValue: settings.googleDriveFolderBaseUrl } }),
     ...(settings.googleCalendarId !== undefined && { googleCalendarId: { stringValue: settings.googleCalendarId } }),
+    ...(settings.heroQuickLinks !== undefined && { heroQuickLinksJson: { stringValue: JSON.stringify(settings.heroQuickLinks) } }),
+    ...(settings.heroNarrativeDraft !== undefined && { heroNarrativeDraft: { stringValue: settings.heroNarrativeDraft } }),
+    ...(settings.heroNarrativePublished !== undefined && { heroNarrativePublished: { stringValue: settings.heroNarrativePublished } }),
   };
 }
 
@@ -890,6 +913,13 @@ function fromFirestoreFields(
     helpContactEmail: fields.helpContactEmail?.stringValue,
     googleDriveFolderBaseUrl: fields.googleDriveFolderBaseUrl?.stringValue,
     googleCalendarId: fields.googleCalendarId?.stringValue,
+    heroQuickLinks: (() => {
+      const raw = fields.heroQuickLinksJson?.stringValue;
+      if (!raw) return undefined;
+      try { return JSON.parse(raw) as Array<{ id: string; label: string; url: string }>; } catch { return undefined; }
+    })(),
+    heroNarrativeDraft: fields.heroNarrativeDraft?.stringValue,
+    heroNarrativePublished: fields.heroNarrativePublished?.stringValue,
   };
 }
 

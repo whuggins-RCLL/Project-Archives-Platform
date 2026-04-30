@@ -59,6 +59,12 @@ const generateUniqueProjectCode = async (): Promise<string> => {
   throw new Error('Unable to generate unique project code');
 };
 
+export interface HeroQuickLink {
+  id: string;
+  label: string;
+  url: string;
+}
+
 export interface Settings {
   aiEnabled: boolean;
   activeProvider: 'gemini' | 'openai' | 'anthropic' | 'gemma' | 'groc' | 'groq';
@@ -82,7 +88,11 @@ export interface Settings {
   helpContactEmail?: string;
   googleDriveFolderBaseUrl?: string;
   googleCalendarId?: string;
+  heroQuickLinks?: HeroQuickLink[];
+  heroNarrativeDraft?: string;
+  heroNarrativePublished?: string;
 }
+
 
 const ALLOWED_PROVIDERS = ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] as const;
 type ProviderId = typeof ALLOWED_PROVIDERS[number];
@@ -236,6 +246,19 @@ export const api = {
         const activeProvider: ProviderId = enabledProviders.includes((data.activeProvider ?? 'gemini') as ProviderId)
           ? ((data.activeProvider ?? 'gemini') as ProviderId)
           : (enabledProviders[0] ?? 'gemini');
+        const parsedHeroQuickLinks = (() => {
+          if (Array.isArray(data.heroQuickLinks)) return data.heroQuickLinks;
+          if (typeof (data as { heroQuickLinksJson?: unknown }).heroQuickLinksJson === 'string') {
+            try {
+              const parsed = JSON.parse((data as { heroQuickLinksJson: string }).heroQuickLinksJson);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          }
+          return [];
+        })();
+
         return {
           aiEnabled,
           activeProvider,
@@ -257,6 +280,9 @@ export const api = {
           helpContactEmail: data.helpContactEmail ?? '',
           googleDriveFolderBaseUrl: data.googleDriveFolderBaseUrl ?? '',
           googleCalendarId: data.googleCalendarId ?? '',
+          heroQuickLinks: parsedHeroQuickLinks,
+          heroNarrativeDraft: data.heroNarrativeDraft ?? '',
+          heroNarrativePublished: data.heroNarrativePublished ?? '',
         };
       }
       return {
@@ -280,6 +306,9 @@ export const api = {
         helpContactEmail: '',
         googleDriveFolderBaseUrl: '',
         googleCalendarId: '',
+        heroQuickLinks: [],
+        heroNarrativeDraft: '',
+        heroNarrativePublished: '',
       };
     } catch (error) {
       handleFirestoreError(error, OperationType.GET, 'settings/global');

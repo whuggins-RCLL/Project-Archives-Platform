@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
@@ -118,6 +118,21 @@ export default function PublicView() {
             <p className="text-lg sm:text-xl text-blue-100 mb-8 max-w-2xl leading-relaxed">
               {APP_CONFIG.heroSubtitle}
             </p>
+            {settings.heroNarrativePublished && (
+              <div className="mb-8 rounded-xl border border-white/20 bg-white/10 p-5 text-blue-50 leading-relaxed">
+                <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] font-semibold text-blue-200"><Sparkles className="w-4 h-4" /> Project Story</div>
+                <p className="text-base sm:text-lg">{settings.heroNarrativePublished}</p>
+              </div>
+            )}
+            {settings.heroQuickLinks && settings.heroQuickLinks.length > 0 && (
+              <div className="mb-8 flex flex-wrap gap-3">
+                {settings.heroQuickLinks.map((link) => (
+                  <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark shadow-sm transition hover:-translate-y-0.5 hover:bg-blue-50">
+                    {link.label} <ArrowRight className="w-4 h-4" />
+                  </a>
+                ))}
+              </div>
+            )}
             <div className="flex flex-wrap gap-4">
               <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 border border-white/20">
                 <div className="p-3 bg-blue-500/20 rounded-lg">
