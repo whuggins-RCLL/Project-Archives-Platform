@@ -42,6 +42,11 @@ export default function SettingsView({
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
 
+  const addHeroLink = () => setSettings((prev) => ({
+    ...prev,
+    heroQuickLinks: [...(prev.heroQuickLinks ?? []), { id: crypto.randomUUID(), label: '', url: '' }],
+  }));
+
   const readOnly = !canManageSettings;
 
   useEffect(() => {
@@ -372,6 +377,19 @@ export default function SettingsView({
                 </div>
               </div>
             </div>
+
+            <div className="pt-2 border-t border-outline-variant/10 space-y-4">
+              <h4 className="font-bold text-on-surface">Public hero actions</h4>
+              <p className="text-xs text-on-surface-variant">Add quick-link buttons shown on the public homepage hero section.</p>
+              {(settings.heroQuickLinks ?? []).map((link, idx) => (
+                <div key={link.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                  <input className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm" placeholder="Button label" value={link.label} maxLength={40} disabled={readOnly} onChange={(e) => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).map((x, i) => i === idx ? { ...x, label: e.target.value } : x) })} />
+                  <input className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm" placeholder="https://..." value={link.url} maxLength={500} disabled={readOnly} onChange={(e) => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).map((x, i) => i === idx ? { ...x, url: e.target.value } : x) })} />
+                  <button type="button" className="px-3 py-2 text-sm rounded-lg border border-outline-variant/30" disabled={readOnly} onClick={() => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).filter((_, i) => i !== idx) })}>Remove</button>
+                </div>
+              ))}
+              <button type="button" onClick={addHeroLink} disabled={readOnly || (settings.heroQuickLinks?.length ?? 0) >= 8} className="px-3 py-2 text-sm rounded-lg bg-surface-container-low border border-outline-variant/30 disabled:opacity-60">Add hero button</button>
+            </div>
           </div>
 
           {/* AI master toggle */}
@@ -397,6 +415,25 @@ export default function SettingsView({
               />
               <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
             </label>
+          </div>
+
+          <div className={`transition-opacity space-y-3 ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
+            <h3 className="font-bold text-on-surface">Public story narrative (AI)</h3>
+            <p className="text-xs text-on-surface-variant">Generate a marketing-style narrative for the public homepage, then publish/unpublish anytime.</p>
+            <button type="button" disabled={readOnly || !settings.aiEnabled} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={async () => {
+              try {
+                const text = await api.generateAI(`Create a concise, high-impact marketing narrative (120-180 words) for this project portfolio. Organization: ${settings.portalName}. Product: ${settings.suiteName}.`, settings.activeProvider, 'gpt-4o-mini', 'You are a strategic marketing writer for higher education innovation initiatives.', 'summarize');
+                setSettings((prev) => ({ ...prev, heroNarrativeDraft: text }));
+                setToast({ type: 'success', message: 'Narrative draft generated. Review and publish when ready.' });
+              } catch (error) {
+                setToast({ type: 'error', message: getErrorMessage(error, 'Failed to generate narrative.') });
+              }
+            }}>Generate narrative</button>
+            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="AI draft appears here..." />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => setSettings({ ...settings, heroNarrativePublished: settings.heroNarrativeDraft })}>Publish draft</button>
+              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm" disabled={readOnly || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => setSettings({ ...settings, heroNarrativePublished: '' })}>Unpublish</button>
+            </div>
           </div>
 
           {/* Provider Selection */}
