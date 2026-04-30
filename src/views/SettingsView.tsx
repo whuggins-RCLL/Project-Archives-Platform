@@ -65,6 +65,11 @@ export default function SettingsView({
     }
   };
 
+  const addHeroLink = () => setSettings((prev) => ({
+    ...prev,
+    heroQuickLinks: [...(prev.heroQuickLinks ?? []), { id: crypto.randomUUID(), label: '', url: '' }],
+  }));
+
   const readOnly = !canManageSettings;
 
   useEffect(() => {
