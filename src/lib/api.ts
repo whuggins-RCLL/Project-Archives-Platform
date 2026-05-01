@@ -591,6 +591,24 @@ export const api = {
     return data.users;
   },
 
+  listClaimableMembers: async (): Promise<Array<{ uid: string; displayName: string; email: string; status: string }>> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to list members.');
+    const snapshot = await getDocs(collection(db, 'users'));
+    return snapshot.docs
+      .map((userDoc) => {
+        const data = userDoc.data();
+        return {
+          uid: userDoc.id,
+          displayName: typeof data.displayName === 'string' && data.displayName.trim().length > 0 ? data.displayName : (typeof data.email === 'string' ? data.email : 'Unknown member'),
+          email: typeof data.email === 'string' ? data.email : '',
+          status: typeof data.status === 'string' ? data.status : 'active',
+        };
+      })
+      .filter((member) => member.status !== 'disabled')
+      .sort((left, right) => left.displayName.localeCompare(right.displayName));
+  },
+
   listRoleAuditLogs: async (): Promise<AdminAuditEntry[]> => {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('You must be logged in to view audit logs.');
