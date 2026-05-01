@@ -83,7 +83,7 @@ if (!process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
 
 const ALLOWED_PROVIDERS = new Set(["gemini", "openai", "anthropic", "gemma", "groc", "groq"]);
 const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1";
-const AI_FEATURE_KEYS = new Set(["autoTag", "summarize", "nextBestAction", "riskNarrative", "pmApproach"]);
+const AI_FEATURE_KEYS = new Set(["autoTag", "summarize", "nextBestAction", "riskNarrative", "pmApproach", "publicNarrative"]);
 const AI_RATE_LIMIT_WINDOW_MS = 60_000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 20;
 const allowedOrigins = getAllowedCorsOrigins();
