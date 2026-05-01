@@ -246,6 +246,19 @@ export const api = {
         const activeProvider: ProviderId = enabledProviders.includes((data.activeProvider ?? 'gemini') as ProviderId)
           ? ((data.activeProvider ?? 'gemini') as ProviderId)
           : (enabledProviders[0] ?? 'gemini');
+        const parsedHeroQuickLinks = (() => {
+          if (Array.isArray(data.heroQuickLinks)) return data.heroQuickLinks;
+          if (typeof (data as { heroQuickLinksJson?: unknown }).heroQuickLinksJson === 'string') {
+            try {
+              const parsed = JSON.parse((data as { heroQuickLinksJson: string }).heroQuickLinksJson);
+              return Array.isArray(parsed) ? parsed : [];
+            } catch {
+              return [];
+            }
+          }
+          return [];
+        })();
+
         return {
           aiEnabled,
           activeProvider,
@@ -267,7 +280,7 @@ export const api = {
           helpContactEmail: data.helpContactEmail ?? '',
           googleDriveFolderBaseUrl: data.googleDriveFolderBaseUrl ?? '',
           googleCalendarId: data.googleCalendarId ?? '',
-          heroQuickLinks: Array.isArray(data.heroQuickLinks) ? data.heroQuickLinks : [],
+          heroQuickLinks: parsedHeroQuickLinks,
           heroNarrativeDraft: data.heroNarrativeDraft ?? '',
           heroNarrativePublished: data.heroNarrativePublished ?? '',
         };
@@ -333,7 +346,7 @@ export const api = {
     provider: string,
     model: string,
     systemInstruction?: string,
-    feature?: 'autoTag' | 'summarize' | 'nextBestAction' | 'riskNarrative' | 'pmApproach',
+    feature?: 'autoTag' | 'summarize' | 'nextBestAction' | 'riskNarrative' | 'pmApproach' | 'publicNarrative',
   ): Promise<string> => {
     try {
       const currentUser = auth.currentUser;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, Bot, Key, Shield } from 'lucide-react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
+import { AI_MODEL_OPTIONS } from '../constants';
 
 export default function SettingsView({
   canManageSettings,
@@ -41,6 +42,7 @@ export default function SettingsView({
   const [saving, setSaving] = useState(false);
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
+  const [savingHeroContent, setSavingHeroContent] = useState(false);
 
   const readOnly = !canManageSettings;
 
@@ -427,7 +429,10 @@ export default function SettingsView({
             <p className="text-xs text-on-surface-variant">Generate a marketing-style narrative for the public homepage, then publish/unpublish anytime.</p>
             <button type="button" disabled={readOnly || !settings.aiEnabled} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={async () => {
               try {
-                const text = await api.generateAI(`Create a concise, high-impact marketing narrative (120-180 words) for this project portfolio. Organization: ${settings.portalName}. Product: ${settings.suiteName}.`, settings.activeProvider, 'gpt-4o-mini', 'You are a strategic marketing writer for higher education innovation initiatives.', 'summarize');
+                const selectedProvider = settings.enabledProviders.includes(settings.activeProvider) ? settings.activeProvider : settings.enabledProviders[0];
+                const providerModels = AI_MODEL_OPTIONS.filter((option) => option.provider === selectedProvider);
+                const selectedModel = providerModels[0]?.id ?? AI_MODEL_OPTIONS[0]?.id ?? 'gpt-4o';
+                const text = await api.generateAI(`Create a concise, high-impact marketing narrative (120-180 words) for this project portfolio. Organization: ${settings.portalName}. Product: ${settings.suiteName}.`, selectedProvider, selectedModel, 'You are a strategic marketing writer for higher education innovation initiatives.', 'publicNarrative');
                 setSettings((prev) => ({ ...prev, heroNarrativeDraft: text }));
                 setToast({ type: 'success', message: 'Narrative draft generated. Review and publish when ready.' });
               } catch (error) {
@@ -436,9 +441,10 @@ export default function SettingsView({
             }}>Generate narrative</button>
             <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="AI draft appears here..." />
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => setSettings({ ...settings, heroNarrativePublished: settings.heroNarrativeDraft })}>Publish draft</button>
-              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm" disabled={readOnly || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => setSettings({ ...settings, heroNarrativePublished: '' })}>Unpublish</button>
+              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: settings.heroNarrativeDraft }; setSettings(next); void saveHeroContent(next, 'Narrative published to public homepage.'); }}>Publish draft</button>
+              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm" disabled={readOnly || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: '' }; setSettings(next); void saveHeroContent(next, 'Narrative unpublished.'); }}>Unpublish</button>
             </div>
+                        <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm" disabled={readOnly || savingHeroContent} onClick={() => void saveHeroContent(settings, 'Narrative draft saved.')}>Save draft</button>
           </div>
 
           {/* Provider Selection */}
