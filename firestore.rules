@@ -142,7 +142,7 @@ service cloud.firestore {
              ]) &&
              hasOnlyAllowedFields(allowedFields) &&
              isValidString(data.title, 1, 100) &&
-             isValidOptionalString('description', 0, 5000) &&
+             isValidOptionalString('description', 0, 6000) &&
              data.status in ['Intake / Proposed', 'Scoping', 'In Progress', 'Pilot / Testing', 'Review / Approval', 'Launched'] &&
              data.priority in ['High', 'Medium', 'Low'] &&
              (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
