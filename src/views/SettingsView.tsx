@@ -44,32 +44,6 @@ export default function SettingsView({
   const [claimingOwner, setClaimingOwner] = useState(false);
   const [savingHeroContent, setSavingHeroContent] = useState(false);
 
-  const handleAddHeroLink = () => setSettings((prev) => ({
-    ...prev,
-    heroQuickLinks: [...(prev.heroQuickLinks ?? []), { id: crypto.randomUUID(), label: '', url: '' }],
-  }));
-
-
-
-  const saveHeroContent = async (nextSettings: Settings, successMessage = 'Hero content saved.') => {
-    if (readOnly) return;
-    setSavingHeroContent(true);
-    try {
-      await api.updateSettings(nextSettings);
-      onSettingsUpdated?.(nextSettings);
-      setToast({ type: 'success', message: successMessage });
-    } catch (error) {
-      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to save hero content.') });
-    } finally {
-      setSavingHeroContent(false);
-    }
-  };
-
-  const handleAddHeroLink = () => setSettings((prev) => ({
-    ...prev,
-    heroQuickLinks: [...(prev.heroQuickLinks ?? []), { id: crypto.randomUUID(), label: '', url: '' }],
-  }));
-
   const readOnly = !canManageSettings;
 
   useEffect(() => {
@@ -411,7 +385,17 @@ export default function SettingsView({
                   <button type="button" className="px-3 py-2 text-sm rounded-lg border border-outline-variant/30" disabled={readOnly} onClick={() => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).filter((_, i) => i !== idx) })}>Remove</button>
                 </div>
               ))}
-              <button type="button" onClick={handleAddHeroLink} disabled={readOnly || (settings.heroQuickLinks?.length ?? 0) >= 8} className="px-3 py-2 text-sm rounded-lg bg-surface-container-low border border-outline-variant/30 disabled:opacity-60">Add hero button</button>
+              <button
+                type="button"
+                onClick={() => setSettings((prev) => ({
+                  ...prev,
+                  heroQuickLinks: [...(prev.heroQuickLinks ?? []), { id: crypto.randomUUID(), label: '', url: '' }],
+                }))}
+                disabled={readOnly || (settings.heroQuickLinks?.length ?? 0) >= 8}
+                className="px-3 py-2 text-sm rounded-lg bg-surface-container-low border border-outline-variant/30 disabled:opacity-60"
+              >
+                Add hero button
+              </button>
             </div>
           </div>
 
