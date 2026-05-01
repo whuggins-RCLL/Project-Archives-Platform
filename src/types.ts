@@ -124,6 +124,7 @@ export interface Project {
   department: string;
   preservationScore: number;
   riskFactor: string;
+  isPublic?: boolean;
   milestones?: Milestone[];
   dependencies?: Dependency[];
   approvalCheckpoints?: ApprovalCheckpoint[];

@@ -37,6 +37,7 @@ function InternalApp() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
+  const [newProjectIsPublic, setNewProjectIsPublic] = useState(true);
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -251,6 +252,7 @@ function InternalApp() {
         progress: 0,
         department: 'General',
         riskFactor: 'Low',
+        isPublic: newProjectIsPublic,
         preservationScore: 0,
         milestones: buildDefaultMilestones(),
         dependencies: [],
@@ -258,6 +260,7 @@ function InternalApp() {
       });
       setIsNewProjectModalOpen(false);
       setNewProjectTitle('');
+      setNewProjectIsPublic(true);
       setCurrentView('kanban');
     } catch (error) {
       console.error('Failed to create project:', error);
@@ -266,7 +269,7 @@ function InternalApp() {
 
   const renderView = () => {
     if (isViewerOnly) {
-      return <PortfolioView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onProjectsRefreshed={handleProjectsRefreshed} />;
+      return <PortfolioView projects={projects.filter((project) => project.isPublic !== false)} loading={loadingProjects} onProjectClick={handleProjectClick} onProjectsRefreshed={handleProjectsRefreshed} />;
     }
     switch (currentView) {
       case 'kanban':
@@ -474,6 +477,21 @@ function InternalApp() {
                 className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none"
                 placeholder="e.g., Semantic Search for Archives"
               />
+              <div className="mt-4 flex items-center justify-between rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2">
+                <div>
+                  <p className="text-sm font-bold text-on-surface">Public project</p>
+                  <p className="text-xs text-on-surface-variant">Public projects show in the public overview.</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={newProjectIsPublic}
+                  onClick={() => setNewProjectIsPublic((prev) => !prev)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${newProjectIsPublic ? 'bg-primary' : 'bg-outline-variant/40'}`}
+                >
+                  <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${newProjectIsPublic ? 'translate-x-5' : 'translate-x-1'}`} />
+                </button>
+              </div>
             </div>
             <div className="p-6 bg-surface-container-low flex justify-end gap-3 border-t border-outline-variant/20">
               <button 
