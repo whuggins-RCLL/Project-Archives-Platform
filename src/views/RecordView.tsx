@@ -38,9 +38,18 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [commentError, setCommentError] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<Settings['activeProvider']>(DEFAULT_PROVIDER);
   const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
+  const [claimableMembers, setClaimableMembers] = useState<Array<{ uid: string; displayName: string; email: string; status: string }>>([]);
+  const [selectedClaimUid, setSelectedClaimUid] = useState('');
+  const [updatingClaim, setUpdatingClaim] = useState(false);
 
   useEffect(() => {
     api.getSettings().then(setSettings);
+    api.listClaimableMembers().then((members) => {
+      setClaimableMembers(members);
+      if (members.length > 0) setSelectedClaimUid(members[0].uid);
+    }).catch(() => {
+      setClaimableMembers([]);
+    });
   }, []);
 
   useEffect(() => {
@@ -118,6 +127,21 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const extractMentions = (value: string): string[] => (
     Array.from(new Set((value.match(/@[\w.-]+/g) ?? []).map((token) => token.slice(1)))).slice(0, 20)
   );
+
+  const persistProjectOwner = async (nextOwner: Project['owner']) => {
+    if (!project || !isAdmin || updatingClaim) return;
+    setUpdatingClaim(true);
+    try {
+      const updated = await api.updateProject(project.id, { owner: nextOwner });
+      setProject(withGovernanceDefaults(updated));
+      setToast({ type: 'success', message: `Project owner updated to ${nextOwner.name}.` });
+    } catch (error) {
+      console.error(error);
+      setToast({ type: 'error', message: getErrorMessage(error, 'Unable to update project claim.') });
+    } finally {
+      setUpdatingClaim(false);
+    }
+  };
 
   const handleAddComment = async () => {
     if (!newComment.trim() || !project || addingComment) return;
@@ -823,7 +847,7 @@ Description: ${project.description}`;
                 />
               </div>
               <div className="col-span-2 md:col-span-1">
-                <label htmlFor="record-project-department" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Department</label>
+                <label htmlFor="record-project-department" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Topic</label>
                 <input 
                   id="record-project-department"
                   className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none" 
@@ -832,6 +856,43 @@ Description: ${project.description}`;
                   onChange={(e) => setProject({...project, department: e.target.value})}
                   disabled={!isAdmin}
                 />
+              </div>
+              <div className="col-span-2">
+                <label htmlFor="record-project-claim-owner" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Project Claim</label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    id="record-project-claim-owner"
+                    className="min-w-[260px] bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none"
+                    value={selectedClaimUid}
+                    onChange={(e) => setSelectedClaimUid(e.target.value)}
+                    disabled={!isAdmin || claimableMembers.length === 0}
+                  >
+                    {claimableMembers.map((member) => (
+                      <option key={member.uid} value={member.uid}>{member.displayName}{member.email ? ` (${member.email})` : ''}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-lg bg-primary text-white font-semibold disabled:opacity-50"
+                    disabled={!isAdmin || !selectedClaimUid || updatingClaim}
+                    onClick={() => {
+                      const claimant = claimableMembers.find((member) => member.uid === selectedClaimUid);
+                      if (!claimant) return;
+                      const initials = claimant.displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
+                      void persistProjectOwner({ ...project.owner, name: claimant.displayName, initials: initials || 'NA' });
+                    }}
+                  >
+                    {updatingClaim ? 'Claiming…' : 'Claim'}
+                  </button>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-lg border border-outline-variant font-semibold disabled:opacity-50"
+                    disabled={!isAdmin || updatingClaim}
+                    onClick={() => void persistProjectOwner({ ...project.owner, name: 'Unclaimed', initials: 'UN' })}
+                  >
+                    Un-claim
+                  </button>
+                </div>
               </div>
               <div className="col-span-2">
                 <div className="flex justify-between items-end mb-2">
