@@ -44,7 +44,7 @@ export default function SettingsView({
   const [claimingOwner, setClaimingOwner] = useState(false);
   const [savingHeroContent, setSavingHeroContent] = useState(false);
 
-  const addHeroLink = () => setSettings((prev) => ({
+  const handleAddHeroLink = () => setSettings((prev) => ({
     ...prev,
     heroQuickLinks: [...(prev.heroQuickLinks ?? []), { id: crypto.randomUUID(), label: '', url: '' }],
   }));
