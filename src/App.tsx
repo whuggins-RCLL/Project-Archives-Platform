@@ -296,7 +296,15 @@ function InternalApp() {
       case 'admin-users':
         return <AdminUsersView canManageRoles={canManageRoles} onRoleRefreshRequested={refreshRoleClaims} currentRole={rawRole} />;
       case 'help':
-        return <HelpView settings={settings} onOpenTour={() => setIsSiteTourOpen(true)} />;
+        return (
+          <HelpView
+            settings={settings}
+            onOpenTour={() => setIsSiteTourOpen(true)}
+            onRefreshPermissions={refreshRoleClaims}
+            refreshingRole={refreshingRole}
+            roleError={roleError}
+          />
+        );
       default:
         return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={canEditContent} />;
     }
@@ -428,10 +436,7 @@ function InternalApp() {
           roleLabel={roleLabel}
           rawRole={rawRole}
           roleError={roleError}
-          refreshingRole={refreshingRole}
-          onRefreshPermissions={refreshRoleClaims}
           onOpenSettings={() => setCurrentView('settings')}
-          onOpenTour={() => setIsSiteTourOpen(true)}
           canViewSettings={!isViewerOnly && canViewSettings}
           canManageSettings={!isViewerOnly && canManageSettings}
           branding={branding}

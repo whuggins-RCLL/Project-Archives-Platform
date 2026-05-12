@@ -1,4 +1,4 @@
-import { BookOpen, Bot, CircleHelp, Compass, Mail, Settings, ShieldCheck, Sparkles } from 'lucide-react';
+import { BookOpen, Bot, CircleHelp, Compass, Mail, RefreshCw, Settings, ShieldCheck, Sparkles } from 'lucide-react';
 import type { Settings as AppSettings } from '../lib/api';
 
 const helpSections = [
@@ -26,7 +26,7 @@ const faqs = [
   },
   {
     question: 'How do I refresh my latest access rights?',
-    answer: 'Use the Refresh permissions action in the top bar to sync token claims and mirror role updates.',
+    answer: 'Use the Refresh permissions action in this Help Center to sync token claims and mirror role updates.',
   },
   {
     question: 'Where can I update branding and defaults?',
@@ -61,9 +61,15 @@ const AI_TOOL_LABELS: Array<{ key: keyof AppSettings; label: string }> = [
 export default function HelpView({
   settings,
   onOpenTour,
+  onRefreshPermissions,
+  refreshingRole,
+  roleError,
 }: {
   settings: AppSettings;
   onOpenTour: () => void;
+  onRefreshPermissions: () => Promise<void>;
+  refreshingRole: boolean;
+  roleError: string | null;
 }) {
   const supportEmail = settings.helpContactEmail?.trim() || '';
   const aiToolStatuses = AI_TOOL_LABELS.map((tool) => ({
@@ -89,6 +95,15 @@ export default function HelpView({
             <Compass className="h-4 w-4" />
             Start site tour
           </button>
+          <button
+            type="button"
+            onClick={() => void onRefreshPermissions()}
+            disabled={refreshingRole}
+            className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/40 px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container-high disabled:opacity-60"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshingRole ? 'animate-spin' : ''}`} />
+            {refreshingRole ? 'Refreshing permissions...' : 'Refresh permissions'}
+          </button>
           <a
             href="#developer-readme"
             className="inline-flex items-center gap-2 rounded-lg border border-outline-variant/40 px-4 py-2 text-sm font-semibold text-on-surface hover:bg-surface-container-high"
@@ -97,11 +112,14 @@ export default function HelpView({
             Read developer guide
           </a>
         </div>
+        {roleError && (
+          <p className="mt-3 text-sm font-semibold text-error">{roleError}</p>
+        )}
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {helpSections.map((item) => (
-          <article key={item.title} className="rounded-xl bg-white border border-outline-variant/20 p-5 shadow-sm">
+          <article key={item.title} className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 p-5 shadow-sm">
             <div className="h-10 w-10 rounded-lg bg-primary-container/20 flex items-center justify-center">
               <item.icon className="h-5 w-5 text-primary" />
             </div>
@@ -111,7 +129,7 @@ export default function HelpView({
         ))}
       </section>
 
-      <section className="rounded-xl bg-white border border-outline-variant/20 p-6 shadow-sm">
+      <section className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-brand-dark">Frequently asked questions</h2>
         <div className="mt-4 space-y-4">
           {faqs.map((item) => (
@@ -123,7 +141,7 @@ export default function HelpView({
         </div>
       </section>
 
-      <section id="developer-readme" className="rounded-xl bg-white border border-outline-variant/20 p-6 shadow-sm">
+      <section id="developer-readme" className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-brand-dark">Developer README (front-end quick view)</h2>
         <p className="mt-2 text-sm text-on-surface-variant">
           This summarizes the project README into user-friendly guidance for admins and power users managing the portal.
@@ -148,7 +166,7 @@ export default function HelpView({
                 className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold ${
                   tool.enabled
                     ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
-                    : 'border-outline-variant/40 bg-white text-on-surface-variant'
+                    : 'border-outline-variant/40 bg-surface-container-lowest text-on-surface-variant'
                 }`}
               >
                 {tool.enabled ? <Sparkles className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
@@ -164,7 +182,7 @@ export default function HelpView({
         </div>
       </section>
 
-      <section className="rounded-xl bg-white border border-outline-variant/20 p-6 shadow-sm">
+      <section className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 p-6 shadow-sm">
         <h2 className="text-lg font-semibold text-brand-dark">Need more support?</h2>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="rounded-lg border border-outline-variant/25 p-4 flex items-start gap-3">
