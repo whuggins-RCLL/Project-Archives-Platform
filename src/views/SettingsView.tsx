@@ -35,11 +35,17 @@ export default function SettingsView({
     logoDataUrl: '',
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
+    customFooter: '',
+    helpContactEmail: '',
     googleDriveFolderBaseUrl: '',
     googleCalendarId: '',
+    heroQuickLinks: [],
+    heroNarrativeDraft: '',
+    heroNarrativePublished: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingHeroContent, setSavingHeroContent] = useState(false);
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
 
@@ -93,6 +99,28 @@ export default function SettingsView({
       });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveHeroContent = async (nextSettings: Settings, successMessage: string) => {
+    if (readOnly) {
+      setToast({ type: 'error', message: 'You have view-only access to settings.' });
+      return;
+    }
+
+    setSavingHeroContent(true);
+    try {
+      await api.updateSettings(nextSettings);
+      onSettingsUpdated?.(nextSettings);
+      setToast({ type: 'success', message: successMessage });
+    } catch (error) {
+      console.error('Failed to save public hero content', error);
+      setToast({
+        type: 'error',
+        message: getErrorMessage(error, 'Failed to save public hero content. Try again, or use Refresh permissions if your role was recently updated.'),
+      });
+    } finally {
+      setSavingHeroContent(false);
     }
   };
 
@@ -440,10 +468,10 @@ export default function SettingsView({
             }}>Generate narrative</button>
             <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="AI draft appears here..." />
             <div className="flex flex-wrap gap-2">
-              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: settings.heroNarrativeDraft }; setSettings(next); void saveHeroContent(next, 'Narrative published to public homepage.'); }}>Publish draft</button>
-              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm" disabled={readOnly || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: '' }; setSettings(next); void saveHeroContent(next, 'Narrative unpublished.'); }}>Unpublish</button>
+              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: settings.heroNarrativeDraft }; setSettings(next); void saveHeroContent(next, 'Narrative published to public homepage.'); }}>Publish draft</button>
+              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: '' }; setSettings(next); void saveHeroContent(next, 'Narrative unpublished.'); }}>Unpublish</button>
             </div>
-                        <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm" disabled={readOnly || savingHeroContent} onClick={() => void saveHeroContent(settings, 'Narrative draft saved.')}>Save draft</button>
+            <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm disabled:opacity-60" disabled={readOnly || savingHeroContent} onClick={() => void saveHeroContent(settings, 'Narrative draft saved.')}>{savingHeroContent ? 'Saving...' : 'Save draft'}</button>
           </div>
 
           {/* Provider Selection */}

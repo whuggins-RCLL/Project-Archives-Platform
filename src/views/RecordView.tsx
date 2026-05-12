@@ -1,5 +1,5 @@
 import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { type ReactElement, useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
@@ -797,7 +797,7 @@ Description: ${project.description}`;
       label: 'Add deadline to Google Calendar',
       href: calendarDeadlineUrl,
     } : null,
-  ].filter((link): link is { key: string; icon: JSX.Element; label: string; href: string } => Boolean(link));
+  ].filter((link): link is { key: string; icon: ReactElement; label: string; href: string } => Boolean(link));
 
   return (
     <div className="p-10 max-w-7xl mx-auto">
