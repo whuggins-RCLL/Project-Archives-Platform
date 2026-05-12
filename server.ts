@@ -86,6 +86,8 @@ const DEFAULT_GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const AI_FEATURE_KEYS = new Set(["autoTag", "summarize", "nextBestAction", "riskNarrative", "pmApproach", "publicNarrative"]);
 const AI_RATE_LIMIT_WINDOW_MS = 60_000;
 const AI_RATE_LIMIT_MAX_REQUESTS = 20;
+const PUBLIC_NARRATIVE_MAX_PROJECTS = 24;
+const PUBLIC_NARRATIVE_MAX_CONTEXT_CHARS = 3_300;
 const allowedOrigins = getAllowedCorsOrigins();
 const devOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
 const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -510,6 +512,10 @@ function parseFirestoreValue(field: Record<string, unknown> | undefined): unknow
   if (typeof field.doubleValue === "number") return field.doubleValue;
   if (typeof field.booleanValue === "boolean") return field.booleanValue;
   if (field.timestampValue) return field.timestampValue;
+  if (field.arrayValue && typeof field.arrayValue === "object") {
+    const values = (field.arrayValue as { values?: Array<Record<string, unknown>> }).values || [];
+    return values.map((nested) => parseFirestoreValue(nested));
+  }
   if (field.mapValue && typeof field.mapValue === "object") {
     const mapFields = (field.mapValue as { fields?: Record<string, Record<string, unknown>> }).fields || {};
     return Object.fromEntries(Object.entries(mapFields).map(([key, nested]) => [key, parseFirestoreValue(nested)]));
@@ -542,6 +548,92 @@ async function fetchProjectsForOps(idToken: string): Promise<Record<string, unkn
 
   const data = (await response.json()) as { documents?: Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> };
   return (data.documents || []).map(parseFirestoreDocument);
+}
+
+async function fetchProjectsForPublicNarrative(): Promise<Record<string, unknown>[]> {
+  const result = await firestoreCall("projects?pageSize=500");
+  const documents = (result.documents as Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }> | undefined) || [];
+  return documents.map((doc) => parseFirestoreDocument(doc));
+}
+
+function truncateTextForPrompt(value: unknown, maxLength: number): string {
+  const text = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 1)).trim()}...`;
+}
+
+function stringArrayForPrompt(value: unknown, maxItems: number): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim())
+    .slice(0, maxItems);
+}
+
+function projectDateSortValue(project: Record<string, unknown>): number {
+  return (toDate(project.updatedAt) || toDate(project.createdAt) || new Date(0)).getTime();
+}
+
+function formatProjectForPublicNarrative(project: Record<string, unknown>, index: number): string {
+  const owner = project.owner && typeof project.owner === "object"
+    ? (project.owner as { name?: unknown }).name
+    : undefined;
+  const tags = stringArrayForPrompt(project.tags, 5);
+  const pieces = [
+    `${index + 1}. ${truncateTextForPrompt(project.title, 90)} (${truncateTextForPrompt(project.code, 40) || "no code"})`,
+    `status: ${truncateTextForPrompt(project.status, 40) || "unknown"}`,
+    `department: ${truncateTextForPrompt(project.department, 60) || "unspecified"}`,
+    `priority: ${truncateTextForPrompt(project.priority, 20) || "unspecified"}`,
+    `progress: ${typeof project.progress === "number" ? `${project.progress}%` : "unknown"}`,
+    `owner: ${truncateTextForPrompt(owner, 60) || "unassigned"}`,
+  ];
+  const description = truncateTextForPrompt(project.description, 220);
+  if (description) pieces.push(`description: ${description}`);
+  if (tags.length > 0) pieces.push(`tags: ${tags.join(", ")}`);
+  const dueDate = truncateTextForPrompt(project.dueDate, 30);
+  if (dueDate) pieces.push(`due date: ${dueDate}`);
+  return `- ${pieces.join("; ")}`;
+}
+
+function buildPublicNarrativePrompt(
+  basePrompt: string,
+  settings: Partial<AppSettings>,
+  projects: Record<string, unknown>[],
+): string {
+  const publicProjects = projects
+    .filter((project) => project.isPublic !== false)
+    .sort((left, right) => projectDateSortValue(right) - projectDateSortValue(left));
+  const limitedProjects = publicProjects.slice(0, PUBLIC_NARRATIVE_MAX_PROJECTS);
+  const statusCounts = publicProjects.reduce<Record<string, number>>((acc, project) => {
+    const status = typeof project.status === "string" && project.status.trim() ? project.status.trim() : "Unknown";
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
+  const departmentCounts = publicProjects.reduce<Record<string, number>>((acc, project) => {
+    const department = typeof project.department === "string" && project.department.trim() ? project.department.trim() : "Unspecified";
+    acc[department] = (acc[department] || 0) + 1;
+    return acc;
+  }, {});
+  const statusSummary = Object.entries(statusCounts).map(([status, count]) => `${status}: ${count}`).join(", ") || "none";
+  const departmentSummary = Object.entries(departmentCounts).slice(0, 8).map(([department, count]) => `${department}: ${count}`).join(", ") || "none";
+  const projectLines = limitedProjects.map(formatProjectForPublicNarrative).join("\n");
+  const context = [
+    basePrompt.trim(),
+    "",
+    "Use the public project portfolio below as the source material. Write for the main public dashboard, avoid internal-only wording, do not invent project names or metrics, and synthesize themes across the work rather than listing every project.",
+    "",
+    `Organization: ${settings.portalName || "Project Archives"}`,
+    `Product: ${settings.suiteName || "AI Librarian Suite"}`,
+    `Public projects available: ${publicProjects.length} of ${projects.length} total records`,
+    `Status mix: ${statusSummary}`,
+    `Department mix: ${departmentSummary}`,
+    "",
+    publicProjects.length > 0
+      ? `Project records (${limitedProjects.length} most recent public records):\n${projectLines}`
+      : "Project records: No public project records are currently available. Keep the narrative general and avoid claiming active work that is not present.",
+  ].join("\n");
+
+  return truncateTextForPrompt(context, PUBLIC_NARRATIVE_MAX_CONTEXT_CHARS);
 }
 
 function buildOperationsDigest(projects: Record<string, unknown>[]): OperationsDigestReport {
@@ -1741,6 +1833,12 @@ app.post("/api/ai/generate", async (req, res) => {
       return res.status(400).json({ error: "Model is required" });
     }
 
+    let effectivePrompt = prompt.trim();
+    if (feature === "publicNarrative") {
+      const projects = await fetchProjectsForPublicNarrative();
+      effectivePrompt = buildPublicNarrativePrompt(effectivePrompt, storedSettings, projects);
+    }
+
     auditLog("admin_ai_usage_started", {
       requestId,
       actorUid: verifiedUser.uid,
@@ -1748,7 +1846,7 @@ app.post("/api/ai/generate", async (req, res) => {
       provider,
       model,
       feature,
-      promptLength: prompt.length,
+      promptLength: effectivePrompt.length,
       hasSystemInstruction: typeof systemInstruction === "string" && systemInstruction.length > 0,
       ip: clientIp,
     });
@@ -1760,7 +1858,7 @@ app.post("/api/ai/generate", async (req, res) => {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const response = await ai.models.generateContent({
         model,
-        contents: prompt,
+        contents: effectivePrompt,
         config: { systemInstruction }
       });
       responseText = response.text || "";
@@ -1769,7 +1867,7 @@ app.post("/api/ai/generate", async (req, res) => {
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const messages: Array<{ role: "system" | "user"; content: string }> = [];
       if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-      messages.push({ role: "user", content: prompt });
+      messages.push({ role: "user", content: effectivePrompt });
 
       const response = await openai.chat.completions.create({
         model,
@@ -1783,7 +1881,7 @@ app.post("/api/ai/generate", async (req, res) => {
         model,
         max_tokens: 1024,
         system: systemInstruction,
-        messages: [{ role: "user", content: prompt }]
+        messages: [{ role: "user", content: effectivePrompt }]
       });
       responseText = response.content[0].type === "text" ? response.content[0].text : "";
     } else if (provider === "gemma") {
@@ -1796,7 +1894,7 @@ app.post("/api/ai/generate", async (req, res) => {
       });
       const messages: Array<{ role: "system" | "user"; content: string }> = [];
       if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-      messages.push({ role: "user", content: prompt });
+      messages.push({ role: "user", content: effectivePrompt });
 
       const response = await openai.chat.completions.create({
         model,
@@ -1813,7 +1911,7 @@ app.post("/api/ai/generate", async (req, res) => {
       });
       const messages: Array<{ role: "system" | "user"; content: string }> = [];
       if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-      messages.push({ role: "user", content: prompt });
+      messages.push({ role: "user", content: effectivePrompt });
 
       const response = await openai.chat.completions.create({
         model,
@@ -1832,7 +1930,7 @@ app.post("/api/ai/generate", async (req, res) => {
       });
       const messages: Array<{ role: "system" | "user"; content: string }> = [];
       if (systemInstruction) messages.push({ role: "system", content: systemInstruction });
-      messages.push({ role: "user", content: prompt });
+      messages.push({ role: "user", content: effectivePrompt });
 
       const response = await openai.chat.completions.create({
         model,

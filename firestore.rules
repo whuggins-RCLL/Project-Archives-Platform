@@ -188,9 +188,10 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'googleDriveFolderBaseUrl', 'googleCalendarId']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'enabledProviders', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'googleDriveFolderBaseUrl', 'googleCalendarId', 'heroQuickLinksJson', 'heroNarrativeDraft', 'heroNarrativePublished']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] &&
+             (!('enabledProviders' in data) || (data.enabledProviders is list && data.enabledProviders.size() > 0 && data.enabledProviders.size() <= 6)) &&
              data.aiAutoTagEnabled is bool &&
              data.aiSummarizeEnabled is bool &&
              data.aiNextBestActionEnabled is bool &&
@@ -210,7 +211,10 @@ service cloud.firestore {
              (!('customFooter' in data) || (data.customFooter is string && data.customFooter.size() <= 500)) &&
              (!('helpContactEmail' in data) || (data.helpContactEmail is string && data.helpContactEmail.size() <= 254)) &&
              (!('googleDriveFolderBaseUrl' in data) || (data.googleDriveFolderBaseUrl is string && data.googleDriveFolderBaseUrl.size() <= 500)) &&
-             (!('googleCalendarId' in data) || (data.googleCalendarId is string && data.googleCalendarId.size() <= 254));
+             (!('googleCalendarId' in data) || (data.googleCalendarId is string && data.googleCalendarId.size() <= 254)) &&
+             (!('heroQuickLinksJson' in data) || (data.heroQuickLinksJson is string && data.heroQuickLinksJson.size() <= 4000)) &&
+             (!('heroNarrativeDraft' in data) || (data.heroNarrativeDraft is string && data.heroNarrativeDraft.size() <= 6000)) &&
+             (!('heroNarrativePublished' in data) || (data.heroNarrativePublished is string && data.heroNarrativePublished.size() <= 6000));
     }
 
     function currentPrivacyMode() {

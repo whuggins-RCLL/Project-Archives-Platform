@@ -345,13 +345,14 @@ This guard fails if:
 
 ## AI Features & Secure API Key Handling
 
-The Digital Archivist includes optional AI features (Auto-Tagging, Summarization, Next-best Actions, Risk Narrative Drafting, and Duplicate Detection) that can be powered by Google Gemini, OpenAI, Anthropic Claude, Groq, or any OpenAI-compatible endpoint (Gemma slot, Groc slot).
+The Digital Archivist includes optional AI features (Auto-Tagging, Summarization, Next-best Actions, Risk Narrative Drafting, Public Story Narrative, and Duplicate Detection) that can be powered by Google Gemini, OpenAI, Anthropic Claude, Groq, or any OpenAI-compatible endpoint (Gemma slot, Groc slot).
 
 ### Enabling AI Features
 1. Log in as an Admin.
 2. Navigate to the **Settings** tab in the sidebar.
 3. Toggle **Enable AI** (master switch), choose **Active AI provider**, then enable each **product** (Auto-tag, AI summarize, next-best actions, risk narrative, duplicate detection) independently.
 4. Optionally require human approval before AI drafts are treated as approved.
+5. Use **Public story narrative (AI)** to generate a dashboard narrative from public project records. Review the draft, then publish it to the main public dashboard.
 
 After upgrading, **save settings once** so Firestore includes the new fields (`aiAutoTagEnabled`, `aiSummarizeEnabled`). Deploy updated **`firestore.rules`** if clients write `settings/global` directly.
 
