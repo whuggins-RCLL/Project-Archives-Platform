@@ -107,6 +107,7 @@ const PROJECT_MUTABLE_FIELDS = [
   'createdAt',
   'code',
   'owner',
+  'isPublic',
   'progress',
   'department',
   'preservationScore',
@@ -613,7 +614,7 @@ export const api = {
         const data = userDoc.data();
         return {
           uid: userDoc.id,
-          displayName: typeof data.displayName === 'string' && data.displayName.trim().length > 0 ? data.displayName : (typeof data.email === 'string' ? data.email : 'Unknown member'),
+          displayName: typeof data.displayName === 'string' ? data.displayName : '',
           email: typeof data.email === 'string' ? data.email : '',
           status: typeof data.status === 'string' ? data.status : 'active',
         };
