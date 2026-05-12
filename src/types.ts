@@ -118,7 +118,7 @@ export interface Project {
   description: string;
   status: ProjectStatus;
   priority: ProjectPriority;
-  owner: { name: string; initials: string; avatar?: string; group?: string };
+  owner: { uid?: string; name: string; initials: string; avatar?: string; group?: string };
   tags: string[];
   progress: number;
   department: string;

@@ -131,7 +131,7 @@ service cloud.firestore {
     function isValidProject(data) {
       let allowedFields = [
         'title', 'description', 'status', 'priority', 'tags', 'dueDate',
-        'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'progress',
+        'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'isPublic', 'progress',
         'department', 'preservationScore', 'riskFactor', 'aiDrafts', 'pmApproach',
         'milestones', 'dependencies', 'approvalCheckpoints'
       ];
@@ -153,6 +153,7 @@ service cloud.firestore {
              isValidString(data.code, 1, 50) &&
              data.owner is map &&
              data.owner.keys().hasAll(['name', 'initials']) &&
+             (!('isPublic' in data) || data.isPublic is bool) &&
              data.progress is number && data.progress >= 0 && data.progress <= 100 &&
              isValidString(data.department, 1, 100) &&
              data.preservationScore is number &&

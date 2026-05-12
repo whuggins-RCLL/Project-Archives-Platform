@@ -3,6 +3,7 @@ import { type ReactElement, useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
+import { buildProjectOwnerFromClaimant, buildUnclaimedProjectOwner, ClaimableMember, findClaimableMemberForOwner, getClaimableMemberName } from '../lib/projectClaim';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
 import { AI_MODEL_OPTIONS } from '../constants';
 import { INTEGRATION_CONFIG } from '../config';
@@ -38,7 +39,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [commentError, setCommentError] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<Settings['activeProvider']>(DEFAULT_PROVIDER);
   const [selectedModel, setSelectedModel] = useState(AI_MODEL_OPTIONS[0]?.id ?? '');
-  const [claimableMembers, setClaimableMembers] = useState<Array<{ uid: string; displayName: string; email: string; status: string }>>([]);
+  const [claimableMembers, setClaimableMembers] = useState<ClaimableMember[]>([]);
   const [selectedClaimUid, setSelectedClaimUid] = useState('');
   const [updatingClaim, setUpdatingClaim] = useState(false);
 
@@ -53,14 +54,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
 
   useEffect(() => {
     if (!project || claimableMembers.length === 0) return;
-    const ownerName = project.owner?.name?.trim().toLowerCase();
-    if (!ownerName) return;
-
-    const matchedMember = claimableMembers.find((member) => {
-      const displayName = member.displayName.trim().toLowerCase();
-      const email = member.email.trim().toLowerCase();
-      return displayName === ownerName || email === ownerName;
-    });
+    const matchedMember = findClaimableMemberForOwner(project.owner, claimableMembers);
 
     if (matchedMember) {
       setSelectedClaimUid(matchedMember.uid);
@@ -888,7 +882,7 @@ Description: ${project.description}`;
                     disabled={!isAdmin || claimableMembers.length === 0}
                   >
                     {claimableMembers.map((member) => (
-                      <option key={member.uid} value={member.uid}>{member.displayName}{member.email ? ` (${member.email})` : ''}</option>
+                      <option key={member.uid} value={member.uid}>{getClaimableMemberName(member)}</option>
                     ))}
                   </select>
                   <button
@@ -898,8 +892,7 @@ Description: ${project.description}`;
                     onClick={() => {
                       const claimant = claimableMembers.find((member) => member.uid === selectedClaimUid);
                       if (!claimant) return;
-                      const initials = claimant.displayName.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase();
-                      void persistProjectOwner({ ...project.owner, name: claimant.displayName, initials: initials || 'NA' });
+                      void persistProjectOwner({ ...project.owner, ...buildProjectOwnerFromClaimant(claimant) });
                     }}
                   >
                     {updatingClaim ? 'Claiming…' : 'Claim'}
@@ -908,7 +901,7 @@ Description: ${project.description}`;
                     type="button"
                     className="px-4 py-2 rounded-lg border border-outline-variant font-semibold disabled:opacity-50"
                     disabled={!isAdmin || updatingClaim}
-                    onClick={() => void persistProjectOwner({ ...project.owner, name: 'Unclaimed', initials: 'UN' })}
+                    onClick={() => void persistProjectOwner(buildUnclaimedProjectOwner())}
                   >
                     Un-claim
                   </button>
