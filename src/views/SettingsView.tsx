@@ -46,6 +46,7 @@ export default function SettingsView({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingHeroContent, setSavingHeroContent] = useState(false);
+  const [generatingHeroNarrative, setGeneratingHeroNarrative] = useState(false);
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
 
@@ -160,6 +161,32 @@ export default function SettingsView({
       setToast({ type: 'error', message: error instanceof Error ? error.message : 'Unable to claim owner access.' });
     } finally {
       setClaimingOwner(false);
+    }
+  };
+
+  const handleGeneratePublicNarrative = async () => {
+    if (readOnly || !settings.aiEnabled) return;
+
+    setGeneratingHeroNarrative(true);
+    try {
+      const selectedProvider = settings.enabledProviders.includes(settings.activeProvider)
+        ? settings.activeProvider
+        : (settings.enabledProviders[0] ?? settings.activeProvider);
+      const providerModels = AI_MODEL_OPTIONS.filter((option) => option.provider === selectedProvider);
+      const selectedModel = providerModels[0]?.id ?? AI_MODEL_OPTIONS[0]?.id ?? 'gpt-4o';
+      const text = await api.generateAI(
+        `Create a concise, high-impact marketing narrative (120-180 words) for this public project portfolio. Organization: ${settings.portalName}. Product: ${settings.suiteName}.`,
+        selectedProvider,
+        selectedModel,
+        'You are a strategic marketing writer for higher education innovation initiatives. Ground the narrative in the provided project portfolio and write polished copy for a public dashboard.',
+        'publicNarrative',
+      );
+      setSettings((prev) => ({ ...prev, heroNarrativeDraft: text }));
+      setToast({ type: 'success', message: 'Narrative draft generated from public project records. Review and publish when ready.' });
+    } catch (error) {
+      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to generate narrative.') });
+    } finally {
+      setGeneratingHeroNarrative(false);
     }
   };
 
@@ -453,19 +480,8 @@ export default function SettingsView({
 
           <div className={`transition-opacity space-y-3 ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
             <h3 className="font-bold text-on-surface">Public story narrative (AI)</h3>
-            <p className="text-xs text-on-surface-variant">Generate a marketing-style narrative for the public homepage, then publish/unpublish anytime.</p>
-            <button type="button" disabled={readOnly || !settings.aiEnabled} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={async () => {
-              try {
-                const selectedProvider = settings.enabledProviders.includes(settings.activeProvider) ? settings.activeProvider : settings.enabledProviders[0];
-                const providerModels = AI_MODEL_OPTIONS.filter((option) => option.provider === selectedProvider);
-                const selectedModel = providerModels[0]?.id ?? AI_MODEL_OPTIONS[0]?.id ?? 'gpt-4o';
-                const text = await api.generateAI(`Create a concise, high-impact marketing narrative (120-180 words) for this project portfolio. Organization: ${settings.portalName}. Product: ${settings.suiteName}.`, selectedProvider, selectedModel, 'You are a strategic marketing writer for higher education innovation initiatives.', 'publicNarrative');
-                setSettings((prev) => ({ ...prev, heroNarrativeDraft: text }));
-                setToast({ type: 'success', message: 'Narrative draft generated. Review and publish when ready.' });
-              } catch (error) {
-                setToast({ type: 'error', message: getErrorMessage(error, 'Failed to generate narrative.') });
-              }
-            }}>Generate narrative</button>
+            <p className="text-xs text-on-surface-variant">Generate a marketing-style narrative from public project records for the main dashboard, then publish/unpublish anytime.</p>
+            <button type="button" disabled={readOnly || !settings.aiEnabled || generatingHeroNarrative} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={() => void handleGeneratePublicNarrative()}>{generatingHeroNarrative ? 'Generating...' : 'Generate narrative'}</button>
             <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="AI draft appears here..." />
             <div className="flex flex-wrap gap-2">
               <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: settings.heroNarrativeDraft }; setSettings(next); void saveHeroContent(next, 'Narrative published to public homepage.'); }}>Publish draft</button>

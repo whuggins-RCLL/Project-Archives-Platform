@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
 import { api, Settings } from '../lib/api';
 import { APP_CONFIG } from '../config';
 
@@ -23,6 +24,11 @@ const DEFAULT_SETTINGS: Settings = {
   brandDarkColor: '#1A365D',
   customFooter: '',
   helpContactEmail: '',
+  googleDriveFolderBaseUrl: '',
+  googleCalendarId: '',
+  heroQuickLinks: [],
+  heroNarrativeDraft: '',
+  heroNarrativePublished: '',
 };
 
 let preloadedSettings: Settings | null = null;
@@ -34,6 +40,13 @@ function saveCachedSettings(settings: Settings): void {
   } catch {
     // Ignore storage write failures.
   }
+}
+
+function commitBrandingSettings(settings: Settings): void {
+  preloadedSettings = settings;
+  preloadPromise = Promise.resolve(settings);
+  applyBrandingToDocument(settings);
+  saveCachedSettings(settings);
 }
 
 function readCachedSettings(): Settings | null {
@@ -67,9 +80,7 @@ const resolveBrandingSettings = async (): Promise<Settings> => {
   if (!preloadPromise) {
     preloadPromise = api.getSettings()
       .then((response) => {
-        preloadedSettings = response;
-        applyBrandingToDocument(response);
-        saveCachedSettings(response);
+        commitBrandingSettings(response);
         return response;
       })
       .catch(() => {
@@ -113,6 +124,16 @@ export function useBranding() {
       });
   }, []);
 
+  const setSettingsAndCache = useCallback<Dispatch<SetStateAction<Settings>>>((value) => {
+    setSettings((previous) => {
+      const next = typeof value === 'function'
+        ? (value as (previous: Settings) => Settings)(previous)
+        : value;
+      commitBrandingSettings(next);
+      return next;
+    });
+  }, []);
+
   const branding = useMemo(() => ({
     /** Short product name shown in compact chrome (e.g. top bar). */
     suiteName: settings.suiteName || APP_CONFIG.appName,
@@ -121,5 +142,5 @@ export function useBranding() {
     logoUrl: settings.logoDataUrl || '',
   }), [settings]);
 
-  return { settings, setSettings, branding, isBrandingHydrated };
+  return { settings, setSettings: setSettingsAndCache, branding, isBrandingHydrated };
 }
