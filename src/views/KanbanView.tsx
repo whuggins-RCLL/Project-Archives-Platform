@@ -175,6 +175,9 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
     const compactRevealClasses = isCompactBoard
       ? 'max-h-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:max-h-28 group-hover:opacity-100 group-focus:max-h-28 group-focus:opacity-100'
       : '';
+    const compactDetailFooterClasses = isCompactBoard
+      ? 'max-h-0 overflow-hidden opacity-0 transition-all duration-200 group-hover:max-h-16 group-hover:border-t group-hover:pt-3 group-hover:opacity-100 group-focus:max-h-16 group-focus:border-t group-focus:pt-3 group-focus:opacity-100'
+      : 'border-t pt-3';
 
     return (
       <div
@@ -201,7 +204,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
         </div>
         <h4 className={`font-bold ${isCompactBoard ? 'text-[13px] mb-2' : 'text-sm mb-3'} leading-snug`}>{project.title}</h4>
 
-        <div className={`${compactRevealClasses} ${isCompactBoard ? 'mb-2' : 'mb-4'}`}>
+        <div className={`${compactRevealClasses} ${isCompactBoard ? 'group-hover:mb-2 group-focus:mb-2' : 'mb-4'}`}>
           <div className={`flex flex-wrap ${isCompactBoard ? 'gap-1.5' : 'gap-2'}`}>
             {project.tags.map(tag => (
               <span key={tag} className="bg-secondary-container text-on-secondary-fixed text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">{tag}</span>
@@ -218,7 +221,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
           </div>
         )}
 
-        <div className={`${compactRevealClasses} pt-3 border-t border-outline-variant/10`}>
+        <div className={`${compactDetailFooterClasses} border-outline-variant/10`}>
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-2">
               {project.owner.avatar ? (
