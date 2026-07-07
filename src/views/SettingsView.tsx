@@ -483,16 +483,26 @@ export default function SettingsView({
             </label>
           </div>
 
-          <div className={`transition-opacity space-y-3 ${settings.aiEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'} ${readOnly ? 'pointer-events-none' : ''}`}>
-            <h3 className="font-bold text-on-surface">Public story narrative (AI)</h3>
-            <p className="text-xs text-on-surface-variant">Generate a marketing-style narrative from public project records for the main dashboard, then publish/unpublish anytime.</p>
-            <button type="button" disabled={readOnly || !settings.aiEnabled || generatingHeroNarrative} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={() => void handleGeneratePublicNarrative()}>{generatingHeroNarrative ? 'Generating...' : 'Generate narrative'}</button>
-            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="AI draft appears here..." />
-            <div className="flex flex-wrap gap-2">
-              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: settings.heroNarrativeDraft }; setSettings(next); void saveHeroContent(next, 'Narrative published to public homepage.'); }}>Publish draft</button>
-              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: '' }; setSettings(next); void saveHeroContent(next, 'Narrative unpublished.'); }}>Unpublish</button>
+          <div className={`space-y-3 ${readOnly ? 'opacity-50 pointer-events-none' : ''}`}>
+            <h3 className="font-bold text-on-surface">Public overview narrative</h3>
+            <p className="text-xs text-on-surface-variant">Write an overview statement by hand, or use AI to draft one from your public project records. Publish it to show it on the public overview page, and unpublish anytime.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" disabled={readOnly || !settings.aiEnabled || generatingHeroNarrative} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={() => void handleGeneratePublicNarrative()}>{generatingHeroNarrative ? 'Generating...' : 'Generate with AI'}</button>
+              {!settings.aiEnabled && (
+                <span className="text-xs text-on-surface-variant">Enable AI above to auto-draft. You can always write one manually below.</span>
+              )}
             </div>
-            <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm disabled:opacity-60" disabled={readOnly || savingHeroContent} onClick={() => void saveHeroContent(settings, 'Narrative draft saved.')}>{savingHeroContent ? 'Saving...' : 'Save draft'}</button>
+            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="Write your public overview statement here, or generate one with AI..." />
+            {(settings.heroNarrativePublished ?? '').trim() ? (
+              <p className="text-xs font-semibold text-emerald-700">Live on the public overview page.</p>
+            ) : (
+              <p className="text-xs text-on-surface-variant">Not published yet — the public overview page won’t show a narrative until you publish.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativeDraft ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: settings.heroNarrativeDraft }; setSettings(next); void saveHeroContent(next, 'Narrative published to public overview page.'); }}>Publish draft</button>
+              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm disabled:opacity-60" disabled={readOnly || savingHeroContent || !(settings.heroNarrativePublished ?? '').trim()} onClick={() => { const next = { ...settings, heroNarrativePublished: '' }; setSettings(next); void saveHeroContent(next, 'Narrative unpublished.'); }}>Unpublish</button>
+              <button type="button" className="px-3 py-2 rounded-lg border border-outline-variant/30 text-sm disabled:opacity-60" disabled={readOnly || savingHeroContent} onClick={() => void saveHeroContent(settings, 'Narrative draft saved.')}>{savingHeroContent ? 'Saving...' : 'Save draft'}</button>
+            </div>
           </div>
 
           {/* Provider Selection */}
