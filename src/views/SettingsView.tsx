@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Save, Bot, Key, Shield } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Bot, Key, Shield, Upload } from 'lucide-react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
-import { AI_MODEL_OPTIONS } from '../constants';
 
 /** Keep the base64 hero image comfortably under the server's 600k-char limit. */
 const HERO_IMAGE_MAX_BYTES = 400 * 1024;
@@ -50,7 +49,6 @@ export default function SettingsView({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingHeroContent, setSavingHeroContent] = useState(false);
-  const [generatingHeroNarrative, setGeneratingHeroNarrative] = useState(false);
   const [bootstrapStatus, setBootstrapStatus] = useState<{ ownerCount: number; configured: boolean; eligible: boolean } | null>(null);
   const [claimingOwner, setClaimingOwner] = useState(false);
 
@@ -165,32 +163,6 @@ export default function SettingsView({
       setToast({ type: 'error', message: error instanceof Error ? error.message : 'Unable to claim owner access.' });
     } finally {
       setClaimingOwner(false);
-    }
-  };
-
-  const handleGeneratePublicNarrative = async () => {
-    if (readOnly || !settings.aiEnabled) return;
-
-    setGeneratingHeroNarrative(true);
-    try {
-      const selectedProvider = settings.enabledProviders.includes(settings.activeProvider)
-        ? settings.activeProvider
-        : (settings.enabledProviders[0] ?? settings.activeProvider);
-      const providerModels = AI_MODEL_OPTIONS.filter((option) => option.provider === selectedProvider);
-      const selectedModel = providerModels[0]?.id ?? AI_MODEL_OPTIONS[0]?.id ?? 'gpt-4o';
-      const text = await api.generateAI(
-        `Create a concise, high-impact marketing narrative (120-180 words) for this public project portfolio. Organization: ${settings.portalName}. Product: ${settings.suiteName}.`,
-        selectedProvider,
-        selectedModel,
-        'You are a strategic marketing writer for higher education innovation initiatives. Ground the narrative in the provided project portfolio and write polished copy for a public dashboard.',
-        'publicNarrative',
-      );
-      setSettings((prev) => ({ ...prev, heroNarrativeDraft: text }));
-      setToast({ type: 'success', message: 'Narrative draft generated from public project records. Review and publish when ready.' });
-    } catch (error) {
-      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to generate narrative.') });
-    } finally {
-      setGeneratingHeroNarrative(false);
     }
   };
 
@@ -352,12 +324,20 @@ export default function SettingsView({
               </div>
             </div>
             <div>
-              <label htmlFor="settings-logo-upload" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Identity Logo (optional)</label>
+              <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Identity Logo (optional)</p>
+              <label
+                htmlFor="settings-logo-upload"
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 bg-surface-container-low text-sm font-bold text-on-surface transition-colors ${readOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-surface-container-high'}`}
+              >
+                <Upload className="w-4 h-4" />
+                {settings.logoDataUrl ? 'Replace logo' : 'Upload logo'}
+              </label>
               <input
                 id="settings-logo-upload"
                 type="file"
                 accept="image/*"
                 disabled={readOnly}
+                className="sr-only"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -385,12 +365,20 @@ export default function SettingsView({
               )}
             </div>
             <div>
-              <label htmlFor="settings-hero-upload" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Public hero background image (optional)</label>
+              <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Public hero background image (optional)</p>
+              <label
+                htmlFor="settings-hero-upload"
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-outline-variant/30 bg-surface-container-low text-sm font-bold text-on-surface transition-colors ${readOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-surface-container-high'}`}
+              >
+                <Upload className="w-4 h-4" />
+                {settings.heroImageDataUrl ? 'Replace hero image' : 'Upload hero image'}
+              </label>
               <input
                 id="settings-hero-upload"
                 type="file"
                 accept="image/*"
                 disabled={readOnly}
+                className="sr-only"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -407,7 +395,7 @@ export default function SettingsView({
                   reader.readAsDataURL(file);
                 }}
               />
-              <p className="text-xs text-on-surface-variant mt-1">
+              <p className="text-xs text-on-surface-variant mt-2">
                 Shown behind the hero on the public homepage with a brand-colored overlay for readable text. Use a wide, high-quality image (about 1600&times;900) under 400&nbsp;KB. Leave empty to use the branded gradient.
               </p>
               {settings.heroImageDataUrl && (
@@ -540,14 +528,8 @@ export default function SettingsView({
 
           <div className={`space-y-3 ${readOnly ? 'opacity-50 pointer-events-none' : ''}`}>
             <h3 className="font-bold text-on-surface">Public overview narrative</h3>
-            <p className="text-xs text-on-surface-variant">Write an overview statement by hand, or use AI to draft one from your public project records. Publish it to show it on the public overview page, and unpublish anytime.</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" disabled={readOnly || !settings.aiEnabled || generatingHeroNarrative} className="px-4 py-2 rounded-lg bg-primary text-white text-sm font-semibold disabled:opacity-60" onClick={() => void handleGeneratePublicNarrative()}>{generatingHeroNarrative ? 'Generating...' : 'Generate with AI'}</button>
-              {!settings.aiEnabled && (
-                <span className="text-xs text-on-surface-variant">Enable AI above to auto-draft. You can always write one manually below.</span>
-              )}
-            </div>
-            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="Write your public overview statement here, or generate one with AI..." />
+            <p className="text-xs text-on-surface-variant">Write an overview statement for the public overview page. Publish it to make it visible, and unpublish anytime.</p>
+            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="Write your public overview statement here..." />
             {(settings.heroNarrativePublished ?? '').trim() ? (
               <p className="text-xs font-semibold text-emerald-700">Live on the public overview page.</p>
             ) : (
