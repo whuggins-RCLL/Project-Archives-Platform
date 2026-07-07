@@ -484,6 +484,36 @@ If your organization needs public showcase behavior, explicitly set `settings/gl
 - `firebase-blueprint.json`: A schema definition of the Firestore database structure.
 - `firestore.rules`: The security rules for the Firestore database.
 
+## Changelog
+
+### v1.1.0
+
+- Ships with **generic, deployment-neutral defaults**. The bundled `src/config.ts`
+  contains placeholder branding only — no organization-, tenant-, or
+  environment-specific production settings are baked into the source. Configure
+  your own naming, colors, and integrations per the **Customizing Branding**
+  section, and supply all environment-specific values through environment
+  variables (see the **Add Environment Variables** section and `.env.example`).
+- Project collaborators and a **My Projects** view, with per-project
+  public/private visibility controls.
+- Responsive desktop overview, light/dark theming, and accessibility
+  improvements.
+- Refined AI decision-support workflows across Gemini, OpenAI, Anthropic, Groq,
+  and OpenAI-compatible providers, with server-side-only key handling.
+- Role & access management (owner/admin/collaborator/viewer) enforced by
+  Firebase custom claims and Firestore rules.
+- Deployment guides for Vercel (primary) and Google Cloud Run.
+
+> Release notes are kept generic on purpose. Do not commit live production
+> identifiers (org names, project IDs, domains, URLs, or secrets) into this
+> repository — provide them through environment variables at deploy time.
+
+### v1.0.0
+
+- Initial tagged release: public stakeholder dashboard, internal Kanban board,
+  detailed project records with collaboration threads, AI decision-support
+  workflows, and Firebase-backed authentication.
+
 ## License
 
 SPDX-License-Identifier: Apache-2.0
