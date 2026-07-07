@@ -8,6 +8,24 @@ export const AI_MODEL_OPTIONS: AIModelOption[] = [
     provider: 'gemini',
   },
   {
+    id: 'gemini-3.5-flash',
+    label: 'Gemini 3.5 Flash',
+    description: 'Latest-generation Google Flash model. Free-tier eligible (no billing required).',
+    provider: 'gemini',
+  },
+  {
+    id: 'gemini-3-flash',
+    label: 'Gemini 3 Flash',
+    description: 'Gen-3 Flash model with strong reasoning. Free-tier eligible (no billing required).',
+    provider: 'gemini',
+  },
+  {
+    id: 'gemini-3.1-flash-lite',
+    label: 'Gemini 3.1 Flash Lite',
+    description: 'Economical gen-3 Flash Lite with high throughput. Free-tier eligible (no billing required).',
+    provider: 'gemini',
+  },
+  {
     id: 'gemini-2.5-flash-lite',
     label: 'Gemini 2.5 Flash Lite',
     description: 'Google\'s most economical model — highest throughput and free-tier friendly.',
