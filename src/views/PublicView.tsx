@@ -90,13 +90,15 @@ export default function PublicView() {
     <div className="min-h-screen app-canvas font-body">
       <a href="#main-content" className="skip-link">Skip to main content</a>
       {/* Header */}
-      <header className="glass-nav sticky top-0 z-20">
+      <header className="glass-nav sticky top-0 z-30">
         <div className="content-shell h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             {branding.logoUrl ? (
-              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl border border-outline-variant/20 bg-white shadow-sm">
-                <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
-              </div>
+              <img
+                src={branding.logoUrl}
+                alt={branding.portalName || APP_CONFIG.portalName}
+                className="shrink-0 h-10 w-auto max-w-[240px] object-contain object-left"
+              />
             ) : (
               <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
                 <FolderArchive className="text-white w-5 h-5" aria-hidden />
@@ -119,8 +121,8 @@ export default function PublicView() {
         </div>
       </header>
 
-      {/* Hero Section */}
-      <div className="relative isolate overflow-hidden text-white">
+      {/* Hero Section — pulled up behind the translucent nav so the image bleeds into it */}
+      <div className="relative isolate overflow-hidden text-white -mt-16">
         {branding.heroImageUrl ? (
           <>
             <img
@@ -140,10 +142,10 @@ export default function PublicView() {
         {/* Ambient glow accents */}
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
 
-        <div className="content-shell py-20 sm:py-24 lg:py-28">
+        <div className="content-shell pt-28 pb-20 sm:pt-32 sm:pb-24 lg:pt-36 lg:pb-28">
           <div className="max-w-3xl xl:max-w-4xl animate-fade-in-up">
             <span className="mb-6 inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
-              <Sparkles className="w-3.5 h-3.5" aria-hidden /> {branding.suiteName || APP_CONFIG.appName}
+              <Sparkles className="w-3.5 h-3.5" aria-hidden /> {APP_CONFIG.heroBadge}
             </span>
             <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold font-headline tracking-tight mb-6 leading-[1.05]">
               {APP_CONFIG.heroTitle}
@@ -179,8 +181,8 @@ export default function PublicView() {
                   <BarChart3 className="w-6 h-6 text-white" aria-hidden />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold font-headline">{visibleProjects.length}</div>
-                  <div className="text-xs text-white/70 uppercase tracking-wider font-semibold">Active Initiatives</div>
+                  <div className="text-2xl font-bold font-headline">{visibleProjects.filter(p => p.status !== 'Launched').length}</div>
+                  <div className="text-xs text-white/70 uppercase tracking-wider font-semibold">In Development</div>
                 </div>
               </div>
               <div className="glass-on-dark glass-sheen rounded-2xl p-4 flex items-center gap-4 shadow-lg">
@@ -189,7 +191,7 @@ export default function PublicView() {
                 </div>
                 <div>
                   <div className="text-2xl font-bold font-headline">{visibleProjects.filter(p => p.status === 'Launched').length}</div>
-                  <div className="text-xs text-white/70 uppercase tracking-wider font-semibold">Successfully Launched</div>
+                  <div className="text-xs text-white/70 uppercase tracking-wider font-semibold">Live Now</div>
                 </div>
               </div>
             </div>
