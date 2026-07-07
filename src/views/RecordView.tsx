@@ -1,7 +1,9 @@
 import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus, Globe, Lock } from 'lucide-react';
 import { type ReactElement, useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
-import { ApprovalCheckpoint, Milestone, Project, ProjectMember, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
+import { ApprovalCheckpoint, Milestone, Project, ProjectMember, ProjectArtifactLink, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
+import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
+import { ARTIFACT_LINK_TYPE_OPTIONS, detectArtifactType, normalizeArtifactUrl } from '../lib/artifactLinks';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
 import { buildProjectMemberFromClaimant, buildProjectOwnerFromClaimant, buildUnclaimedProjectOwner, ClaimableMember, findClaimableMemberForOwner, getClaimableMemberName, getProjectMemberKey } from '../lib/projectClaim';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
@@ -766,6 +768,46 @@ Description: ${project.description}`;
     });
   };
 
+  const addArtifactLink = () => {
+    if (!project || !isAdmin) return;
+    setProject({
+      ...project,
+      artifactLinks: [
+        ...(project.artifactLinks ?? []),
+        {
+          id: `art-${Date.now()}`,
+          label: '',
+          url: '',
+          type: 'other',
+        },
+      ].slice(0, 20),
+    });
+  };
+
+  const updateArtifactLink = (id: string, updates: Partial<ProjectArtifactLink>) => {
+    if (!project || !isAdmin) return;
+    setProject({
+      ...project,
+      artifactLinks: (project.artifactLinks ?? []).map((link) =>
+        link.id === id ? { ...link, ...updates } : link
+      ),
+    });
+  };
+
+  const removeArtifactLink = (id: string) => {
+    if (!project || !isAdmin) return;
+    setProject({
+      ...project,
+      artifactLinks: (project.artifactLinks ?? []).filter((link) => link.id !== id),
+    });
+  };
+
+  const normalizeArtifactLinkUrl = (id: string, url: string) => {
+    const normalized = normalizeArtifactUrl(url);
+    if (normalized === url) return;
+    updateArtifactLink(id, { url: normalized });
+  };
+
   const updateApproval = (id: string, updates: Partial<ApprovalCheckpoint>) => {
     if (!project) return;
     setProject({
@@ -1167,6 +1209,74 @@ Description: ${project.description}`;
                   )}
                 </div>
               </div>
+            </div>
+          </section>
+
+          <section className="bg-surface-container-lowest p-8 rounded-lg shadow-sm">
+            <div className="flex justify-between items-start mb-6 gap-4">
+              <div>
+                <h2 className="font-headline text-xl font-bold flex items-center gap-2">
+                  <LinkIcon className="w-6 h-6 text-primary" />
+                  Artifacts &amp; Links
+                </h2>
+                <p className="text-xs text-on-surface-variant mt-1">
+                  Add links to project artifacts such as GitHub repositories, live demos, or docs. These appear on the public project card when the project is public.
+                </p>
+              </div>
+              {isAdmin && (
+                <button onClick={addArtifactLink} className="shrink-0 text-xs font-bold text-primary flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Add Link
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {(project.artifactLinks ?? []).length === 0 ? (
+                <div className="text-xs text-on-surface-variant bg-surface-container-low rounded-md p-3">
+                  No artifact links yet. {isAdmin ? 'Add a GitHub repository, live demo, or documentation link.' : 'The project owner has not added any artifact links.'}
+                </div>
+              ) : (
+                (project.artifactLinks ?? []).map((link) => (
+                  <div key={link.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 bg-surface-container-low rounded-lg p-3 items-center">
+                    <div className="md:col-span-1 flex items-center justify-center text-on-surface-variant">
+                      <ArtifactLinkIcon type={link.type} className="w-5 h-5" />
+                    </div>
+                    <input
+                      className="md:col-span-3 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
+                      placeholder="Label (e.g. GitHub repo)"
+                      value={link.label}
+                      onChange={(e) => updateArtifactLink(link.id, { label: e.target.value })}
+                      disabled={!isAdmin}
+                    />
+                    <input
+                      className="md:col-span-5 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
+                      placeholder="https://github.com/org/repo"
+                      value={link.url}
+                      onChange={(e) => {
+                        const nextUrl = e.target.value;
+                        const shouldDetect = !link.type || link.type === 'other';
+                        updateArtifactLink(link.id, shouldDetect && nextUrl.trim() ? { url: nextUrl, type: detectArtifactType(nextUrl) } : { url: nextUrl });
+                      }}
+                      onBlur={(e) => normalizeArtifactLinkUrl(link.id, e.target.value)}
+                      disabled={!isAdmin}
+                    />
+                    <select
+                      className="md:col-span-2 bg-surface-container rounded p-2 text-xs"
+                      value={link.type ?? 'other'}
+                      onChange={(e) => updateArtifactLink(link.id, { type: e.target.value as ProjectArtifactLink['type'] })}
+                      disabled={!isAdmin}
+                    >
+                      {ARTIFACT_LINK_TYPE_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    {isAdmin && (
+                      <button className="md:col-span-1 text-error text-xs font-bold md:justify-self-end" onClick={() => removeArtifactLink(link.id)}>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           </section>
 

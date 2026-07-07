@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, Sparkles } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
@@ -9,6 +9,10 @@ import { applyProjectFilters, getFilterOptions, ProjectFilterQuery } from '../li
 import { useSavedViews } from '../hooks/useSavedViews';
 import { useBranding } from '../hooks/useBranding';
 import ThemeToggle from '../components/ThemeToggle';
+import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
+import { getValidArtifactLinks, normalizeArtifactUrl } from '../lib/artifactLinks';
+
+const DESCRIPTION_PREVIEW_LIMIT = 160;
 
 type TimestampLike =
   | string
@@ -60,8 +64,21 @@ export default function PublicView() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState<ProjectFilterQuery>(DEFAULT_FILTER_QUERY);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const { views, saveView, deleteView } = useSavedViews('public');
   const { branding, settings } = useBranding();
+
+  const toggleExpanded = (projectId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const unsubscribe = api.subscribeToProjects(
@@ -234,7 +251,12 @@ export default function PublicView() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-            {visibleProjects.map((project, index) => (
+            {visibleProjects.map((project, index) => {
+              const isExpanded = expandedIds.has(project.id);
+              const description = project.description ?? '';
+              const canExpand = description.length > DESCRIPTION_PREVIEW_LIMIT;
+              const artifactLinks = getValidArtifactLinks(project.artifactLinks);
+              return (
               <div
                 key={project.id}
                 className="glass-card lift overflow-hidden flex flex-col animate-fade-in-up"
@@ -254,7 +276,40 @@ export default function PublicView() {
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-brand-dark mb-2 font-headline leading-snug">{project.title}</h3>
-                  <p className="text-sm text-on-surface-variant line-clamp-3 mb-6">{project.description}</p>
+                  <p className={`text-sm text-on-surface-variant whitespace-pre-line ${isExpanded ? '' : 'line-clamp-3'} ${canExpand ? 'mb-1.5' : 'mb-6'}`}>
+                    {description}
+                  </p>
+                  {canExpand && (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(project.id)}
+                      aria-expanded={isExpanded}
+                      className="mb-6 inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded"
+                    >
+                      {isExpanded ? (
+                        <>Show less <ChevronUp className="w-3.5 h-3.5" aria-hidden /></>
+                      ) : (
+                        <>Read more <ChevronDown className="w-3.5 h-3.5" aria-hidden /></>
+                      )}
+                    </button>
+                  )}
+
+                  {artifactLinks.length > 0 && (
+                    <div className="mb-6 flex flex-wrap gap-2">
+                      {artifactLinks.map((link) => (
+                        <a
+                          key={link.id}
+                          href={normalizeArtifactUrl(link.url)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-3 py-1 text-xs font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:text-primary hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        >
+                          <ArtifactLinkIcon type={link.type} className="w-3.5 h-3.5" />
+                          {link.label}
+                        </a>
+                      ))}
+                    </div>
+                  )}
 
                   {project.progress > 0 && (
                     <div className="mt-auto">
@@ -300,7 +355,8 @@ export default function PublicView() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>
