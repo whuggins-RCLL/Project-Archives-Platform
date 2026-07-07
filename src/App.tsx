@@ -472,6 +472,7 @@ function InternalApp() {
                 id="new-project-title"
                 type="text" 
                 value={newProjectTitle}
+                maxLength={100}
                 onChange={(e) => setNewProjectTitle(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleNewProject()}
                 className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none"

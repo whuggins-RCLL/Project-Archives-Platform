@@ -118,7 +118,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
       onBack();
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to save changes. Please try again.') });
+      setToast({ type: 'error', message: getErrorMessage(error, 'Failed to save changes. If your role or permissions changed recently, open Help and use Refresh permissions, then try again.') });
     } finally {
       setSavingProject(false);
     }
@@ -857,6 +857,7 @@ Description: ${project.description}`;
                   className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none" 
                   type="text" 
                   value={project.title} 
+                  maxLength={100}
                   onChange={(e) => setProject({...project, title: e.target.value})}
                   disabled={!isAdmin}
                 />
@@ -1032,6 +1033,7 @@ Description: ${project.description}`;
                   className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none resize-y" 
                   rows={3} 
                   value={project.description}
+                  maxLength={6000}
                   onChange={(e) => setProject({...project, description: e.target.value})}
                   disabled={!isAdmin}
                 ></textarea>
