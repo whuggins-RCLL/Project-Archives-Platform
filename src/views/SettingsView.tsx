@@ -248,18 +248,22 @@ export default function SettingsView({
 
         <div className="p-6 space-y-8">
           <div>
-            <h3 className="font-bold text-on-surface mb-3">Project Access Mode</h3>
+            <h3 className="font-bold text-on-surface mb-3">Public Dashboard Access</h3>
+            <p className="text-sm text-on-surface-variant -mt-1 mb-3">
+              This is the master switch for the public dashboard at the site root. Turn on Public Read to share out, then
+              choose per project which ones appear using the Public/Private toggle on each project record.
+            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
                 {
                   id: 'public-read',
-                  name: 'Public Read',
-                  desc: 'Anyone can read project portfolio metadata.'
+                  name: 'Public Read (share out)',
+                  desc: 'Anyone can view the public dashboard. Only projects marked Public appear there.'
                 },
                 {
                   id: 'private-read',
-                  name: 'Private Read (Org)',
-                  desc: 'Only authenticated organizational users can read projects.'
+                  name: 'Private Read (Org only)',
+                  desc: 'The public dashboard is disabled. Only signed-in team members can read projects.'
                 }
               ].map((mode) => (
                 <div
@@ -277,7 +281,8 @@ export default function SettingsView({
               ))}
             </div>
             <p className="text-xs text-on-surface-variant mt-2">
-              Use private mode for institutions that require restricted access by default.
+              Use Private Read for institutions that require restricted access by default. Even in Public Read, projects set to
+              Private on their record stay hidden from the public dashboard.
             </p>
           </div>
 

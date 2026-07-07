@@ -1,4 +1,4 @@
-import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus } from 'lucide-react';
+import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus, Globe, Lock } from 'lucide-react';
 import { type ReactElement, useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
@@ -766,6 +766,7 @@ Description: ${project.description}`;
     );
   }
 
+  const isProjectPublic = project.isPublic !== false;
   const driveBaseUrl = settings?.googleDriveFolderBaseUrl?.trim() || INTEGRATION_CONFIG.googleDriveFolderBaseUrl;
   const calendarId = settings?.googleCalendarId?.trim() ?? '';
   const calendarDeadlineUrl = project.dueDate
@@ -974,6 +975,35 @@ Description: ${project.description}`;
                   disabled={!isAdmin}
                 />
               </div>
+              <div className="col-span-2">
+                <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Public Dashboard Visibility</p>
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-outline-variant/30 bg-surface-container-low px-4 py-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isProjectPublic ? 'bg-tertiary-container text-on-tertiary-container' : 'bg-surface-container-high text-on-surface-variant'}`}>
+                      {isProjectPublic ? <Globe className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-on-surface">{isProjectPublic ? 'Public' : 'Private'}</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5">
+                        {isProjectPublic
+                          ? 'Visible to everyone on the public dashboard (when the portal is in public-read mode).'
+                          : 'Hidden from the public dashboard. Only your signed-in team can see it.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isProjectPublic}
+                    aria-label="Toggle whether this project appears on the public dashboard"
+                    disabled={!isAdmin}
+                    onClick={() => setProject({ ...project, isPublic: !isProjectPublic })}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${isProjectPublic ? 'bg-primary' : 'bg-outline-variant/40'}`}
+                  >
+                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${isProjectPublic ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -1008,28 +1038,35 @@ Description: ${project.description}`;
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div>
-                  <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Primary Outcomes</p>
-                  <ul className="space-y-2">
-                    <li className="flex items-center gap-2">
-                      <input className="flex-1 text-sm bg-transparent border-b border-outline-variant py-1 focus:border-primary outline-none" type="text" defaultValue="Reduces search time by 40%" />
-                    </li>
-                    <li className="flex items-center gap-2">
-                      <input className="flex-1 text-sm bg-transparent border-b border-outline-variant py-1 focus:border-primary outline-none" type="text" defaultValue="Cross-lingual discovery" />
-                    </li>
-                  </ul>
+                  <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Focus Areas</p>
+                  {project.tags.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {project.tags.map((tag) => (
+                        <span key={tag} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1 rounded-full">{tag}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-on-surface-variant">Add tags above to capture this project’s focus areas.</p>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Key Deliverables</label>
-                  <ul className="space-y-2">
-                    <li className="flex items-center gap-2 text-sm text-on-surface">
-                      <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-variant" />
-                      Architecture Doc v1
-                    </li>
-                    <li className="flex items-center gap-2 text-sm text-on-surface">
-                      <div className="w-4 h-4 rounded-full border-2 border-on-surface-variant"></div>
-                      Model Weights Repository
-                    </li>
-                  </ul>
+                  <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Milestone Deliverables</p>
+                  {(project.milestones ?? []).length > 0 ? (
+                    <ul className="space-y-2">
+                      {(project.milestones ?? []).map((milestone) => (
+                        <li key={milestone.id} className="flex items-center gap-2 text-sm text-on-surface">
+                          {milestone.status === 'Complete' ? (
+                            <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-variant shrink-0" />
+                          ) : (
+                            <div className="w-4 h-4 rounded-full border-2 border-on-surface-variant shrink-0"></div>
+                          )}
+                          <span className={milestone.status === 'Complete' ? 'line-through text-on-surface-variant' : ''}>{milestone.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-sm text-on-surface-variant">Add milestones in Governance &amp; Trust to track deliverables here.</p>
+                  )}
                 </div>
               </div>
             </div>
