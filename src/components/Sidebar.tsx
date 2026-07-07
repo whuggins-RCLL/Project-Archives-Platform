@@ -1,4 +1,5 @@
-import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users } from 'lucide-react';
+import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, Globe } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import Button from './Button';
 
@@ -121,6 +122,15 @@ export default function Sidebar({
           </Button>
         )}
         <div className="h-4"></div>
+        <Link
+          to="/"
+          onClick={onMobileClose}
+          className="w-full flex items-center space-x-3 px-4 py-2 text-on-surface-variant hover:text-brand-dark text-xs font-medium"
+          title="View the public overview page"
+        >
+          <Globe className="w-4 h-4" />
+          <span>Public Overview</span>
+        </Link>
         <button
           onClick={() => {
             setCurrentView('help');
