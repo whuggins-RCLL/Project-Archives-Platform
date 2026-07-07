@@ -138,6 +138,11 @@ service cloud.firestore {
     }
 
     function isValidProject(data) {
+      // NOTE: `allowedFields` must list every top-level field the client ever
+      // writes to a project. `hasOnlyAllowedFields` rejects the *entire* write if
+      // any key is missing here, so a new feature field (e.g. `collaborators`)
+      // that is added to the app but not to this list -- or that is added here but
+      // never deployed -- surfaces as a "permission denied" error on save.
       let allowedFields = [
         'title', 'description', 'status', 'priority', 'tags', 'dueDate',
         'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'collaborators', 'isPublic', 'progress',
