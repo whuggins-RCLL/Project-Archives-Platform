@@ -8,7 +8,26 @@
       name="description"
       content="Project Archives is a workspace for organizing, tracking, and reviewing projects in one place."
     />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" content="#ffffff" />
+    <script>
+      // Apply the saved (or OS-preferred) theme before first paint to avoid a flash.
+      (function () {
+        try {
+          var stored = localStorage.getItem('theme-preference');
+          var prefersDark =
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var resolved =
+            stored === 'light' || stored === 'dark'
+              ? stored
+              : prefersDark
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', resolved);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0c0f12' : '#ffffff');
+        } catch (e) {}
+      })();
+    </script>
     <meta property="og:title" content="Project Archives" />
     <meta
       property="og:description"

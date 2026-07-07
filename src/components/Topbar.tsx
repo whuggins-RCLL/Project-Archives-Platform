@@ -2,6 +2,7 @@ import { Settings, LogOut } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
+import ThemeToggle from './ThemeToggle';
 
 export default function Topbar({
   roleLabel,
@@ -44,6 +45,7 @@ export default function Topbar({
         </p>
       </div>
       <div className="flex items-center space-x-3 md:space-x-5">
+        <ThemeToggle className="h-9 w-9" />
         <button
           aria-label="Open settings"
           title={
