@@ -86,47 +86,69 @@ export default function PublicView() {
   const publishedNarrative = (settings.heroNarrativePublished ?? '').trim();
 
   return (
-    <div className="min-h-screen bg-slate-50 font-body">
+    <div className="min-h-screen app-canvas font-body">
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
+      <header className="glass-nav sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
             {branding.logoUrl ? (
-              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200/80 bg-white shadow-sm">
+              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl border border-outline-variant/20 bg-white shadow-sm">
                 <img src={branding.logoUrl} alt="" className="max-h-9 max-w-9 object-contain" />
               </div>
             ) : (
-              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-lg bg-primary shadow-sm">
+              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
                 <FolderArchive className="text-white w-5 h-5" aria-hidden />
               </div>
             )}
             <div className="min-w-0">
               <h1 className="font-headline text-lg font-bold text-brand-dark leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
-              <p className="text-xs text-slate-500 truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
+              <p className="text-xs text-on-surface-variant truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
             </div>
           </div>
-          <Link 
+          <Link
             to="/login"
-            className="text-sm font-medium text-slate-600 hover:text-primary transition-colors flex items-center gap-2"
+            className="group inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
           >
-            Team Login <ArrowRight className="w-4 h-4" />
+            Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
       </header>
 
       {/* Hero Section */}
-      <div className="bg-brand-dark text-white py-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <h2 className="text-4xl sm:text-5xl font-extrabold font-headline tracking-tight mb-6">
+      <div className="relative isolate overflow-hidden text-white">
+        {branding.heroImageUrl ? (
+          <>
+            <img
+              src={branding.heroImageUrl}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 -z-20 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 -z-10 bg-gradient-to-br from-brand-dark/90 via-brand-dark/75 to-primary/70" aria-hidden />
+          </>
+        ) : (
+          <>
+            <div className="brand-hero absolute inset-0 -z-20" aria-hidden />
+            <div className="brand-hero-grid absolute inset-0 -z-10 opacity-70" aria-hidden />
+          </>
+        )}
+        {/* Ambient glow accents */}
+        <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-28">
+          <div className="max-w-3xl animate-fade-in-up">
+            <span className="mb-6 inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
+              <Sparkles className="w-3.5 h-3.5" /> {branding.suiteName || APP_CONFIG.appName}
+            </span>
+            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold font-headline tracking-tight mb-6 leading-[1.05]">
               {APP_CONFIG.heroTitle}
             </h2>
-            <p className="text-lg sm:text-xl text-blue-100 mb-8 max-w-2xl leading-relaxed">
+            <p className="text-lg sm:text-xl text-white/80 mb-8 max-w-2xl leading-relaxed">
               {APP_CONFIG.heroSubtitle}
             </p>
             {publishedNarrative && (
-              <div className="mb-8 rounded-xl border border-white/20 bg-white/10 p-5 text-blue-50 leading-relaxed">
-                <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] font-semibold text-blue-200"><Sparkles className="w-4 h-4" /> Project Story</div>
+              <div className="glass-on-dark glass-sheen mb-8 rounded-2xl p-5 leading-relaxed text-white/90 shadow-xl">
+                <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] font-semibold text-white/70"><Sparkles className="w-4 h-4" /> Project Story</div>
                 <p className="text-base sm:text-lg whitespace-pre-line">{publishedNarrative}</p>
               </div>
             )}
@@ -138,7 +160,7 @@ export default function PublicView() {
                     href={link.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="group inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/25 ring-1 ring-white/15 transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="group inline-flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-brand-dark shadow-lg shadow-black/25 ring-1 ring-white/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   >
                     {link.label}
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
@@ -147,22 +169,22 @@ export default function PublicView() {
               </div>
             )}
             <div className="flex flex-wrap gap-4">
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 border border-white/20">
-                <div className="p-3 bg-blue-500/20 rounded-lg">
-                  <BarChart3 className="w-6 h-6 text-blue-300" />
+              <div className="glass-on-dark glass-sheen rounded-2xl p-4 flex items-center gap-4 shadow-lg">
+                <div className="p-3 bg-white/15 rounded-xl">
+                  <BarChart3 className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">{visibleProjects.length}</div>
-                  <div className="text-xs text-blue-200 uppercase tracking-wider font-semibold">Active Initiatives</div>
+                  <div className="text-2xl font-bold font-headline">{visibleProjects.length}</div>
+                  <div className="text-xs text-white/70 uppercase tracking-wider font-semibold">Active Initiatives</div>
                 </div>
               </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 border border-white/20">
-                <div className="p-3 bg-emerald-500/20 rounded-lg">
-                  <ShieldCheck className="w-6 h-6 text-emerald-300" />
+              <div className="glass-on-dark glass-sheen rounded-2xl p-4 flex items-center gap-4 shadow-lg">
+                <div className="p-3 bg-emerald-400/20 rounded-xl">
+                  <ShieldCheck className="w-6 h-6 text-emerald-200" />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold">{visibleProjects.filter(p => p.status === 'Launched').length}</div>
-                  <div className="text-xs text-blue-200 uppercase tracking-wider font-semibold">Successfully Launched</div>
+                  <div className="text-2xl font-bold font-headline">{visibleProjects.filter(p => p.status === 'Launched').length}</div>
+                  <div className="text-xs text-white/70 uppercase tracking-wider font-semibold">Successfully Launched</div>
                 </div>
               </div>
             </div>
@@ -173,8 +195,8 @@ export default function PublicView() {
       {/* Projects Grid */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="mb-10">
-          <h3 className="text-2xl font-bold text-slate-900 font-headline">Current Portfolio</h3>
-          <p className="text-slate-600 mt-2">An overview of our ongoing and completed AI transformation projects.</p>
+          <h3 className="text-2xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h3>
+          <p className="text-on-surface-variant mt-2">An overview of our ongoing and completed AI transformation projects.</p>
         </div>
 
         <ProjectFilterBar
@@ -196,59 +218,63 @@ export default function PublicView() {
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
           </div>
         ) : visibleProjects.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-6 py-16 text-center shadow-sm">
-            <h4 className="text-xl font-headline font-bold text-slate-900">No projects match these filters</h4>
-            <p className="mt-2 text-sm text-slate-600">
+          <div className="glass-card px-6 py-16 text-center">
+            <h4 className="text-xl font-headline font-bold text-brand-dark">No projects match these filters</h4>
+            <p className="mt-2 text-sm text-on-surface-variant">
               Try adjusting search terms, status, department, or reset filters to view more initiatives.
             </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {visibleProjects.map(project => (
-              <div key={project.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow flex flex-col">
+            {visibleProjects.map((project, index) => (
+              <div
+                key={project.id}
+                className="glass-card lift overflow-hidden flex flex-col animate-fade-in-up"
+                style={{ animationDelay: `${Math.min(index * 60, 480)}ms` }}
+              >
                 <div className="p-6 flex-1">
                   <div className="flex justify-between items-start mb-4">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/15">
                       {project.department}
                     </span>
-                    <span className={`text-xs font-bold px-2 py-1 rounded-md ${
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
                       project.status === 'Launched' ? 'bg-emerald-100 text-emerald-800' :
                       project.status === 'In Progress' ? 'bg-amber-100 text-amber-800' :
-                      'bg-slate-100 text-slate-800'
+                      'bg-surface-container-high text-on-surface-variant'
                     }`}>
                       {project.status}
                     </span>
                   </div>
-                  <h4 className="text-lg font-bold text-slate-900 mb-2">{project.title}</h4>
-                  <p className="text-sm text-slate-600 line-clamp-3 mb-6">{project.description}</p>
-                  
+                  <h4 className="text-lg font-bold text-brand-dark mb-2 font-headline leading-snug">{project.title}</h4>
+                  <p className="text-sm text-on-surface-variant line-clamp-3 mb-6">{project.description}</p>
+
                   {project.progress > 0 && (
                     <div className="mt-auto">
-                      <div className="flex justify-between text-xs font-medium text-slate-500 mb-1.5">
+                      <div className="flex justify-between text-xs font-medium text-on-surface-variant mb-1.5">
                         <span>Progress</span>
-                        <span>{project.progress}%</span>
+                        <span className="font-bold text-brand-dark">{project.progress}%</span>
                       </div>
-                      <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full ${project.progress === 100 ? 'bg-emerald-500' : 'bg-primary'}`} 
+                      <div className="w-full bg-surface-container-high h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${project.progress === 100 ? 'bg-emerald-500' : 'bg-gradient-to-r from-primary to-brand-dark'}`}
                           style={{ width: `${project.progress}%` }}
                         ></div>
                       </div>
                     </div>
                   )}
                 </div>
-                <div className="bg-slate-50 px-6 py-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="bg-surface-container-low/60 px-6 py-4 border-t border-outline-variant/15 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {project.owner.avatar ? (
-                      <img src={project.owner.avatar} alt={project.owner.name} className="w-6 h-6 rounded-full" />
+                      <img src={project.owner.avatar} alt={project.owner.name} className="w-6 h-6 rounded-full object-cover" />
                     ) : (
-                      <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600">
+                      <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
                         {project.owner.initials}
                       </div>
                     )}
-                    <span className="text-xs font-medium text-slate-600">{project.owner.name}</span>
+                    <span className="text-xs font-medium text-on-surface-variant">{project.owner.name}</span>
                   </div>
-                  <div className="flex items-center gap-1 text-slate-400">
+                  <div className="flex items-center gap-1 text-on-surface-variant/70">
                     <Clock className="w-3.5 h-3.5" />
                     <span
                       className="text-[10px] uppercase font-bold tracking-wider"
@@ -263,22 +289,22 @@ export default function PublicView() {
           </div>
         )}
       </main>
-      
+
       {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-12 mt-12">
+      <footer className="glass-nav border-t border-outline-variant/20 py-12 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="flex items-center justify-center space-x-2 mb-4 opacity-50">
-            <FolderArchive className="w-5 h-5 text-slate-900" />
-            <span className="font-headline font-bold text-slate-900">{branding.portalName || APP_CONFIG.portalName}</span>
+          <div className="flex items-center justify-center space-x-2 mb-4 opacity-60">
+            <FolderArchive className="w-5 h-5 text-brand-dark" />
+            <span className="font-headline font-bold text-brand-dark">{branding.portalName || APP_CONFIG.portalName}</span>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-on-surface-variant">
             {settings.customFooter
               ? settings.customFooter
               : <>&copy; {new Date().getFullYear()} {APP_CONFIG.footerText}</>}
           </p>
           {settings.helpContactEmail && (
-            <p className="text-xs text-slate-400 mt-2">
-              Need help? Contact <a href={`mailto:${settings.helpContactEmail}`} className="underline hover:text-slate-600">{settings.helpContactEmail}</a>
+            <p className="text-xs text-on-surface-variant/70 mt-2">
+              Need help? Contact <a href={`mailto:${settings.helpContactEmail}`} className="underline hover:text-primary">{settings.helpContactEmail}</a>
             </p>
           )}
         </div>

@@ -4,6 +4,9 @@ import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
 import { AI_MODEL_OPTIONS } from '../constants';
 
+/** Keep the base64 hero image comfortably under the server's 600k-char limit. */
+const HERO_IMAGE_MAX_BYTES = 400 * 1024;
+
 export default function SettingsView({
   canManageSettings,
   canViewSettings,
@@ -33,6 +36,7 @@ export default function SettingsView({
     suiteName: 'AI Librarian Suite',
     portalName: 'Project Archives',
     logoDataUrl: '',
+    heroImageDataUrl: '',
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
     customFooter: '',
@@ -133,7 +137,7 @@ export default function SettingsView({
 
   useEffect(() => {
     onSettingsUpdated?.(settings);
-  }, [settings.primaryColor, settings.brandDarkColor, settings.portalName, settings.suiteName, settings.logoDataUrl]);
+  }, [settings.primaryColor, settings.brandDarkColor, settings.portalName, settings.suiteName, settings.logoDataUrl, settings.heroImageDataUrl]);
 
   if (loading || loadingRole) return <div className="p-10">Loading settings...</div>;
 
@@ -191,10 +195,11 @@ export default function SettingsView({
   };
 
   return (
-    <div className="p-10 max-w-3xl mx-auto">
+    <div className="app-canvas min-h-screen p-6 sm:p-10">
+      <div className="max-w-3xl mx-auto">
       {toast && (
-        <div className="fixed top-6 right-6 z-50">
-          <div className={`px-4 py-3 rounded-lg shadow-lg border text-sm font-bold ${
+        <div className="fixed top-6 right-6 z-50 animate-fade-in-up">
+          <div className={`px-4 py-3 rounded-xl shadow-lg border text-sm font-bold ${
             toast.type === 'success'
               ? 'bg-tertiary-container text-on-tertiary-container border-tertiary-fixed/30'
               : 'bg-error-container text-error border-error/30'
@@ -204,8 +209,13 @@ export default function SettingsView({
         </div>
       )}
       <div className="flex items-center gap-3 mb-8">
-        <SettingsIcon className="w-8 h-8 text-primary" />
-        <h1 className="font-headline text-3xl font-extrabold text-on-surface tracking-tight">Global Settings</h1>
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark text-white shadow-md">
+          <SettingsIcon className="w-6 h-6" />
+        </span>
+        <div>
+          <h1 className="font-headline text-3xl font-extrabold text-on-surface tracking-tight leading-none">Global Settings</h1>
+          <p className="text-sm text-on-surface-variant mt-1">Branding, public presentation, and AI configuration.</p>
+        </div>
       </div>
 
       {readOnly && (
@@ -237,7 +247,7 @@ export default function SettingsView({
         </div>
       )}
 
-      <div className="bg-surface-container-lowest rounded-xl shadow-sm border border-outline-variant/20 overflow-hidden">
+      <div className="glass-card shadow-lg overflow-hidden">
         <div className="p-6 border-b border-outline-variant/10 bg-surface-container-low/30">
           <h2 className="text-lg font-bold flex items-center gap-2">
             <Bot className="w-5 h-5 text-primary" />
@@ -370,6 +380,51 @@ export default function SettingsView({
                     className="text-xs font-bold text-error"
                   >
                     Remove Logo
+                  </button>
+                </div>
+              )}
+            </div>
+            <div>
+              <label htmlFor="settings-hero-upload" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Public hero background image (optional)</label>
+              <input
+                id="settings-hero-upload"
+                type="file"
+                accept="image/*"
+                disabled={readOnly}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > HERO_IMAGE_MAX_BYTES) {
+                    setToast({ type: 'error', message: 'Hero image is too large. Please choose an image under 400 KB (a compressed JPG works best).' });
+                    e.target.value = '';
+                    return;
+                  }
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = typeof reader.result === 'string' ? reader.result : '';
+                    setSettings((prev) => ({ ...prev, heroImageDataUrl: result }));
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+              <p className="text-xs text-on-surface-variant mt-1">
+                Shown behind the hero on the public homepage with a brand-colored overlay for readable text. Use a wide, high-quality image (about 1600&times;900) under 400&nbsp;KB. Leave empty to use the branded gradient.
+              </p>
+              {settings.heroImageDataUrl && (
+                <div className="mt-3 space-y-2">
+                  <div className="relative overflow-hidden rounded-xl border border-outline-variant/30">
+                    <img src={settings.heroImageDataUrl} alt="Hero background preview" className="h-28 w-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-brand-dark/85 via-brand-dark/60 to-primary/50" />
+                    <div className="absolute inset-0 flex items-center px-4">
+                      <span className="font-headline text-sm font-bold text-white drop-shadow">Hero preview with overlay</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSettings((prev) => ({ ...prev, heroImageDataUrl: '' }))}
+                    disabled={readOnly}
+                    className="text-xs font-bold text-error"
+                  >
+                    Remove hero image
                   </button>
                 </div>
               )}
@@ -612,16 +667,17 @@ export default function SettingsView({
           </div>
         </div>
 
-        <div className="p-6 bg-surface-container-low border-t border-outline-variant/10 flex justify-end">
+        <div className="p-6 bg-surface-container-low/60 border-t border-outline-variant/10 flex justify-end">
           <button
             onClick={handleSave}
             disabled={saving || readOnly}
-            className="flex items-center gap-2 px-6 py-2.5 bg-primary text-white font-bold rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-70"
+            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-br from-primary to-brand-dark text-white font-bold rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-70 disabled:translate-y-0 disabled:shadow-md"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : readOnly ? 'View Only' : 'Save Settings'}
           </button>
         </div>
+      </div>
       </div>
     </div>
   );

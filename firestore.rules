@@ -189,7 +189,7 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return hasRequiredFields(['aiEnabled', 'activeProvider', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor']) &&
-             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'enabledProviders', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'googleDriveFolderBaseUrl', 'googleCalendarId', 'heroQuickLinksJson', 'heroNarrativeDraft', 'heroNarrativePublished']) &&
+             hasOnlyAllowedFields(['aiEnabled', 'activeProvider', 'enabledProviders', 'aiAutoTagEnabled', 'aiSummarizeEnabled', 'aiNextBestActionEnabled', 'aiRiskNarrativeEnabled', 'aiDuplicateDetectionEnabled', 'aiPmApproachEnabled', 'aiRequireHumanApproval', 'privacyMode', 'suiteName', 'portalName', 'logoDataUrl', 'heroImageDataUrl', 'primaryColor', 'brandDarkColor', 'customFooter', 'helpContactEmail', 'googleDriveFolderBaseUrl', 'googleCalendarId', 'heroQuickLinksJson', 'heroNarrativeDraft', 'heroNarrativePublished']) &&
              data.aiEnabled is bool &&
              data.activeProvider in ['gemini', 'openai', 'anthropic', 'gemma', 'groc', 'groq'] &&
              (!('enabledProviders' in data) || (data.enabledProviders is list && data.enabledProviders.size() > 0 && data.enabledProviders.size() <= 6)) &&
@@ -205,6 +205,7 @@ service cloud.firestore {
              isValidString(data.portalName, 1, 80) &&
              data.logoDataUrl is string &&
              data.logoDataUrl.size() <= 150000 &&
+             (!('heroImageDataUrl' in data) || (data.heroImageDataUrl is string && data.heroImageDataUrl.size() <= 600000)) &&
              data.primaryColor is string &&
              data.primaryColor.matches('^#[0-9A-Fa-f]{6}$') &&
              data.brandDarkColor is string &&

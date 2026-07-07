@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS: Settings = {
   suiteName: APP_CONFIG.appName,
   portalName: APP_CONFIG.portalName,
   logoDataUrl: '',
+  heroImageDataUrl: '',
   primaryColor: '#002045',
   brandDarkColor: '#1A365D',
   customFooter: '',
@@ -140,6 +141,8 @@ export function useBranding() {
     /** Organization or portal title shown as the primary identity. */
     portalName: settings.portalName || APP_CONFIG.portalName,
     logoUrl: settings.logoDataUrl || '',
+    /** Optional custom background image for the public hero section. */
+    heroImageUrl: settings.heroImageDataUrl || '',
   }), [settings]);
 
   return { settings, setSettings: setSettingsAndCache, branding, isBrandingHydrated };
