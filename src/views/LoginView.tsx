@@ -5,6 +5,7 @@ import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { APP_CONFIG } from '../config';
 import { useBranding } from '../hooks/useBranding';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function LoginView() {
   const navigate = useNavigate();
@@ -47,6 +48,10 @@ export default function LoginView() {
       <div className="brand-hero-grid absolute inset-0 -z-10 opacity-60" aria-hidden />
       <div className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
       <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
+
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle tone="on-dark" />
+      </div>
 
       <div className="sm:mx-auto sm:w-full sm:max-w-md animate-fade-in-up">
         <div className="flex justify-center">
