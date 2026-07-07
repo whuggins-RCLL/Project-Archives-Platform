@@ -158,22 +158,24 @@ export default function RecordView({ projects, loading: projectsLoading, project
     }
   };
 
-  const persistProjectCollaborators = async (nextCollaborators: ProjectMember[], successMessage: string) => {
-    if (!project || !isAdmin || updatingClaim) return;
+  const persistProjectCollaborators = async (nextCollaborators: ProjectMember[], successMessage: string): Promise<boolean> => {
+    if (!project || !isAdmin || updatingClaim) return false;
     setUpdatingClaim(true);
     try {
       const updated = await api.updateProject(project.id, { collaborators: nextCollaborators });
       setProject(withGovernanceDefaults(updated));
       setToast({ type: 'success', message: successMessage });
+      return true;
     } catch (error) {
       console.error(error);
-      setToast({ type: 'error', message: getErrorMessage(error, 'Unable to update project collaborators.') });
+      setToast({ type: 'error', message: getErrorMessage(error, 'Unable to update project collaborators. If this keeps happening, the updated security rules may still need to be deployed.') });
+      return false;
     } finally {
       setUpdatingClaim(false);
     }
   };
 
-  const handleAddCollaborator = () => {
+  const handleAddCollaborator = async () => {
     if (!project || !isAdmin) return;
     const claimant = claimableMembers.find((member) => member.uid === selectedCollaboratorUid);
     if (!claimant) return;
@@ -191,10 +193,13 @@ export default function RecordView({ projects, loading: projectsLoading, project
       return;
     }
 
-    void persistProjectCollaborators(
+    const saved = await persistProjectCollaborators(
       [...existing, nextCollaborator].slice(0, 50),
       `${nextCollaborator.name} added as a collaborator.`,
     );
+    if (saved) {
+      setSelectedCollaboratorUid('');
+    }
   };
 
   const handleRemoveCollaborator = (memberKey: string) => {
@@ -818,6 +823,13 @@ Description: ${project.description}`;
   }
 
   const isProjectPublic = project.isPublic !== false;
+  const usedMemberKeys = new Set<string>([
+    getProjectMemberKey(project.owner),
+    ...(project.collaborators ?? []).map((member) => getProjectMemberKey(member)),
+  ]);
+  const availableCollaboratorMembers = claimableMembers.filter(
+    (member) => !usedMemberKeys.has(getProjectMemberKey(buildProjectMemberFromClaimant(member))),
+  );
   const driveBaseUrl = settings?.googleDriveFolderBaseUrl?.trim() || INTEGRATION_CONFIG.googleDriveFolderBaseUrl;
   const calendarId = settings?.googleCalendarId?.trim() ?? '';
   const calendarDeadlineUrl = project.dueDate
@@ -967,10 +979,12 @@ Description: ${project.description}`;
                     className="min-w-[260px] bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none"
                     value={selectedCollaboratorUid}
                     onChange={(e) => setSelectedCollaboratorUid(e.target.value)}
-                    disabled={!isAdmin || claimableMembers.length === 0}
+                    disabled={!isAdmin || availableCollaboratorMembers.length === 0}
                   >
-                    <option value="">Select a collaborator…</option>
-                    {claimableMembers.map((member) => (
+                    <option value="">
+                      {availableCollaboratorMembers.length === 0 ? 'No more members to add' : 'Select a collaborator…'}
+                    </option>
+                    {availableCollaboratorMembers.map((member) => (
                       <option key={member.uid} value={member.uid}>{getClaimableMemberName(member)}</option>
                     ))}
                   </select>
