@@ -6,8 +6,9 @@ export const APP_CONFIG = {
   subHeading: "Stakeholder Portal",
   
   // Hero Section
-  heroTitle: "Advancing the Library through AI Innovation",
-  heroSubtitle: "Track our progress as we transform archival workflows, enhance search capabilities, and build the next generation of library services.",
+  heroBadge: "What We're Building",
+  heroTitle: "Building What's Next for the Law Library",
+  heroSubtitle: "Real projects, real progress. See how we're applying AI across research, teaching, and library operations at Stanford Law.",
   
   // Footer
   footerText: "AI Librarian Suite. All rights reserved.",
