@@ -1,4 +1,4 @@
-import { Project } from '../types';
+import { Project, ProjectMember } from '../types';
 
 export interface ClaimableMember {
   uid: string;
@@ -65,6 +65,15 @@ export function buildProjectOwnerFromClaimant(member: ClaimableMember): Project[
     name,
     initials: getOwnerInitials(name),
   };
+}
+
+export function buildProjectMemberFromClaimant(member: ClaimableMember): ProjectMember {
+  return buildProjectOwnerFromClaimant(member);
+}
+
+export function getProjectMemberKey(member: Pick<ProjectMember, 'uid' | 'name'>): string {
+  if (member.uid) return `uid:${member.uid}`;
+  return `name:${normalizeForCompare(member.name)}`;
 }
 
 export function buildUnclaimedProjectOwner(): Project['owner'] {
