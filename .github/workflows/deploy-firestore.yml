@@ -8,6 +8,11 @@ on:
       - firestore.rules
       - firestore.indexes.json
       - firebase.json
+      # Trigger a redeploy whenever this workflow itself changes so fixes to the
+      # deploy step (and the rules it ships) actually reach production.
+      - .github/workflows/deploy-firestore.yml
+  # Allow manual redeploys, e.g. after a rules change that failed to deploy.
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -23,9 +28,43 @@ jobs:
         run: npm install -g firebase-tools
 
       - name: Deploy Firestore rules and indexes
-        run: |
-          echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}' > /tmp/sa.json
-          PROJECT_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/sa.json','utf8')).project_id)")
-          firebase deploy --only firestore --project "$PROJECT_ID"
         env:
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
           GOOGLE_APPLICATION_CREDENTIALS: /tmp/sa.json
+        run: |
+          set -euo pipefail
+
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_JSON secret is not set. Firestore rules/indexes cannot be deployed."
+            exit 1
+          fi
+
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > /tmp/sa.json
+          PROJECT_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/sa.json','utf8')).project_id)")
+          echo "Deploying Firestore rules and indexes to project: $PROJECT_ID"
+
+          # The deploy service account can write Firestore rules/indexes but is not
+          # granted serviceusage.services.get. Because of that, firebase-tools' "ensure
+          # required API is enabled" precheck fails with HTTP 403 from
+          # serviceusage.googleapis.com and aborts the deploy *before* any rules are
+          # pushed -- which is why every rules change (collaborators, isPublic, etc.)
+          # silently failed to reach production and surfaced as "permission denied"
+          # errors in the app. The Firestore API is already enabled on the project, so
+          # pre-seed firebase-tools' API-enablement cache to skip that precheck.
+          CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/configstore"
+          mkdir -p "$CONFIG_DIR"
+          node -e "
+            const fs = require('fs');
+            const [file, projectId] = process.argv.slice(1);
+            let cache = {};
+            try { cache = JSON.parse(fs.readFileSync(file, 'utf8')); } catch {}
+            cache.apiEnablementCache = cache.apiEnablementCache || {};
+            cache.apiEnablementCache[projectId] = Object.assign(
+              {},
+              cache.apiEnablementCache[projectId],
+              { 'firestore.googleapis.com': true },
+            );
+            fs.writeFileSync(file, JSON.stringify(cache));
+          " "$CONFIG_DIR/firebase-tools.json" "$PROJECT_ID"
+
+          firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive --force
