@@ -103,7 +103,7 @@ export default function SiteTour({ isOpen, onComplete, onSkip }: SiteTourProps) 
             </button>
             <button
               onClick={handleNext}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-primary/90"
             >
               {currentStep === totalSteps - 1 ? 'Finish tour' : 'Next'}
             </button>

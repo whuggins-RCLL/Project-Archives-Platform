@@ -86,7 +86,7 @@ export default function MyProjectsView({
                       </span>
                     )}
                     {isCollaborator && (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter bg-secondary-container text-on-secondary-fixed" title="You collaborate on this project">
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter bg-secondary-container text-on-secondary-container" title="You collaborate on this project">
                         <Users className="w-2.5 h-2.5" /> Collaborator
                       </span>
                     )}

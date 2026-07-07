@@ -90,7 +90,7 @@ export default function HelpView({
           <button
             type="button"
             onClick={onOpenTour}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:bg-primary/90"
           >
             <Compass className="h-4 w-4" />
             Start site tour

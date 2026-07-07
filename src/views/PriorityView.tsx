@@ -139,7 +139,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
 
         <section>
           <div className="flex items-center gap-4 mb-6">
-            <span className="px-3 py-1 bg-secondary-container text-on-secondary-fixed-variant rounded-full text-xs font-bold tracking-widest uppercase">Ongoing Workflow</span>
+            <span className="px-3 py-1 bg-secondary-container text-on-secondary-container rounded-full text-xs font-bold tracking-widest uppercase">Ongoing Workflow</span>
             <h2 className="font-headline text-xl font-bold">Medium Priority</h2>
             <div className="flex-1 h-[1px] bg-outline-variant/20"></div>
           </div>
@@ -192,14 +192,14 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                 key={project.id}
                 onClick={() => onProjectClick(project.id)}
                 className={`p-5 rounded-xl border border-outline-variant/20 group cursor-pointer hover:border-primary/30 transition-colors ${
-                  index % 3 === 2 ? 'md:col-span-2 bg-primary text-white flex items-center justify-between relative overflow-hidden' : 'md:col-span-1 bg-surface-container-low/40'
+                  index % 3 === 2 ? 'md:col-span-2 bg-primary text-on-primary flex items-center justify-between relative overflow-hidden' : 'md:col-span-1 bg-surface-container-low/40'
                 }`}
               >
                 {index % 3 === 2 ? (
                   <>
-                    <div className="relative z-10"><h4 className="font-headline font-bold text-lg mb-1 leading-tight">{project.title}</h4><p className="text-xs text-blue-100 max-w-[200px] line-clamp-2">{project.description}</p></div>
-                    <Brain className="w-24 h-24 text-white/10 absolute -right-4 -bottom-4" />
-                    <button onClick={() => onProjectClick(project.id)} className="relative z-10 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all">View</button>
+                    <div className="relative z-10"><h4 className="font-headline font-bold text-lg mb-1 leading-tight">{project.title}</h4><p className="text-xs text-on-primary/75 max-w-[200px] line-clamp-2">{project.description}</p></div>
+                    <Brain className="w-24 h-24 text-on-primary/10 absolute -right-4 -bottom-4" />
+                    <button onClick={() => onProjectClick(project.id)} className="relative z-10 px-4 py-2 bg-on-primary/10 hover:bg-on-primary/20 rounded-lg text-xs font-bold transition-all">View</button>
                   </>
                 ) : (
                   <>

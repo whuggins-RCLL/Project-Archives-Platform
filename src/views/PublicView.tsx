@@ -101,7 +101,7 @@ export default function PublicView() {
               />
             ) : (
               <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
-                <FolderArchive className="text-white w-5 h-5" aria-hidden />
+                <FolderArchive className="text-on-primary w-5 h-5" aria-hidden />
               </div>
             )}
             <div className="min-w-0">

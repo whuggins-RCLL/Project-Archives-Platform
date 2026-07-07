@@ -2514,6 +2514,93 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
   }
 });
 
+type ProjectCollaboratorInput = { uid?: string; name: string; initials: string };
+
+/** Mirrors the client's ProjectMember shape; rejects the whole payload on any malformed entry. */
+function sanitizeProjectCollaborators(input: unknown): ProjectCollaboratorInput[] | null {
+  if (!Array.isArray(input) || input.length > 50) return null;
+  const collaborators: ProjectCollaboratorInput[] = [];
+  for (const entry of input) {
+    if (!entry || typeof entry !== "object") return null;
+    const { uid, name, initials } = entry as Record<string, unknown>;
+    if (typeof name !== "string" || name.trim().length === 0 || name.length > 100) return null;
+    if (typeof initials !== "string" || initials.trim().length === 0 || initials.length > 5) return null;
+    if (uid !== undefined && (typeof uid !== "string" || uid.length === 0 || uid.length > 128)) return null;
+    collaborators.push(typeof uid === "string" ? { uid, name, initials } : { name, initials });
+  }
+  return collaborators;
+}
+
+/** Same capability band as `firestore.rules` `canEditContent()`: role or explicit flag on mirror/token. */
+async function callerCanEditContent(user: VerifiedUser): Promise<boolean> {
+  const tokenRole = normalizeRoleFromClaims(user.claims);
+  const mirror = await getUserMirrorRoleAndPermissions(user.uid);
+  const role = selectMostPrivilegedRole(mirror.role, tokenRole);
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "collaborator" ||
+    mirror.permissions?.canEditContent === true ||
+    permissionClaimIsTrue(user.claims, "canEditContent")
+  );
+}
+
+/**
+ * Collaborator updates go through the server (Admin credentials) instead of a
+ * client-side Firestore write. Client writes of the `collaborators` field are
+ * rejected by the security rules deployed in production, which predate the
+ * field: the rules deploy workflow has never succeeded (see
+ * deploy-firestore.yml), so `hasOnlyAllowedFields` still rejects the write.
+ */
+app.post("/api/projects/:projectId/collaborators", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    if (!(await callerCanEditContent(verifiedUser))) {
+      return res.status(403).json({ error: "Content edit permission required to update collaborators" });
+    }
+
+    const projectId = req.params.projectId;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) {
+      return res.status(400).json({ error: "Invalid project id" });
+    }
+    const collaborators = sanitizeProjectCollaborators(req.body?.collaborators);
+    if (!collaborators) {
+      return res.status(400).json({ error: "collaborators must be a list of up to 50 members, each with a name and initials" });
+    }
+
+    const fields = {
+      collaborators: {
+        arrayValue: {
+          values: collaborators.map((member) => ({
+            mapValue: {
+              fields: {
+                ...(member.uid ? { uid: { stringValue: member.uid } } : {}),
+                name: { stringValue: member.name },
+                initials: { stringValue: member.initials },
+              },
+            },
+          })),
+        },
+      },
+      updatedAt: { timestampValue: new Date().toISOString() },
+    };
+    await firestoreCall(
+      `projects/${projectId}?updateMask.fieldPaths=collaborators&updateMask.fieldPaths=updatedAt&currentDocument.exists=true`,
+      { method: "PATCH", body: { fields } },
+    );
+    console.log(`[projects/collaborators] updated projectId=${projectId} actorUid=${verifiedUser.uid} count=${collaborators.length}`);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("[projects/collaborators] failed", error);
+    const message = error instanceof Error ? error.message : "Unable to update project collaborators";
+    const status = /not[ _]?found|does not exist|no document/i.test(message) ? 404 : 500;
+    return res.status(status).json({ error: message });
+  }
+});
+
 // Ensure API callers never receive the SPA shell for unknown API routes.
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });

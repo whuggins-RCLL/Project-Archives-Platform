@@ -67,4 +67,10 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(cache));
           " "$CONFIG_DIR/firebase-tools.json" "$PROJECT_ID"
 
-          firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive --force
+          # The rules compile check and release both call firebaserules.googleapis.com.
+          # A 403 there means the deploy service account lacks the Firebase Rules Admin
+          # role — nothing in this repo can work around that, so surface exact fix steps.
+          if ! firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive --force; then
+            echo "::error::Firestore deploy failed. If the error above is an HTTP 403 from firebaserules.googleapis.com, grant the deploy service account the 'Firebase Rules Admin' role (roles/firebaserules.admin) in Google Cloud IAM for project $PROJECT_ID, then re-run this workflow (Actions -> Deploy Firestore Rules & Indexes -> Run workflow). Until the rules deploy succeeds, client-side writes of newer project fields are rejected as permission-denied."
+            exit 1
+          fi

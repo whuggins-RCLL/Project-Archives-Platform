@@ -162,7 +162,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
     if (!project || !isAdmin || updatingClaim) return;
     setUpdatingClaim(true);
     try {
-      const updated = await api.updateProject(project.id, { collaborators: nextCollaborators });
+      const updated = await api.updateProjectCollaborators(project.id, nextCollaborators);
       setProject(withGovernanceDefaults(updated));
       setToast({ type: 'success', message: successMessage });
     } catch (error) {
@@ -801,7 +801,7 @@ Description: ${project.description}`;
     return (
       <div className="p-10 flex flex-col items-center justify-center h-full">
         <h2 className="text-xl font-bold text-on-surface-variant mb-4">No Project Selected</h2>
-        <button onClick={onBack} className="px-6 py-2 bg-primary text-white rounded-lg">Back to Board</button>
+        <button onClick={onBack} className="px-6 py-2 bg-primary text-on-primary rounded-lg">Back to Board</button>
       </div>
     );
   }
@@ -812,7 +812,7 @@ Description: ${project.description}`;
     return (
       <div className="p-10 flex flex-col items-center justify-center h-full">
         <h2 className="text-xl font-bold text-on-surface-variant mb-4">Project not found</h2>
-        <button onClick={onBack} className="px-6 py-2 bg-primary text-white rounded-lg">Back to Board</button>
+        <button onClick={onBack} className="px-6 py-2 bg-primary text-on-primary rounded-lg">Back to Board</button>
       </div>
     );
   }
@@ -884,7 +884,7 @@ Description: ${project.description}`;
             <button
               onClick={handleSave}
               disabled={savingProject}
-              className="px-8 py-2 bg-gradient-to-b from-primary to-primary-container text-white font-bold rounded-sm shadow-lg hover:opacity-90 transition-opacity disabled:opacity-70 disabled:cursor-not-allowed inline-flex items-center gap-2"
+              className="px-8 py-2 bg-gradient-to-br from-primary to-brand-dark text-on-primary font-bold rounded-sm shadow-lg hover:opacity-90 transition-opacity disabled:opacity-70 disabled:cursor-not-allowed inline-flex items-center gap-2"
             >
               {savingProject && <Loader2 className="w-4 h-4 animate-spin" />}
               {savingProject ? 'Saving...' : 'Save Changes'}
@@ -939,7 +939,7 @@ Description: ${project.description}`;
                   </select>
                   <button
                     type="button"
-                    className="px-4 py-2 rounded-lg bg-primary text-white font-semibold disabled:opacity-50"
+                    className="px-4 py-2 rounded-lg bg-primary text-on-primary font-semibold disabled:opacity-50"
                     disabled={!isAdmin || !selectedClaimUid || updatingClaim}
                     onClick={() => {
                       const claimant = claimableMembers.find((member) => member.uid === selectedClaimUid);
@@ -976,7 +976,7 @@ Description: ${project.description}`;
                   </select>
                   <button
                     type="button"
-                    className="px-4 py-2 rounded-lg bg-primary text-white font-semibold disabled:opacity-50"
+                    className="px-4 py-2 rounded-lg bg-primary text-on-primary font-semibold disabled:opacity-50"
                     disabled={!isAdmin || !selectedCollaboratorUid || updatingClaim}
                     onClick={handleAddCollaborator}
                   >
@@ -990,7 +990,7 @@ Description: ${project.description}`;
                     (project.collaborators ?? []).map((member) => {
                       const memberKey = getProjectMemberKey(member);
                       return (
-                        <span key={memberKey} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2">
+                        <span key={memberKey} className="bg-secondary-container text-on-secondary-container text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2">
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-fixed text-[9px] text-primary">{member.initials}</span>
                           {member.name}
                           {isAdmin && (
@@ -1022,7 +1022,7 @@ Description: ${project.description}`;
                 </div>
                 <div className="flex flex-wrap gap-2 p-3 bg-surface-container-low rounded-lg min-h-[46px]">
                   {project.tags.map(tag => (
-                    <span key={tag} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
+                    <span key={tag} className="bg-secondary-container text-on-secondary-container text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
                       {tag} {isAdmin && <X className="w-3 h-3 cursor-pointer" onClick={() => setProject({...project, tags: project.tags.filter(t => t !== tag)})} />}
                     </span>
                   ))}
@@ -1140,7 +1140,7 @@ Description: ${project.description}`;
                   {project.tags.length > 0 ? (
                     <div className="flex flex-wrap gap-2">
                       {project.tags.map((tag) => (
-                        <span key={tag} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1 rounded-full">{tag}</span>
+                        <span key={tag} className="bg-secondary-container text-on-secondary-container text-xs font-bold px-3 py-1 rounded-full">{tag}</span>
                       ))}
                     </div>
                   ) : (
@@ -1154,7 +1154,7 @@ Description: ${project.description}`;
                       {(project.milestones ?? []).map((milestone) => (
                         <li key={milestone.id} className="flex items-center gap-2 text-sm text-on-surface">
                           {milestone.status === 'Complete' ? (
-                            <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-variant shrink-0" />
+                            <CheckCircle2 className="w-4 h-4 text-tertiary shrink-0" />
                           ) : (
                             <div className="w-4 h-4 rounded-full border-2 border-on-surface-variant shrink-0"></div>
                           )}
@@ -1250,7 +1250,7 @@ Description: ${project.description}`;
                       <div className="text-xs font-bold uppercase tracking-wide">{draft.type}</div>
                       <div className="text-[11px] text-on-surface-variant">Confidence {draft.confidence}% · {new Date(draft.generatedAt).toLocaleString()}</div>
                     </div>
-                    <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${draft.status === 'approved' ? 'bg-tertiary-container text-on-tertiary-container' : draft.status === 'rejected' ? 'bg-error-container text-error' : 'bg-secondary-container text-on-secondary-fixed'}`}>
+                    <span className={`text-[11px] font-bold px-2 py-1 rounded-full ${draft.status === 'approved' ? 'bg-tertiary-container text-on-tertiary-container' : draft.status === 'rejected' ? 'bg-error-container text-error' : 'bg-secondary-container text-on-secondary-container'}`}>
                       {draft.status}
                     </span>
                   </div>
@@ -1291,7 +1291,7 @@ Description: ${project.description}`;
                         {isAdmin && (
                           <button
                             onClick={() => adoptPmApproach(draft.id)}
-                            className="text-[11px] px-2 py-1 rounded bg-tertiary-fixed-variant text-white font-bold"
+                            className="text-[11px] px-2 py-1 rounded bg-tertiary-container text-on-tertiary-container font-bold"
                           >
                             Adopt on project
                           </button>
@@ -1371,8 +1371,8 @@ Description: ${project.description}`;
 
                   {isAdmin && draft.status === 'pending' && (
                     <div className="mt-3 flex gap-2">
-                      <button onClick={() => updateDraftStatus(draft.id, 'approved')} className="text-xs px-3 py-1.5 rounded bg-tertiary-fixed-variant text-white font-bold">Approve</button>
-                      <button onClick={() => updateDraftStatus(draft.id, 'rejected')} className="text-xs px-3 py-1.5 rounded bg-error text-white font-bold">Reject</button>
+                      <button onClick={() => updateDraftStatus(draft.id, 'approved')} className="text-xs px-3 py-1.5 rounded bg-tertiary-container text-on-tertiary-container font-bold">Approve</button>
+                      <button onClick={() => updateDraftStatus(draft.id, 'rejected')} className="text-xs px-3 py-1.5 rounded bg-error text-on-error font-bold">Reject</button>
                     </div>
                   )}
                 </div>
@@ -1799,7 +1799,7 @@ Description: ${project.description}`;
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-on-surface-variant">Preservation Score</span>
-                  <span className="text-tertiary-fixed-variant font-bold">{project.preservationScore}</span>
+                  <span className="text-tertiary font-bold">{project.preservationScore}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-on-surface-variant">Status</span>
@@ -1840,7 +1840,7 @@ Description: ${project.description}`;
               </button>
               <button
                 onClick={handleDelete}
-                className="px-6 py-2 text-sm font-bold bg-error text-white rounded-lg hover:opacity-90 transition-opacity"
+                className="px-6 py-2 text-sm font-bold bg-error text-on-error rounded-lg hover:opacity-90 transition-opacity"
               >
                 Delete
               </button>
@@ -1892,7 +1892,7 @@ Description: ${project.description}`;
               </button>
               <button
                 onClick={() => handleAddAttachment(attachmentModalTarget)}
-                className="px-6 py-2 text-sm font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                className="px-6 py-2 text-sm font-bold bg-primary text-on-primary rounded-lg hover:bg-primary/90 transition-colors"
               >
                 Add Attachment
               </button>
@@ -1931,7 +1931,7 @@ Description: ${project.description}`;
               </button>
               <button
                 onClick={handleAddTag}
-                className="px-6 py-2 text-sm font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+                className="px-6 py-2 text-sm font-bold bg-primary text-on-primary rounded-lg hover:bg-primary/90 transition-colors"
               >
                 Add Tag
               </button>

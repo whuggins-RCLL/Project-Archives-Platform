@@ -181,7 +181,7 @@ export default function SettingsView({
         </div>
       )}
       <div className="flex items-center gap-3 mb-8">
-        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark text-white shadow-md">
+        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark text-on-primary shadow-md">
           <SettingsIcon className="w-6 h-6" />
         </span>
         <div>
@@ -212,7 +212,7 @@ export default function SettingsView({
           <button
             onClick={claimOwnerAccess}
             disabled={!bootstrapStatus.eligible || claimingOwner}
-            className="px-4 py-2 rounded-lg bg-primary text-white font-bold disabled:opacity-50"
+            className="px-4 py-2 rounded-lg bg-primary text-on-primary font-bold disabled:opacity-50"
           >
             {claimingOwner ? 'Claiming owner access...' : bootstrapStatus.eligible ? 'Claim owner access' : 'Owner claim unavailable'}
           </button>
@@ -653,7 +653,7 @@ export default function SettingsView({
           <button
             onClick={handleSave}
             disabled={saving || readOnly}
-            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-br from-primary to-brand-dark text-white font-bold rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-70 disabled:translate-y-0 disabled:shadow-md"
+            className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-br from-primary to-brand-dark text-on-primary font-bold rounded-xl shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-70 disabled:translate-y-0 disabled:shadow-md"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Saving...' : readOnly ? 'View Only' : 'Save Settings'}

@@ -11,7 +11,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const baseStyles = 'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0';
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-gradient-to-br from-primary to-brand-dark text-white shadow-sm hover:shadow-md hover:-translate-y-0.5',
+  primary: 'bg-gradient-to-br from-primary to-brand-dark text-on-primary shadow-sm hover:shadow-md hover:-translate-y-0.5',
   secondary: 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high',
   outline: 'bg-surface-container-lowest/80 text-primary border border-outline-variant/30 hover:bg-surface-container-low hover:border-primary/40',
 };

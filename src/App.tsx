@@ -364,7 +364,7 @@ function InternalApp() {
             placeholder="Password"
           />
           {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
-          <button onClick={() => void handleElevatedLogin()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-white py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <button onClick={() => void handleElevatedLogin()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-on-primary py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
             Unlock Admin Access
           </button>
         </div>
@@ -400,7 +400,7 @@ function InternalApp() {
             placeholder="Confirm new password"
           />
           {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
-          <button onClick={() => void handleChangeElevatedPassword()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-white py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
+          <button onClick={() => void handleChangeElevatedPassword()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-on-primary py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
             Save New Password
           </button>
         </div>
@@ -507,7 +507,7 @@ function InternalApp() {
               <button 
                 onClick={handleNewProject}
                 disabled={!canEditContent || !newProjectTitle.trim()}
-                className="px-6 py-2 text-sm font-bold bg-gradient-to-br from-primary to-brand-dark text-white rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
+                className="px-6 py-2 text-sm font-bold bg-gradient-to-br from-primary to-brand-dark text-on-primary rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
               >
                 Create Project
               </button>

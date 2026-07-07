@@ -214,7 +214,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
         <div className={`${compactRevealClasses} ${isCompactBoard ? 'group-hover:mb-2 group-focus:mb-2' : 'mb-4'}`}>
           <div className={`flex flex-wrap ${isCompactBoard ? 'gap-1.5' : 'gap-2'}`}>
             {project.tags.map(tag => (
-              <span key={tag} className="bg-secondary-container text-on-secondary-fixed text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">{tag}</span>
+              <span key={tag} className="bg-secondary-container text-on-secondary-container text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">{tag}</span>
             ))}
             {!isCompactBoard && (
               <span className="bg-surface-container text-on-surface-variant text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-tighter">{project.priority} Priority</span>

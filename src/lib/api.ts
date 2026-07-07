@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
+import { AdminAuditEntry, ManagedUser, Project, ProjectMember, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
 import { buildPortfolioMetrics } from './portfolioAnalytics';
 
 enum OperationType {
@@ -427,6 +427,32 @@ export const api = {
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `projects/${id}`);
     }
+  },
+
+  /**
+   * Collaborators are saved through the server API rather than a direct
+   * Firestore write: the security rules deployed in production predate the
+   * `collaborators` field and reject the whole update as permission-denied.
+   * The server writes with Admin credentials, so it works regardless of the
+   * deployed rules revision.
+   */
+  updateProjectCollaborators: async (id: string, collaborators: ProjectMember[]): Promise<Project> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to update collaborators.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/projects/${encodeURIComponent(id)}/collaborators`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ collaborators }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update project collaborators.');
+
+    const updatedDoc = await getDoc(doc(db, 'projects', id));
+    return { id: updatedDoc.id, ...updatedDoc.data() } as Project;
   },
 
   deleteProject: async (id: string): Promise<void> => {

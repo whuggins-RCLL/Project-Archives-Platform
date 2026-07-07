@@ -67,7 +67,7 @@ export default function Sidebar({
             </div>
           ) : (
             <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
-              <FolderArchive className="text-white w-7 h-7" aria-hidden />
+              <FolderArchive className="text-on-primary w-7 h-7" aria-hidden />
             </div>
           )}
           <div className="min-w-0 pt-0.5">
