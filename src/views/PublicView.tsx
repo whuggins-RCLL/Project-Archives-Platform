@@ -79,6 +79,11 @@ export default function PublicView() {
   const publicProjects = useMemo(() => projects.filter((project) => project.isPublic !== false), [projects]);
   const visibleProjects = useMemo(() => applyProjectFilters(publicProjects, filterQuery), [publicProjects, filterQuery]);
   const filterOptions = useMemo(() => getFilterOptions(publicProjects), [publicProjects]);
+  const heroQuickLinks = useMemo(
+    () => (settings.heroQuickLinks ?? []).filter((link) => link.label.trim() && link.url.trim()),
+    [settings.heroQuickLinks],
+  );
+  const publishedNarrative = (settings.heroNarrativePublished ?? '').trim();
 
   return (
     <div className="min-h-screen bg-slate-50 font-body">
@@ -119,17 +124,24 @@ export default function PublicView() {
             <p className="text-lg sm:text-xl text-blue-100 mb-8 max-w-2xl leading-relaxed">
               {APP_CONFIG.heroSubtitle}
             </p>
-            {settings.heroNarrativePublished && (
+            {publishedNarrative && (
               <div className="mb-8 rounded-xl border border-white/20 bg-white/10 p-5 text-blue-50 leading-relaxed">
                 <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] font-semibold text-blue-200"><Sparkles className="w-4 h-4" /> Project Story</div>
-                <p className="text-base sm:text-lg">{settings.heroNarrativePublished}</p>
+                <p className="text-base sm:text-lg whitespace-pre-line">{publishedNarrative}</p>
               </div>
             )}
-            {settings.heroQuickLinks && settings.heroQuickLinks.length > 0 && (
+            {heroQuickLinks.length > 0 && (
               <div className="mb-8 flex flex-wrap gap-3">
-                {settings.heroQuickLinks.map((link) => (
-                  <a key={link.id} href={link.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-full border border-white/35 bg-white px-5 py-2.5 text-sm font-semibold text-brand-dark shadow-sm transition hover:-translate-y-0.5 hover:bg-blue-50">
-                    {link.label} <ArrowRight className="w-4 h-4" />
+                {heroQuickLinks.map((link) => (
+                  <a
+                    key={link.id}
+                    href={link.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-black/25 ring-1 ring-white/15 transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  >
+                    {link.label}
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
                   </a>
                 ))}
               </div>
