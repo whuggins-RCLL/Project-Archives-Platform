@@ -8,12 +8,12 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
 }
 
-const baseStyles = 'inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
+const baseStyles = 'inline-flex items-center justify-center gap-2 rounded-lg font-semibold transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0';
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-primary text-white hover:bg-primary/90',
+  primary: 'bg-gradient-to-br from-primary to-brand-dark text-white shadow-sm hover:shadow-md hover:-translate-y-0.5',
   secondary: 'bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high',
-  outline: 'bg-surface-container-lowest text-primary border border-outline-variant/30 hover:bg-surface-container-low',
+  outline: 'bg-surface-container-lowest/80 text-primary border border-outline-variant/30 hover:bg-surface-container-low hover:border-primary/40',
 };
 
 const sizeStyles: Record<ButtonSize, string> = {

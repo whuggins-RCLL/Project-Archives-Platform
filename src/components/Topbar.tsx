@@ -36,7 +36,7 @@ export default function Topbar({
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-outline-variant/20 bg-surface-container-lowest/90 px-4 pl-16 shadow-[0_8px_32px_rgba(25,28,30,0.05)] backdrop-blur-xl md:px-10 lg:pl-10">
+    <header className="glass-nav sticky top-0 z-30 flex h-16 w-full items-center justify-between px-4 pl-16 shadow-[0_8px_32px_rgba(25,28,30,0.05)] md:px-10 lg:pl-10">
       <div className="min-w-0">
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-on-surface-variant">Workspace</p>
         <p className="truncate font-headline text-sm font-bold text-brand-dark md:text-base">

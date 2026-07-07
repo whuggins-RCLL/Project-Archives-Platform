@@ -8,11 +8,36 @@
 :root {
   --brand-primary: #002045; /* Main primary color */
   --brand-dark: #1A365D; /* Darker shade for hero backgrounds and dark text */
-  --app-radius: 14px;
+  --app-radius: 16px;
+
+  /* Layered, soft "expensive" shadows */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.04), 0 8px 20px rgba(15, 23, 42, 0.08);
+  --shadow-lg: 0 4px 8px rgba(15, 23, 42, 0.04), 0 18px 40px rgba(15, 23, 42, 0.12);
+  --shadow-xl: 0 8px 16px rgba(15, 23, 42, 0.06), 0 30px 70px rgba(15, 23, 42, 0.18);
+
+  /* Glass surface tokens (light) */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-bg-strong: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(255, 255, 255, 0.6);
+  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    /* Glass surface tokens (dark) */
+    --glass-bg: rgba(20, 24, 31, 0.62);
+    --glass-bg-strong: rgba(20, 24, 31, 0.8);
+    --glass-border: rgba(255, 255, 255, 0.09);
+    --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 20px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.55);
+    --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.45), 0 30px 70px rgba(0, 0, 0, 0.6);
+
     --color-primary: #aac7ff;
     --color-brand-dark: #d6e3ff;
 
@@ -104,6 +129,7 @@ body {
   color: var(--color-on-surface);
   font-feature-settings: "cv11", "ss01";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
@@ -115,13 +141,139 @@ button,
 input,
 textarea,
 select {
-  transition: all 140ms ease;
+  transition: all 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Refined focus ring for a polished, accessible feel */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--color-surface),
+    0 0 0 4px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+  border-radius: 8px;
 }
 
 .modern-card {
   border-radius: var(--app-radius);
   border: 1px solid color-mix(in srgb, var(--color-outline-variant) 45%, transparent);
-  box-shadow: 0 4px 20px color-mix(in srgb, var(--color-brand-dark) 10%, transparent);
+  box-shadow: var(--shadow-md);
+}
+
+/* ---------- Apple-style glass system ---------- */
+.glass-panel {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Frosted card: soft translucent surface with a hairline highlight border. */
+.glass-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  border-radius: var(--app-radius);
+}
+
+/* Sticky navigation / bars sitting on top of content. */
+.glass-nav {
+  background: var(--glass-bg-strong);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border-bottom: 1px solid var(--glass-border);
+}
+
+/* Glass elements placed on top of dark/photographic hero backgrounds. */
+.glass-on-dark {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* Subtle top sheen for a premium, glossy edge on glass surfaces. */
+.glass-sheen {
+  position: relative;
+}
+.glass-sheen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.5),
+    rgba(255, 255, 255, 0) 40%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ---------- Brand hero backdrops ---------- */
+/* Rich, layered mesh gradient built from the configurable brand colors. */
+.brand-hero {
+  background-color: var(--brand-dark);
+  background-image:
+    radial-gradient(60% 90% at 12% 8%, color-mix(in srgb, var(--brand-primary) 90%, white 4%) 0%, transparent 60%),
+    radial-gradient(55% 80% at 88% 18%, color-mix(in srgb, var(--brand-primary) 70%, black 12%) 0%, transparent 55%),
+    radial-gradient(70% 90% at 78% 92%, color-mix(in srgb, var(--brand-dark) 92%, white 10%) 0%, transparent 60%),
+    linear-gradient(135deg, var(--brand-dark) 0%, color-mix(in srgb, var(--brand-primary) 55%, var(--brand-dark)) 100%);
+}
+
+/* Thin luminous grid overlay for depth on hero sections. */
+.brand-hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(closest-side at 30% 30%, #000 0%, transparent 85%);
+  mask-image: radial-gradient(closest-side at 30% 30%, #000 0%, transparent 85%);
+}
+
+/* Soft app canvas: gentle brand-tinted radial washes behind content. */
+.app-canvas {
+  background-color: var(--color-surface);
+  background-image:
+    radial-gradient(60% 55% at 100% 0%, color-mix(in srgb, var(--brand-primary) 8%, transparent) 0%, transparent 60%),
+    radial-gradient(50% 45% at 0% 100%, color-mix(in srgb, var(--brand-primary) 6%, transparent) 0%, transparent 55%);
+}
+
+/* Elevated interactive card lift */
+.lift {
+  transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.lift:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ---------- Entrance animations ---------- */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-fade-in-up {
+  animation: fade-in-up 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 0.5s ease both;
 }
 
 /* Custom scrollbar for kanban */

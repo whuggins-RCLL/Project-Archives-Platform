@@ -337,24 +337,30 @@ function InternalApp() {
   };
 
   if (checkingElevated || !isBrandingHydrated) {
-    return <div className="min-h-screen flex items-center justify-center">Loading dashboard...</div>;
+    return (
+      <div className="app-canvas min-h-screen flex flex-col items-center justify-center gap-4 text-on-surface-variant">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-outline-variant/30 border-t-primary" />
+        <p className="text-sm font-medium">Loading dashboard…</p>
+      </div>
+    );
   }
 
   if (elevatedStatus.required && !elevatedAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
-        <div className="w-full max-w-md rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 space-y-4">
-          <h2 className="text-xl font-bold">Admin / Owner Access Password</h2>
-          <p className="text-sm text-on-surface-variant">Enter your elevated access password.</p>
+      <div className="app-canvas min-h-screen flex items-center justify-center p-6">
+        <div className="glass-card w-full max-w-md p-8 space-y-4 shadow-lg animate-fade-in-up">
+          <h2 className="font-headline text-2xl font-bold text-on-surface">Admin / Owner Access</h2>
+          <p className="text-sm text-on-surface-variant">Enter your elevated access password to continue.</p>
           <input
             type="password"
             value={elevatedPassword}
             onChange={(e) => setElevatedPassword(e.target.value)}
-            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            onKeyDown={(e) => e.key === 'Enter' && void handleElevatedLogin()}
+            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="Password"
           />
           {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
-          <button onClick={() => void handleElevatedLogin()} className="w-full rounded-lg bg-primary text-white py-2 font-bold">
+          <button onClick={() => void handleElevatedLogin()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-white py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
             Unlock Admin Access
           </button>
         </div>
@@ -364,33 +370,33 @@ function InternalApp() {
 
   if (elevatedStatus.required && elevatedStatus.needsChange) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-surface p-6">
-        <div className="w-full max-w-md rounded-xl border border-outline-variant/20 bg-surface-container-lowest p-6 space-y-3">
-          <h2 className="text-xl font-bold">Change Default Password</h2>
+      <div className="app-canvas min-h-screen flex items-center justify-center p-6">
+        <div className="glass-card w-full max-w-md p-8 space-y-3 shadow-lg animate-fade-in-up">
+          <h2 className="font-headline text-2xl font-bold text-on-surface">Change Default Password</h2>
           <p className="text-sm text-on-surface-variant">You must change your initial elevated password before continuing.</p>
           <input
             type="password"
             value={elevatedPassword}
             onChange={(e) => setElevatedPassword(e.target.value)}
-            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="Current password"
           />
           <input
             type="password"
             value={newElevatedPassword}
             onChange={(e) => setNewElevatedPassword(e.target.value)}
-            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="New password"
           />
           <input
             type="password"
             value={confirmElevatedPassword}
             onChange={(e) => setConfirmElevatedPassword(e.target.value)}
-            className="w-full border border-outline-variant/30 rounded-lg p-2"
+            className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="Confirm new password"
           />
           {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
-          <button onClick={() => void handleChangeElevatedPassword()} className="w-full rounded-lg bg-primary text-white py-2 font-bold">
+          <button onClick={() => void handleChangeElevatedPassword()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-white py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
             Save New Password
           </button>
         </div>
@@ -399,7 +405,7 @@ function InternalApp() {
   }
 
   return (
-    <div className="flex min-h-screen bg-surface text-on-surface font-body">
+    <div className="flex min-h-screen app-canvas text-on-surface font-body">
       <Sidebar
         currentView={currentView}
         setCurrentView={setCurrentView}
@@ -416,7 +422,7 @@ function InternalApp() {
       <div className="flex-1 lg:ml-64 flex flex-col">
         <button
           onClick={() => setIsSidebarMobileOpen((prev) => !prev)}
-          className="lg:hidden fixed top-4 left-4 z-[60] p-2 rounded-md bg-surface-container-low border border-outline-variant/30 text-on-surface"
+          className="lg:hidden fixed top-4 left-4 z-[60] p-2 rounded-xl glass-panel border border-outline-variant/25 text-on-surface shadow-sm"
           aria-label={isSidebarMobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
         >
           {isSidebarMobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -441,14 +447,14 @@ function InternalApp() {
 
       {/* Global New Project Modal */}
       {isNewProjectModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-brand-dark/40 p-4 backdrop-blur-md animate-fade-in">
           <div
             ref={modalRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby={modalTitleId}
             tabIndex={-1}
-            className="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-2xl overflow-hidden"
+            className="glass-panel border border-outline-variant/20 w-full max-w-md rounded-2xl shadow-2xl overflow-hidden animate-fade-in-up"
           >
             <div className="flex justify-between items-center p-6 border-b border-outline-variant/20">
               <h3 id={modalTitleId} className="font-headline text-xl font-bold text-on-surface">Create New Project</h3>
@@ -497,7 +503,7 @@ function InternalApp() {
               <button 
                 onClick={handleNewProject}
                 disabled={!canEditContent || !newProjectTitle.trim()}
-                className="px-6 py-2 text-sm font-bold bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-6 py-2 text-sm font-bold bg-gradient-to-br from-primary to-brand-dark text-white rounded-lg shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:translate-y-0 disabled:shadow-none"
               >
                 Create Project
               </button>

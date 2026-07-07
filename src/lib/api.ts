@@ -82,6 +82,7 @@ export interface Settings {
   suiteName: string;
   portalName: string;
   logoDataUrl?: string;
+  heroImageDataUrl?: string;
   primaryColor: string;
   brandDarkColor: string;
   customFooter?: string;
@@ -275,6 +276,7 @@ export const api = {
           suiteName: data.suiteName ?? 'AI Librarian Suite',
           portalName: data.portalName ?? 'Project Archives',
           logoDataUrl: data.logoDataUrl ?? '',
+          heroImageDataUrl: data.heroImageDataUrl ?? '',
           primaryColor: data.primaryColor ?? '#002045',
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
           customFooter: data.customFooter ?? '',
@@ -301,6 +303,7 @@ export const api = {
         suiteName: 'AI Librarian Suite',
         portalName: 'Project Archives',
         logoDataUrl: '',
+        heroImageDataUrl: '',
         primaryColor: '#002045',
         brandDarkColor: '#1A365D',
         customFooter: '',

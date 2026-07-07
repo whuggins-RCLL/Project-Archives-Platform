@@ -42,44 +42,49 @@ export default function LoginView() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-body">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+    <div className="relative min-h-screen flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-body text-white overflow-hidden">
+      <div className="brand-hero absolute inset-0 -z-20" aria-hidden />
+      <div className="brand-hero-grid absolute inset-0 -z-10 opacity-60" aria-hidden />
+      <div className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
+      <div className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
+
+      <div className="sm:mx-auto sm:w-full sm:max-w-md animate-fade-in-up">
         <div className="flex justify-center">
           {branding.logoUrl ? (
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-white shadow-lg">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/30 bg-white shadow-xl">
               <img src={branding.logoUrl} alt="" className="max-h-14 max-w-14 object-contain" />
             </div>
           ) : (
-            <div className="w-14 h-14 bg-primary rounded-2xl flex items-center justify-center shadow-lg">
-              <FolderArchive className="text-white w-7 h-7" aria-hidden />
+            <div className="w-16 h-16 glass-on-dark glass-sheen rounded-2xl flex items-center justify-center shadow-xl">
+              <FolderArchive className="text-white w-8 h-8" aria-hidden />
             </div>
           )}
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold text-slate-900 font-headline">
+        <h2 className="mt-6 text-center text-3xl font-extrabold font-headline tracking-tight">
           Team Login
         </h2>
-        <p className="mt-2 text-center text-sm text-slate-600">
+        <p className="mt-2 text-center text-sm text-white/70">
           Sign in to the {branding.suiteName || APP_CONFIG.appName} workspace for {branding.portalName || APP_CONFIG.portalName}
         </p>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10 border border-slate-200 text-center">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md animate-fade-in-up" style={{ animationDelay: '120ms' }}>
+        <div className="glass-on-dark glass-sheen py-8 px-6 sm:px-10 rounded-2xl shadow-2xl text-center">
           <button
             onClick={handleLogin}
             disabled={isLoading}
-            className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-slate-300 rounded-md shadow-sm text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors disabled:opacity-50"
+            className="w-full flex justify-center items-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-brand-dark bg-white shadow-lg transition-all hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-60 disabled:translate-y-0"
           >
             <LogIn className="w-5 h-5" />
             {isLoading ? 'Signing in...' : 'Sign in with Google'}
           </button>
-          
-          {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
-          
+
+          {error && <p className="mt-4 text-sm text-red-200">{error}</p>}
+
           <div className="mt-6 text-center">
-            <button 
+            <button
               onClick={() => navigate('/')}
-              className="text-sm text-slate-500 hover:text-primary transition-colors"
+              className="text-sm text-white/70 hover:text-white transition-colors"
             >
               &larr; Back to Public Portal
             </button>

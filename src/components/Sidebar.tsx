@@ -45,7 +45,7 @@ export default function Sidebar({
         className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200 lg:hidden ${isMobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={onMobileClose}
       />
-      <aside className={`h-screen w-64 fixed left-0 top-0 z-50 bg-surface-container-lowest flex flex-col py-8 px-6 space-y-4 transform transition-transform duration-200 lg:z-40 lg:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`h-screen w-64 fixed left-0 top-0 z-50 glass-panel border-r border-outline-variant/15 flex flex-col py-8 px-6 space-y-4 transform transition-transform duration-200 lg:z-40 lg:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <button
         onClick={onMobileClose}
         className="lg:hidden absolute top-4 right-4 text-on-surface-variant hover:text-brand-dark transition-colors"
@@ -64,7 +64,7 @@ export default function Sidebar({
               />
             </div>
           ) : (
-            <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-xl bg-primary-container shadow-sm">
+            <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
               <FolderArchive className="text-white w-7 h-7" aria-hidden />
             </div>
           )}
@@ -89,13 +89,16 @@ export default function Sidebar({
                 setCurrentView(item.id);
                 onMobileClose();
               }}
-              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${
+              className={`group relative w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
                 isActive
-                  ? 'bg-surface-container-low text-brand-dark shadow-sm'
-                  : 'text-on-surface-variant hover:text-brand-dark hover:bg-surface-container-low'
+                  ? 'bg-surface-container-lowest text-brand-dark shadow-sm ring-1 ring-outline-variant/20'
+                  : 'text-on-surface-variant hover:text-brand-dark hover:bg-surface-container-low/70'
               }`}
             >
-              <item.icon className={`w-5 h-5 ${isActive ? '' : 'group-hover:translate-x-1 transition-transform'}`} />
+              {isActive && (
+                <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-primary to-brand-dark" aria-hidden />
+              )}
+              <item.icon className={`w-5 h-5 transition-colors ${isActive ? 'text-primary' : ''}`} />
               <span className="font-inter text-sm font-medium tracking-wide">{item.label}</span>
             </button>
           );

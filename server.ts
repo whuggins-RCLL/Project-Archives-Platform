@@ -94,8 +94,10 @@ const ADMIN_SETTINGS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_SETTINGS_RATE_LIMIT_MAX_REQUESTS = 15;
 const ADMIN_OPERATIONS_RATE_LIMIT_WINDOW_MS = 60_000;
 const ADMIN_OPERATIONS_RATE_LIMIT_MAX_REQUESTS = 6;
-/** Must fit a max-size logoDataUrl (~150k) plus other fields; was 8kb and caused 500s on save (entity too large). */
-const ADMIN_SETTINGS_MAX_BODY_BYTES = 320 * 1024;
+/** Must fit a max-size logoDataUrl (~150k) plus an optional hero image (~600k) and other fields; was 8kb and caused 500s on save (entity too large). */
+const ADMIN_SETTINGS_MAX_BODY_BYTES = 900 * 1024;
+/** Max length for the optional public hero background image data URL. Kept well under Firestore's 1MB document limit alongside the logo. */
+const HERO_IMAGE_MAX_LENGTH = 600_000;
 const ADMIN_OPERATIONS_MAX_BODY_BYTES = 2 * 1024;
 const ADMIN_SETTINGS_TIMEOUT_MS = 20_000;
 const ADMIN_OPERATIONS_TIMEOUT_MS = 15_000;
@@ -131,6 +133,7 @@ type AppSettings = {
   suiteName: string;
   portalName: string;
   logoDataUrl: string;
+  heroImageDataUrl?: string;
   primaryColor: string;
   brandDarkColor: string;
   customFooter?: string;
@@ -891,6 +894,7 @@ function validateSettings(input: unknown): AppSettings | null {
     source.portalName.length > 80 ||
     typeof source.logoDataUrl !== "string" ||
     source.logoDataUrl.length > 150_000 ||
+    (source.heroImageDataUrl !== undefined && (typeof source.heroImageDataUrl !== "string" || source.heroImageDataUrl.length > HERO_IMAGE_MAX_LENGTH)) ||
     typeof source.primaryColor !== "string" ||
     !source.primaryColor.match(/^#[0-9A-Fa-f]{6}$/) ||
     typeof source.brandDarkColor !== "string" ||
@@ -938,6 +942,7 @@ function validateSettings(input: unknown): AppSettings | null {
     suiteName: source.suiteName.trim(),
     portalName: source.portalName.trim(),
     logoDataUrl: source.logoDataUrl,
+    heroImageDataUrl: typeof source.heroImageDataUrl === "string" ? source.heroImageDataUrl : undefined,
     primaryColor: source.primaryColor,
     brandDarkColor: source.brandDarkColor,
     customFooter: typeof source.customFooter === "string" ? source.customFooter.trim() : undefined,
@@ -966,6 +971,7 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     suiteName: { stringValue: settings.suiteName },
     portalName: { stringValue: settings.portalName },
     logoDataUrl: { stringValue: settings.logoDataUrl },
+    ...(settings.heroImageDataUrl !== undefined && { heroImageDataUrl: { stringValue: settings.heroImageDataUrl } }),
     primaryColor: { stringValue: settings.primaryColor },
     brandDarkColor: { stringValue: settings.brandDarkColor },
     ...(settings.customFooter !== undefined && { customFooter: { stringValue: settings.customFooter } }),
@@ -999,6 +1005,7 @@ function fromFirestoreFields(
     suiteName: fields.suiteName?.stringValue,
     portalName: fields.portalName?.stringValue,
     logoDataUrl: fields.logoDataUrl?.stringValue,
+    heroImageDataUrl: fields.heroImageDataUrl?.stringValue,
     primaryColor: fields.primaryColor?.stringValue,
     brandDarkColor: fields.brandDarkColor?.stringValue,
     customFooter: fields.customFooter?.stringValue,
