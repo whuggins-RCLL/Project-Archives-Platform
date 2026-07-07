@@ -3,7 +3,7 @@ import type { Settings } from './api';
 export const COMMENT_REACTION_EMOJIS = ['👍', '🎉', '✅'] as const;
 
 export const AI_PROVIDER_OPTIONS: Array<{ id: Settings['activeProvider']; name: string; desc: string }> = [
-  { id: 'gemini', name: 'Google Gemini', desc: 'gemini-2.5-pro' },
+  { id: 'gemini', name: 'Google Gemini', desc: 'gemini-2.5-flash' },
   { id: 'openai', name: 'OpenAI', desc: 'gpt-4o' },
   { id: 'anthropic', name: 'Anthropic Claude', desc: 'claude-3-7-sonnet' },
   { id: 'gemma', name: 'Gemma (compat)', desc: 'Any OpenAI-compatible base URL' },

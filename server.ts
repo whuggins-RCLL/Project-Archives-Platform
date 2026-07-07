@@ -434,11 +434,98 @@ async function safeJson(response: Response): Promise<unknown> {
   }
 }
 
-function sanitizeServerError(error: unknown): string {
-  console.error("AI Generation Error", {
-    message: error instanceof Error ? error.message : "Unknown server error",
-  });
-  return "Unable to generate AI content right now. Please try again later.";
+/**
+ * Attempts to extract the upstream HTTP status code from a provider SDK error.
+ * OpenAI/Anthropic SDK errors expose a numeric `status`; @google/genai serializes
+ * the upstream error as JSON in the message (e.g. {"error":{"code":429,...}}).
+ */
+function extractProviderStatus(error: unknown): number | null {
+  if (error && typeof error === "object") {
+    const maybe = error as { status?: unknown; statusCode?: unknown };
+    if (typeof maybe.status === "number" && Number.isFinite(maybe.status)) {
+      return maybe.status;
+    }
+    if (typeof maybe.statusCode === "number" && Number.isFinite(maybe.statusCode)) {
+      return maybe.statusCode;
+    }
+  }
+
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (!message) return null;
+
+  try {
+    const parsed = JSON.parse(message) as { error?: { code?: unknown } };
+    const code = parsed?.error?.code;
+    if (typeof code === "number" && Number.isFinite(code)) {
+      return code;
+    }
+  } catch {
+    // message is not JSON; fall through to regex matching
+  }
+
+  const codeMatch = message.match(/"code"\s*:\s*(\d{3})/);
+  if (codeMatch) return Number(codeMatch[1]);
+
+  const statusMatch = message.match(/\b(4\d{2}|5\d{2})\b/);
+  if (statusMatch) return Number(statusMatch[1]);
+
+  return null;
+}
+
+/**
+ * Maps a provider/generation error to a client-safe HTTP status and message.
+ * Detailed error information stays in server logs; the client receives an
+ * actionable but non-sensitive message so admins can self-diagnose.
+ */
+function classifyAiError(error: unknown): { status: number; message: string } {
+  const rawMessage = error instanceof Error ? error.message : "Unknown server error";
+  console.error("AI Generation Error", { message: rawMessage });
+
+  if (error instanceof Error && /is not configured/i.test(error.message)) {
+    return {
+      status: 503,
+      message:
+        "The selected AI provider is not configured on the server. Add its API key or choose a different provider in Settings.",
+    };
+  }
+
+  const providerStatus = extractProviderStatus(error);
+
+  if (providerStatus === 429) {
+    return {
+      status: 429,
+      message:
+        "The AI provider is rate-limited or the quota for the selected model has been exhausted. Wait a moment and retry, or switch the AI model/provider in Settings.",
+    };
+  }
+
+  if (providerStatus === 401 || providerStatus === 403) {
+    return {
+      status: 502,
+      message:
+        "The AI provider rejected the request due to an authentication or permission problem. Check the provider's API key in Settings.",
+    };
+  }
+
+  if (providerStatus === 400 || providerStatus === 404) {
+    return {
+      status: 502,
+      message:
+        "The AI provider rejected the request. The selected model may be unavailable for your account. Try a different model in Settings.",
+    };
+  }
+
+  if (typeof providerStatus === "number" && providerStatus >= 500) {
+    return {
+      status: 502,
+      message: "The AI provider is currently unavailable. Please try again in a few moments.",
+    };
+  }
+
+  return {
+    status: 500,
+    message: "Unable to generate AI content right now. Please try again later.",
+  };
 }
 
 function getAllowedCorsOrigins(): string[] {
@@ -1962,8 +2049,8 @@ app.post("/api/ai/generate", async (req, res) => {
       message: error instanceof Error ? error.message : "Unknown server error",
       ip: clientIp,
     }, "error");
-    const message = sanitizeServerError(error);
-    res.status(500).json({ error: message });
+    const { status, message } = classifyAiError(error);
+    res.status(status).json({ error: message });
   }
 });
 
