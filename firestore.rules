@@ -40,14 +40,26 @@ service cloud.firestore {
         : null;
     }
 
+    function roleRank(candidate) {
+      return candidate == 'owner' ? 4
+        : (candidate == 'admin' ? 3
+        : (candidate == 'collaborator' ? 2
+        : (candidate == 'viewer' ? 1 : 0)));
+    }
+
+    // Resolve the effective role as the MOST-PRIVILEGED of the mirror-doc role and
+    // the token-claim role. This matches the server (selectMostPrivilegedRole) and the
+    // client (useUserRole), which both take the max of mirror/token. Honoring only the
+    // mirror role here caused authorized users (token role owner/admin/collaborator but a
+    // stale/auto-created viewer mirror) to be denied project writes even though the UI and
+    // server treated them as editors. Disabled accounts are still hard-blocked via
+    // isActiveUser(), and role downgrades revoke refresh tokens so a demoted token cannot
+    // linger. `let` bindings keep the underlying document reads to a single lookup.
     function role() {
-      return mirroredRole() in ['owner', 'admin', 'collaborator', 'viewer']
-        ? mirroredRole()
-        : (
-            tokenRole() in ['owner', 'admin', 'collaborator', 'viewer']
-              ? tokenRole()
-              : (hasLegacyAdminClaim() ? 'admin' : 'viewer')
-          );
+      let mirrored = mirroredRole();
+      let claimed = tokenRole();
+      let best = roleRank(mirrored) >= roleRank(claimed) ? mirrored : claimed;
+      return roleRank(best) > 0 ? best : (hasLegacyAdminClaim() ? 'admin' : 'viewer');
     }
 
     // True only when the mirror doc explicitly grants the given permission flag.
