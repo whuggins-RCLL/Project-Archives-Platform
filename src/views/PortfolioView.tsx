@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { Database, AlertTriangle, PieChart, TrendingUp, BookOpen } from 'lucide-react';
+import { Database, AlertTriangle, PieChart, TrendingUp, BookOpen, Globe, Lock } from 'lucide-react';
 import { buildPortfolioMetrics } from '../lib/portfolioAnalytics';
 import { api } from '../lib/api';
 import { OperationsDigestReport, Project } from '../types';
@@ -343,6 +343,7 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
             <thead>
               <tr className="bg-surface-container-low/50">
                 <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Project Name</th>
+                <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Visibility</th>
                 <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Risk Factor</th>
                 <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Completion</th>
                 <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest text-right">Preservation Score</th>
@@ -361,6 +362,17 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
                         <div className="text-[10px] text-on-surface-variant">Archivist: {project.owner.name}</div>
                       </div>
                     </div>
+                  </td>
+                  <td className="p-4">
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter ${
+                        project.isPublic === false ? 'bg-surface-container-high text-on-surface-variant' : 'bg-tertiary-container text-on-tertiary-container'
+                      }`}
+                      title={project.isPublic === false ? 'Private — hidden from the public dashboard' : 'Public — shown on the public dashboard'}
+                    >
+                      {project.isPublic === false ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
+                      {project.isPublic === false ? 'Private' : 'Public'}
+                    </span>
                   </td>
                   <td className="p-4">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-tighter ${

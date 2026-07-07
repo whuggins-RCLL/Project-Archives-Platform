@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Filter, Users, Plus, MoreHorizontal, CheckCircle2, MoveDown, Minimize2, Maximize2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Filter, Users, Plus, MoreHorizontal, CheckCircle2, MoveDown, Minimize2, Maximize2, Globe, Lock } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project, ProjectStatus } from '../types';
@@ -196,6 +196,13 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded">{project.code}</span>
             <span className="bg-surface-container text-on-surface-variant text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter">{project.priority}</span>
+            <span
+              className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter ${project.isPublic === false ? 'bg-surface-container text-on-surface-variant' : 'bg-tertiary-container text-on-tertiary-container'}`}
+              title={project.isPublic === false ? 'Private — hidden from the public dashboard' : 'Public — shown on the public dashboard'}
+            >
+              {project.isPublic === false ? <Lock className="w-2.5 h-2.5" /> : <Globe className="w-2.5 h-2.5" />}
+              {project.isPublic === false ? 'Private' : 'Public'}
+            </span>
           </div>
           <div className="flex items-center gap-1.5">
             {isLaunched && <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-dim" aria-label="In production" />}

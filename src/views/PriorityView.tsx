@@ -165,7 +165,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                       'bg-surface-container-low text-on-surface-variant'
                     }`}>{project.status}</span></td>
                     <td className="px-6 py-4"><div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-tertiary-fixed-dim" style={{ width: `${project.progress}%` }}></div></div></td>
-                    <td className="px-6 py-4 text-right"><button aria-label={`Open actions for ${project.title}`} title="Project actions" className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"><MoreHorizontal className="w-5 h-5" /></button></td>
+                    <td className="px-6 py-4 text-right"><button aria-label={`Open ${project.title}`} title="Open project record" onClick={() => onProjectClick(project.id)} className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"><MoreHorizontal className="w-5 h-5" /></button></td>
                   </tr>
                 ))}
                 {mediumPriority.length === 0 && (
@@ -199,7 +199,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                   <>
                     <div className="relative z-10"><h4 className="font-headline font-bold text-lg mb-1 leading-tight">{project.title}</h4><p className="text-xs text-blue-100 max-w-[200px] line-clamp-2">{project.description}</p></div>
                     <Brain className="w-24 h-24 text-white/10 absolute -right-4 -bottom-4" />
-                    <button className="relative z-10 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all">View</button>
+                    <button onClick={() => onProjectClick(project.id)} className="relative z-10 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all">View</button>
                   </>
                 ) : (
                   <>
