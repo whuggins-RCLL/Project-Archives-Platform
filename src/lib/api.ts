@@ -108,7 +108,10 @@ const PROJECT_MUTABLE_FIELDS = [
   'createdAt',
   'code',
   'owner',
-  'collaborators',
+  // `collaborators` is intentionally excluded: it is written only through the
+  // dedicated server endpoint (updateProjectCollaborators). Including it here
+  // would let a generic "Save Changes" re-send the field on the client
+  // Firestore path, which production rules reject with permission-denied.
   'isPublic',
   'progress',
   'department',
@@ -404,8 +407,12 @@ export const api = {
   createProject: async (project: Omit<Project, 'id' | 'code'>): Promise<Project> => {
     try {
       const generatedCode = await generateUniqueProjectCode();
+      // Never send `collaborators` on the client create path (see
+      // PROJECT_MUTABLE_FIELDS); production rules reject it. A new project has
+      // none yet, and they are added later via the dedicated server endpoint.
+      const { collaborators: _omittedCollaborators, ...projectWithoutCollaborators } = project;
       const newProjectData = {
-        ...project,
+        ...projectWithoutCollaborators,
         code: generatedCode,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
