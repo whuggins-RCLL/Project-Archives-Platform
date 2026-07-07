@@ -105,7 +105,6 @@ const PROJECT_MUTABLE_FIELDS = [
   'priority',
   'tags',
   'dueDate',
-  'createdAt',
   'code',
   'owner',
   // `collaborators` is intentionally excluded: it is written only through the
@@ -404,36 +403,54 @@ export const api = {
     }
   },
 
+  /**
+   * Project create/update go through the server API (Admin credentials), not a
+   * direct Firestore write, for the same reason as collaborators: the deployed
+   * production rules predate newer fields (isPublic, collaborators, ...) and
+   * reject client writes containing them as permission-denied, because the
+   * rules-deploy workflow has never succeeded. The server bypasses the stale
+   * rules, so Save/create/public-private toggle work regardless.
+   */
   createProject: async (project: Omit<Project, 'id' | 'code'>): Promise<Project> => {
-    try {
-      const generatedCode = await generateUniqueProjectCode();
-      // Never send `collaborators` on the client create path (see
-      // PROJECT_MUTABLE_FIELDS); production rules reject it. A new project has
-      // none yet, and they are added later via the dedicated server endpoint.
-      const { collaborators: _omittedCollaborators, ...projectWithoutCollaborators } = project;
-      const newProjectData = {
-        ...projectWithoutCollaborators,
-        code: generatedCode,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-      const docRef = await addDoc(collection(db, 'projects'), newProjectData);
-      return { id: docRef.id, ...newProjectData } as unknown as Project;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'projects');
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to create projects.');
+    const generatedCode = await generateUniqueProjectCode();
+    // `collaborators` is added later via the dedicated endpoint; timestamps are
+    // set server-side, so neither is sent here.
+    const { collaborators: _omittedCollaborators, ...projectWithoutCollaborators } = project;
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/projects', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ project: { ...projectWithoutCollaborators, code: generatedCode } }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.id !== 'string') {
+      throw new Error(payload.error || 'Unable to create project.');
     }
+    const createdDoc = await getDoc(doc(db, 'projects', payload.id));
+    return { id: createdDoc.id, ...createdDoc.data() } as Project;
   },
 
   updateProject: async (id: string, updates: Partial<Project>): Promise<Project> => {
-    try {
-      const docRef = doc(db, 'projects', id);
-      const updateData = { ...toProjectUpdatePayload(updates), updatedAt: serverTimestamp() };
-      await updateDoc(docRef, updateData);
-      const updatedDoc = await getDoc(docRef);
-      return { id: updatedDoc.id, ...updatedDoc.data() } as Project;
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `projects/${id}`);
-    }
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to update projects.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ updates: toProjectUpdatePayload(updates) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to update project.');
+    const updatedDoc = await getDoc(doc(db, 'projects', id));
+    return { id: updatedDoc.id, ...updatedDoc.data() } as Project;
   },
 
   /**

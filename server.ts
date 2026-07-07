@@ -2601,6 +2601,183 @@ app.post("/api/projects/:projectId/collaborators", async (req, res) => {
   }
 });
 
+/**
+ * Recursively encode a plain JS value into the Firestore REST "Value" shape.
+ * Inverse of parseFirestoreValue; used by the server-side project write path.
+ */
+function toFirestoreValue(value: unknown): Record<string, unknown> {
+  if (value === null) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map((entry) => toFirestoreValue(entry)) } };
+  }
+  if (typeof value === "object") {
+    const fields: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      if (entry === undefined) continue;
+      fields[key] = toFirestoreValue(entry);
+    }
+    return { mapValue: { fields } };
+  }
+  return { nullValue: null };
+}
+
+const PROJECT_STATUS_VALUES = new Set([
+  "Intake / Proposed", "Scoping", "In Progress", "Pilot / Testing", "Review / Approval", "Launched",
+]);
+const PROJECT_PRIORITY_VALUES = new Set(["High", "Medium", "Low"]);
+
+function isBoundedString(value: unknown, min: number, max: number): boolean {
+  return typeof value === "string" && value.length >= min && value.length <= max;
+}
+
+function isValidOwnerInput(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const owner = value as Record<string, unknown>;
+  return isBoundedString(owner.name, 1, 100) && isBoundedString(owner.initials, 1, 5);
+}
+
+// Mirrors the constraints in firestore.rules `isValidProject`. The server write
+// path bypasses the rules (Admin credentials), so it must enforce them itself.
+const PROJECT_FIELD_VALIDATORS: Record<string, (value: unknown) => string | null> = {
+  title: (v) => (isBoundedString(v, 1, 100) ? null : "title must be 1-100 characters"),
+  description: (v) => (isBoundedString(v, 0, 6000) ? null : "description must be at most 6000 characters"),
+  status: (v) => (typeof v === "string" && PROJECT_STATUS_VALUES.has(v) ? null : "status is not a recognized value"),
+  priority: (v) => (typeof v === "string" && PROJECT_PRIORITY_VALUES.has(v) ? null : "priority must be High, Medium, or Low"),
+  tags: (v) => (Array.isArray(v) && v.length <= 20 && v.every((t) => isBoundedString(t, 0, 50)) ? null : "tags must be up to 20 short strings"),
+  dueDate: (v) => (isBoundedString(v, 0, 40) ? null : "dueDate must be at most 40 characters"),
+  assignee: (v) => (isBoundedString(v, 0, 100) ? null : "assignee must be at most 100 characters"),
+  code: (v) => (isBoundedString(v, 1, 50) ? null : "code must be 1-50 characters"),
+  owner: (v) => (isValidOwnerInput(v) ? null : "owner must include a name and initials"),
+  isPublic: (v) => (typeof v === "boolean" ? null : "isPublic must be true or false"),
+  progress: (v) => (typeof v === "number" && v >= 0 && v <= 100 ? null : "progress must be a number from 0 to 100"),
+  department: (v) => (isBoundedString(v, 1, 100) ? null : "department must be 1-100 characters"),
+  preservationScore: (v) => (typeof v === "number" ? null : "preservationScore must be a number"),
+  riskFactor: (v) => (isBoundedString(v, 1, 50) ? null : "riskFactor must be 1-50 characters"),
+  milestones: (v) => (Array.isArray(v) && v.length <= 200 ? null : "milestones must be a list"),
+  dependencies: (v) => (Array.isArray(v) && v.length <= 200 ? null : "dependencies must be a list"),
+  approvalCheckpoints: (v) => (Array.isArray(v) && v.length <= 200 ? null : "approvalCheckpoints must be a list"),
+  aiDrafts: (v) => (Array.isArray(v) && v.length <= 200 ? null : "aiDrafts must be a list"),
+  pmApproach: (v) => (v !== null && typeof v === "object" && !Array.isArray(v) ? null : "pmApproach must be an object"),
+};
+
+const REQUIRED_PROJECT_FIELDS = [
+  "title", "status", "priority", "code", "owner", "progress", "department", "preservationScore", "riskFactor",
+];
+
+/** Validate a create (requireAll) or partial-update project payload; `collaborators` is rejected (dedicated endpoint). */
+function validateProjectPayload(
+  input: unknown,
+  opts: { requireAll: boolean },
+): { ok: true; values: Record<string, unknown> } | { ok: false; error: string } {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "Request body must contain a project object" };
+  }
+  const source = input as Record<string, unknown>;
+  const values: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (value === undefined) continue;
+    if (key === "collaborators") {
+      return { ok: false, error: "Update collaborators through /api/projects/:id/collaborators" };
+    }
+    const validator = PROJECT_FIELD_VALIDATORS[key];
+    if (!validator) {
+      return { ok: false, error: `Unsupported project field: ${key}` };
+    }
+    const problem = validator(value);
+    if (problem) return { ok: false, error: problem };
+    values[key] = value;
+  }
+  if (opts.requireAll) {
+    for (const field of REQUIRED_PROJECT_FIELDS) {
+      if (!(field in values)) return { ok: false, error: `Missing required field: ${field}` };
+    }
+  } else if (Object.keys(values).length === 0) {
+    return { ok: false, error: "No updatable fields provided" };
+  }
+  return { ok: true, values };
+}
+
+/**
+ * Project create/update go through the server (Admin credentials) for the same
+ * reason as collaborators: the production Firestore rules that allow newer
+ * fields (isPublic, collaborators, ...) have never deployed successfully (see
+ * deploy-firestore.yml), so a client-side write of those fields is rejected as
+ * permission-denied. Writing here validates the payload and bypasses the stale
+ * rules, so Save/create/toggle work regardless of the deployed rules revision.
+ */
+app.post("/api/projects", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    if (!(await callerCanEditContent(verifiedUser))) {
+      return res.status(403).json({ error: "Content edit permission required to create projects" });
+    }
+    const validation = validateProjectPayload(req.body?.project, { requireAll: true });
+    if (validation.ok === false) return res.status(400).json({ error: validation.error });
+
+    const now = new Date().toISOString();
+    const fields: Record<string, unknown> = {
+      createdAt: { timestampValue: now },
+      updatedAt: { timestampValue: now },
+    };
+    for (const [key, value] of Object.entries(validation.values)) {
+      fields[key] = toFirestoreValue(value);
+    }
+    const created = await firestoreCall("projects", { method: "POST", body: { fields } });
+    const id = typeof created.name === "string" ? created.name.split("/").pop() ?? "" : "";
+    console.log(`[projects/create] projectId=${id} actorUid=${verifiedUser.uid}`);
+    return res.json({ id });
+  } catch (error) {
+    console.error("[projects/create] failed", error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to create project" });
+  }
+});
+
+app.post("/api/projects/:projectId", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    if (!(await callerCanEditContent(verifiedUser))) {
+      return res.status(403).json({ error: "Content edit permission required to update projects" });
+    }
+    const projectId = req.params.projectId;
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(projectId)) {
+      return res.status(400).json({ error: "Invalid project id" });
+    }
+    const validation = validateProjectPayload(req.body?.updates, { requireAll: false });
+    if (validation.ok === false) return res.status(400).json({ error: validation.error });
+
+    const fields: Record<string, unknown> = {};
+    const maskParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(validation.values)) {
+      fields[key] = toFirestoreValue(value);
+      maskParams.append("updateMask.fieldPaths", key);
+    }
+    fields.updatedAt = { timestampValue: new Date().toISOString() };
+    maskParams.append("updateMask.fieldPaths", "updatedAt");
+    // Never create-on-patch: an update to a missing project should 404, not resurrect it.
+    maskParams.append("currentDocument.exists", "true");
+
+    await firestoreCall(`projects/${projectId}?${maskParams.toString()}`, { method: "PATCH", body: { fields } });
+    console.log(`[projects/update] projectId=${projectId} actorUid=${verifiedUser.uid} fields=${Object.keys(validation.values).join(",")}`);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error("[projects/update] failed", error);
+    const message = error instanceof Error ? error.message : "Unable to update project";
+    const status = /not[ _]?found|does not exist|no document|no entity/i.test(message) ? 404 : 500;
+    return res.status(status).json({ error: message });
+  }
+});
+
 // Ensure API callers never receive the SPA shell for unknown API routes.
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Not found" });
