@@ -7,8 +7,8 @@ export const APP_CONFIG = {
   
   // Hero Section
   heroBadge: "What We're Building",
-  heroTitle: "Building What's Next for the Law Library",
-  heroSubtitle: "Real projects, real progress. See how we're applying AI across research, teaching, and library operations at Stanford Law.",
+  heroTitle: "Building What's Next",
+  heroSubtitle: "Real projects, real progress. See how we're applying AI across research, operations, and services.",
   
   // Footer
   footerText: "AI Librarian Suite. All rights reserved.",
