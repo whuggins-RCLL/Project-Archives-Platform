@@ -1,9 +1,9 @@
 import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus, Globe, Lock } from 'lucide-react';
 import { type ReactElement, useEffect, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
-import { ApprovalCheckpoint, Milestone, Project, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
+import { ApprovalCheckpoint, Milestone, Project, ProjectMember, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
-import { buildProjectOwnerFromClaimant, buildUnclaimedProjectOwner, ClaimableMember, findClaimableMemberForOwner, getClaimableMemberName } from '../lib/projectClaim';
+import { buildProjectMemberFromClaimant, buildProjectOwnerFromClaimant, buildUnclaimedProjectOwner, ClaimableMember, findClaimableMemberForOwner, getClaimableMemberName, getProjectMemberKey } from '../lib/projectClaim';
 import { COMMENT_REACTION_EMOJIS } from '../lib/uiDefaults';
 import { AI_MODEL_OPTIONS } from '../constants';
 import { INTEGRATION_CONFIG } from '../config';
@@ -42,6 +42,7 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [claimableMembers, setClaimableMembers] = useState<ClaimableMember[]>([]);
   const [selectedClaimUid, setSelectedClaimUid] = useState('');
   const [updatingClaim, setUpdatingClaim] = useState(false);
+  const [selectedCollaboratorUid, setSelectedCollaboratorUid] = useState('');
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -155,6 +156,56 @@ export default function RecordView({ projects, loading: projectsLoading, project
     } finally {
       setUpdatingClaim(false);
     }
+  };
+
+  const persistProjectCollaborators = async (nextCollaborators: ProjectMember[], successMessage: string) => {
+    if (!project || !isAdmin || updatingClaim) return;
+    setUpdatingClaim(true);
+    try {
+      const updated = await api.updateProject(project.id, { collaborators: nextCollaborators });
+      setProject(withGovernanceDefaults(updated));
+      setToast({ type: 'success', message: successMessage });
+    } catch (error) {
+      console.error(error);
+      setToast({ type: 'error', message: getErrorMessage(error, 'Unable to update project collaborators.') });
+    } finally {
+      setUpdatingClaim(false);
+    }
+  };
+
+  const handleAddCollaborator = () => {
+    if (!project || !isAdmin) return;
+    const claimant = claimableMembers.find((member) => member.uid === selectedCollaboratorUid);
+    if (!claimant) return;
+    const nextCollaborator = buildProjectMemberFromClaimant(claimant);
+    const nextCollaboratorKey = getProjectMemberKey(nextCollaborator);
+
+    if (getProjectMemberKey(project.owner) === nextCollaboratorKey) {
+      setToast({ type: 'error', message: 'That person is already the project owner.' });
+      return;
+    }
+
+    const existing = project.collaborators ?? [];
+    if (existing.some((member) => getProjectMemberKey(member) === nextCollaboratorKey)) {
+      setToast({ type: 'error', message: `${nextCollaborator.name} is already a collaborator.` });
+      return;
+    }
+
+    void persistProjectCollaborators(
+      [...existing, nextCollaborator].slice(0, 50),
+      `${nextCollaborator.name} added as a collaborator.`,
+    );
+  };
+
+  const handleRemoveCollaborator = (memberKey: string) => {
+    if (!project || !isAdmin) return;
+    const existing = project.collaborators ?? [];
+    const removed = existing.find((member) => getProjectMemberKey(member) === memberKey);
+    const nextCollaborators = existing.filter((member) => getProjectMemberKey(member) !== memberKey);
+    void persistProjectCollaborators(
+      nextCollaborators,
+      removed ? `${removed.name} removed from collaborators.` : 'Collaborator removed.',
+    );
   };
 
   const handleAddComment = async () => {
@@ -906,6 +957,53 @@ Description: ${project.description}`;
                   >
                     Un-claim
                   </button>
+                </div>
+              </div>
+              <div className="col-span-2">
+                <label htmlFor="record-project-collaborator" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Collaborators</label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    id="record-project-collaborator"
+                    className="min-w-[260px] bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none"
+                    value={selectedCollaboratorUid}
+                    onChange={(e) => setSelectedCollaboratorUid(e.target.value)}
+                    disabled={!isAdmin || claimableMembers.length === 0}
+                  >
+                    <option value="">Select a collaborator…</option>
+                    {claimableMembers.map((member) => (
+                      <option key={member.uid} value={member.uid}>{getClaimableMemberName(member)}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="px-4 py-2 rounded-lg bg-primary text-white font-semibold disabled:opacity-50"
+                    disabled={!isAdmin || !selectedCollaboratorUid || updatingClaim}
+                    onClick={handleAddCollaborator}
+                  >
+                    {updatingClaim ? 'Saving…' : 'Add Collaborator'}
+                  </button>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(project.collaborators ?? []).length === 0 ? (
+                    <p className="text-sm text-on-surface-variant">No collaborators yet. Add teammates to work on this project alongside the owner.</p>
+                  ) : (
+                    (project.collaborators ?? []).map((member) => {
+                      const memberKey = getProjectMemberKey(member);
+                      return (
+                        <span key={memberKey} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-fixed text-[9px] text-primary">{member.initials}</span>
+                          {member.name}
+                          {isAdmin && (
+                            <X
+                              className="w-3 h-3 cursor-pointer"
+                              aria-label={`Remove ${member.name} from collaborators`}
+                              onClick={() => handleRemoveCollaborator(memberKey)}
+                            />
+                          )}
+                        </span>
+                      );
+                    })
+                  )}
                 </div>
               </div>
               <div className="col-span-2">
@@ -1690,6 +1788,14 @@ Description: ${project.description}`;
                 <div className="flex justify-between text-xs">
                   <span className="text-on-surface-variant">Lead Archivist</span>
                   <span className="font-bold">{project.owner.name}</span>
+                </div>
+                <div className="flex justify-between text-xs gap-4">
+                  <span className="text-on-surface-variant shrink-0">Collaborators</span>
+                  <span className="font-bold text-right">
+                    {(project.collaborators ?? []).length > 0
+                      ? (project.collaborators ?? []).map((member) => member.name).join(', ')
+                      : 'None'}
+                  </span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-on-surface-variant">Preservation Score</span>

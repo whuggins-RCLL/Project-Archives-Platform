@@ -111,6 +111,14 @@ export interface AIDraft {
   pmApproach?: ProjectManagementApproach;
 }
 
+export interface ProjectMember {
+  uid?: string;
+  name: string;
+  initials: string;
+  avatar?: string;
+  group?: string;
+}
+
 export interface Project {
   id: string;
   code: string;
@@ -118,7 +126,8 @@ export interface Project {
   description: string;
   status: ProjectStatus;
   priority: ProjectPriority;
-  owner: { uid?: string; name: string; initials: string; avatar?: string; group?: string };
+  owner: ProjectMember;
+  collaborators?: ProjectMember[];
   tags: string[];
   progress: number;
   department: string;
