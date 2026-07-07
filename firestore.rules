@@ -6,8 +6,14 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Accessing an unset custom claim via dot-notation throws a runtime error
+    // (which denies the request), so always guard claim access with an `in` check.
+    function hasTokenClaim(claim) {
+      return isAuthenticated() && claim in request.auth.token;
+    }
+
     function hasLegacyAdminClaim() {
-      return isAuthenticated() && request.auth.token.admin == true;
+      return hasTokenClaim('admin') && request.auth.token.admin == true;
     }
 
     function hasUserMirror() {
@@ -18,9 +24,19 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
+    function mirrorHasField(field) {
+      return hasUserMirror() && field in userMirrorData();
+    }
+
     function mirroredRole() {
-      return hasUserMirror() && userMirrorData().role is string
+      return mirrorHasField('role') && userMirrorData().role is string
         ? userMirrorData().role
+        : null;
+    }
+
+    function tokenRole() {
+      return hasTokenClaim('role') && request.auth.token.role is string
+        ? request.auth.token.role
         : null;
     }
 
@@ -28,10 +44,26 @@ service cloud.firestore {
       return mirroredRole() in ['owner', 'admin', 'collaborator', 'viewer']
         ? mirroredRole()
         : (
-            isAuthenticated() && request.auth.token.role is string
-              ? request.auth.token.role
+            tokenRole() in ['owner', 'admin', 'collaborator', 'viewer']
+              ? tokenRole()
               : (hasLegacyAdminClaim() ? 'admin' : 'viewer')
           );
+    }
+
+    // True only when the mirror doc explicitly grants the given permission flag.
+    function mirrorPermissionGranted(flag) {
+      return mirrorHasField('permissions') &&
+        userMirrorData().permissions is map &&
+        flag in userMirrorData().permissions &&
+        userMirrorData().permissions[flag] == true;
+    }
+
+    // True only when the token explicitly grants the given permission flag.
+    function tokenPermissionGranted(flag) {
+      return hasTokenClaim('permissions') &&
+        request.auth.token.permissions is map &&
+        flag in request.auth.token.permissions &&
+        request.auth.token.permissions[flag] == true;
     }
 
     function isOwnerRole() {
@@ -44,16 +76,8 @@ service cloud.firestore {
 
     function canEditContent() {
       return role() in ['owner', 'admin', 'collaborator'] ||
-        (
-          hasUserMirror() &&
-          userMirrorData().permissions is map &&
-          userMirrorData().permissions.canEditContent == true
-        ) ||
-        (
-          isAuthenticated() &&
-          request.auth.token.permissions is map &&
-          request.auth.token.permissions.canEditContent == true
-        );
+        mirrorPermissionGranted('canEditContent') ||
+        tokenPermissionGranted('canEditContent');
     }
 
     function canViewInternal() {
@@ -62,42 +86,27 @@ service cloud.firestore {
 
     function canManageSettings() {
       return isAdminRole() ||
-        (
-          hasUserMirror() &&
-          userMirrorData().permissions is map &&
-          userMirrorData().permissions.canManageSettings == true
-        ) ||
-        (
-          isAuthenticated() &&
-          request.auth.token.permissions is map &&
-          request.auth.token.permissions.canManageSettings == true
-        );
+        mirrorPermissionGranted('canManageSettings') ||
+        tokenPermissionGranted('canManageSettings');
     }
 
     function canManageRoles() {
       return isAdminRole() ||
-        (
-          hasUserMirror() &&
-          userMirrorData().permissions is map &&
-          userMirrorData().permissions.canManageRoles == true
-        ) ||
-        (
-          isAuthenticated() &&
-          request.auth.token.permissions is map &&
-          request.auth.token.permissions.canManageRoles == true
-        );
+        mirrorPermissionGranted('canManageRoles') ||
+        tokenPermissionGranted('canManageRoles');
     }
 
     function isActiveUser() {
-      return !hasUserMirror() || userMirrorData().status != 'disabled';
+      return !mirrorHasField('status') || userMirrorData().status != 'disabled';
     }
 
     function hasAllowedDomainClaim() {
-      return isAuthenticated() && (request.auth.token.domain_authorized == true || request.auth.token.org_member == true);
+      return (hasTokenClaim('domain_authorized') && request.auth.token.domain_authorized == true) ||
+        (hasTokenClaim('org_member') && request.auth.token.org_member == true);
     }
 
     function hasAnyGroup(groupNames) {
-      return isAuthenticated() && request.auth.token.groups is list && request.auth.token.groups.hasAny(groupNames);
+      return hasTokenClaim('groups') && request.auth.token.groups is list && request.auth.token.groups.hasAny(groupNames);
     }
 
     function isInternalUser() {
@@ -146,7 +155,7 @@ service cloud.firestore {
              data.status in ['Intake / Proposed', 'Scoping', 'In Progress', 'Pilot / Testing', 'Review / Approval', 'Launched'] &&
              data.priority in ['High', 'Medium', 'Low'] &&
              (!('tags' in data) || (data.tags is list && data.tags.size() <= 20)) &&
-             isValidOptionalString('dueDate', 0, 20) &&
+             isValidOptionalString('dueDate', 0, 40) &&
              isValidOptionalString('assignee', 0, 100) &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp &&

@@ -37,7 +37,7 @@ function InternalApp() {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isNewProjectModalOpen, setIsNewProjectModalOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState('');
-  const [newProjectIsPublic, setNewProjectIsPublic] = useState(true);
+  const [newProjectIsPublic, setNewProjectIsPublic] = useState(false);
   const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -249,7 +249,7 @@ function InternalApp() {
       });
       setIsNewProjectModalOpen(false);
       setNewProjectTitle('');
-      setNewProjectIsPublic(true);
+      setNewProjectIsPublic(false);
       setCurrentView('kanban');
     } catch (error) {
       console.error('Failed to create project:', error);
