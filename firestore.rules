@@ -145,7 +145,7 @@ service cloud.firestore {
       // never deployed -- surfaces as a "permission denied" error on save.
       let allowedFields = [
         'title', 'description', 'status', 'priority', 'tags', 'dueDate',
-        'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'collaborators', 'isPublic', 'progress',
+        'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'collaborators', 'artifactLinks', 'isPublic', 'progress',
         'department', 'preservationScore', 'riskFactor', 'aiDrafts', 'pmApproach',
         'milestones', 'dependencies', 'approvalCheckpoints'
       ];
@@ -168,6 +168,7 @@ service cloud.firestore {
              data.owner is map &&
              data.owner.keys().hasAll(['name', 'initials']) &&
              (!('collaborators' in data) || (data.collaborators is list && data.collaborators.size() <= 50)) &&
+             (!('artifactLinks' in data) || (data.artifactLinks is list && data.artifactLinks.size() <= 20)) &&
              (!('isPublic' in data) || data.isPublic is bool) &&
              data.progress is number && data.progress >= 0 && data.progress <= 100 &&
              isValidString(data.department, 1, 100) &&

@@ -109,6 +109,7 @@ const PROJECT_MUTABLE_FIELDS = [
   'code',
   'owner',
   'collaborators',
+  'artifactLinks',
   'isPublic',
   'progress',
   'department',

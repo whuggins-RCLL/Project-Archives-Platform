@@ -119,6 +119,15 @@ export interface ProjectMember {
   group?: string;
 }
 
+export type ProjectArtifactLinkType = 'github' | 'demo' | 'docs' | 'design' | 'dataset' | 'other';
+
+export interface ProjectArtifactLink {
+  id: string;
+  label: string;
+  url: string;
+  type?: ProjectArtifactLinkType;
+}
+
 export interface Project {
   id: string;
   code: string;
@@ -128,6 +137,7 @@ export interface Project {
   priority: ProjectPriority;
   owner: ProjectMember;
   collaborators?: ProjectMember[];
+  artifactLinks?: ProjectArtifactLink[];
   tags: string[];
   progress: number;
   department: string;
