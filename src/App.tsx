@@ -14,6 +14,7 @@ import KanbanView from './views/KanbanView';
 import PriorityView from './views/PriorityView';
 import PortfolioView from './views/PortfolioView';
 import RecordView from './views/RecordView';
+import MyProjectsView from './views/MyProjectsView';
 import PublicView from './views/PublicView';
 import LoginView from './views/LoginView';
 import SettingsView from './views/SettingsView';
@@ -236,7 +237,8 @@ function InternalApp() {
         description: 'New project description',
         status: 'Intake / Proposed',
         priority: 'Medium',
-        owner: { name: auth.currentUser?.displayName || 'Current User', initials: auth.currentUser?.displayName?.substring(0, 2).toUpperCase() || 'CU', avatar: auth.currentUser?.photoURL || '' },
+        owner: { uid: auth.currentUser?.uid, name: auth.currentUser?.displayName || 'Current User', initials: auth.currentUser?.displayName?.substring(0, 2).toUpperCase() || 'CU', avatar: auth.currentUser?.photoURL || '' },
+        collaborators: [],
         tags: [],
         progress: 0,
         department: 'General',
@@ -263,6 +265,8 @@ function InternalApp() {
     switch (currentView) {
       case 'kanban':
         return <KanbanView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} onNewProject={openNewProjectModal} isAdmin={canEditContent} />;
+      case 'my-projects':
+        return <MyProjectsView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} />;
       case 'priority':
         return <PriorityView projects={projects} loading={loadingProjects} onProjectClick={handleProjectClick} />;
       case 'portfolio':

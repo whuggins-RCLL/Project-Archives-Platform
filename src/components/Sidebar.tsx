@@ -1,4 +1,4 @@
-import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, Globe } from 'lucide-react';
+import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, Globe, FolderKanban } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import Button from './Button';
@@ -36,6 +36,7 @@ export default function Sidebar({
     ? [{ id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' }]
     : [
       { id: 'kanban', icon: Kanban, label: 'Kanban Board' },
+      { id: 'my-projects', icon: FolderKanban, label: 'My Projects' },
       { id: 'priority', icon: AlertCircle, label: 'Priority Matrix' },
       { id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' },
     ];
