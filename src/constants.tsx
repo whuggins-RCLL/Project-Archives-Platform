@@ -2,9 +2,21 @@ import { AIModelOption } from './types';
 
 export const AI_MODEL_OPTIONS: AIModelOption[] = [
   {
+    id: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+    description: 'Fast, cost-efficient Google model with a generous free tier. Recommended default.',
+    provider: 'gemini',
+  },
+  {
+    id: 'gemini-2.5-flash-lite',
+    label: 'Gemini 2.5 Flash Lite',
+    description: 'Google\'s most economical model — highest throughput and free-tier friendly.',
+    provider: 'gemini',
+  },
+  {
     id: 'gemini-2.5-pro',
     label: 'Gemini 2.5 Pro',
-    description: 'Google flagship reasoning and long-context model.',
+    description: 'Google flagship reasoning and long-context model. Requires a paid Gemini API plan (no free-tier quota).',
     provider: 'gemini',
   },
   {
