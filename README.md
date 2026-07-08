@@ -486,6 +486,20 @@ If your organization needs public showcase behavior, explicitly set `settings/gl
 
 ## Changelog
 
+### v1.3.0
+
+- New **embed layout** for the public homepage. An admin setting switches the
+  public page between the standard layout (sticky top navigation bar) and an
+  embed layout that hides the nav bar and moves the title, theme toggle, and
+  Team Login into the hero — intended for embedding the page inside another
+  site (for example a Google Sites iframe).
+- Optional **show/hide logo** control for the embed layout header.
+- **Automatic branding image handling.** Logo and hero background uploads are
+  now downscaled and re-encoded on the client to fit storage limits instead of
+  being rejected, so ordinary photos no longer fail to save.
+- Public hero narrative now renders the custom text without a fixed label
+  above it.
+
 ### v1.1.0
 
 - Ships with **generic, deployment-neutral defaults**. The bundled `src/config.ts`
