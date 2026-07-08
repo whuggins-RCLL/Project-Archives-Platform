@@ -31,6 +31,7 @@ export default function SettingsView({
     aiRequireHumanApproval: true,
     privacyMode: 'private-read',
     publicLayout: 'standard',
+    embedShowLogo: true,
     suiteName: 'AI Librarian Suite',
     portalName: 'Project Archives',
     logoDataUrl: '',
@@ -300,6 +301,26 @@ export default function SettingsView({
                 </div>
               ))}
             </div>
+            {(settings.publicLayout ?? 'standard') === 'embed' && (
+              <div className="mt-4 flex items-center justify-between bg-surface-container-low rounded-lg p-3">
+                <div>
+                  <div className="text-sm font-bold">Show logo in embed header</div>
+                  <div className="text-xs text-on-surface-variant mt-0.5">
+                    Display the identity logo next to the title in the hero. Turn off to show the title only.
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={settings.embedShowLogo ?? true}
+                    disabled={readOnly}
+                    onChange={(e) => setSettings({ ...settings, embedShowLogo: e.target.checked })}
+                  />
+                  <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                </label>
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">

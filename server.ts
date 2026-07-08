@@ -131,6 +131,7 @@ type AppSettings = {
   aiRequireHumanApproval: boolean;
   privacyMode: "public-read" | "private-read";
   publicLayout?: "standard" | "embed";
+  embedShowLogo?: boolean;
   suiteName: string;
   portalName: string;
   logoDataUrl: string;
@@ -975,6 +976,7 @@ function validateSettings(input: unknown): AppSettings | null {
     !normalizedEnabledProviders.includes(source.activeProvider) ||
     (source.privacyMode !== "public-read" && source.privacyMode !== "private-read") ||
     (source.publicLayout !== undefined && source.publicLayout !== "standard" && source.publicLayout !== "embed") ||
+    (source.embedShowLogo !== undefined && typeof source.embedShowLogo !== "boolean") ||
     typeof source.suiteName !== "string" ||
     source.suiteName.trim().length === 0 ||
     source.suiteName.length > 80 ||
@@ -1029,6 +1031,7 @@ function validateSettings(input: unknown): AppSettings | null {
     aiRequireHumanApproval: source.aiRequireHumanApproval,
     privacyMode: source.privacyMode,
     publicLayout: source.publicLayout === "embed" ? "embed" : "standard",
+    embedShowLogo: typeof source.embedShowLogo === "boolean" ? source.embedShowLogo : true,
     suiteName: source.suiteName.trim(),
     portalName: source.portalName.trim(),
     logoDataUrl: source.logoDataUrl,
@@ -1059,6 +1062,7 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     aiRequireHumanApproval: { booleanValue: settings.aiRequireHumanApproval },
     privacyMode: { stringValue: settings.privacyMode },
     ...(settings.publicLayout !== undefined && { publicLayout: { stringValue: settings.publicLayout } }),
+    ...(settings.embedShowLogo !== undefined && { embedShowLogo: { booleanValue: settings.embedShowLogo } }),
     suiteName: { stringValue: settings.suiteName },
     portalName: { stringValue: settings.portalName },
     logoDataUrl: { stringValue: settings.logoDataUrl },
@@ -1094,6 +1098,7 @@ function fromFirestoreFields(
     aiRequireHumanApproval: fields.aiRequireHumanApproval?.booleanValue,
     privacyMode: fields.privacyMode?.stringValue as AppSettings["privacyMode"] | undefined,
     publicLayout: fields.publicLayout?.stringValue as AppSettings["publicLayout"] | undefined,
+    embedShowLogo: fields.embedShowLogo?.booleanValue,
     suiteName: fields.suiteName?.stringValue,
     portalName: fields.portalName?.stringValue,
     logoDataUrl: fields.logoDataUrl?.stringValue,

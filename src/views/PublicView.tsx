@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
@@ -103,6 +103,7 @@ export default function PublicView() {
   );
   const publishedNarrative = (settings.heroNarrativePublished ?? '').trim();
   const isEmbedLayout = settings.publicLayout === 'embed';
+  const showEmbedLogo = settings.embedShowLogo ?? true;
 
   return (
     <div className="min-h-screen app-canvas font-body">
@@ -166,16 +167,18 @@ export default function PublicView() {
         {isEmbedLayout && (
           <div className="content-shell pt-6 sm:pt-8 flex items-center justify-between gap-4">
             <div className="flex items-center gap-3 min-w-0">
-              {branding.logoUrl ? (
-                <img
-                  src={branding.logoUrl}
-                  alt={branding.portalName || APP_CONFIG.portalName}
-                  className="shrink-0 h-10 w-auto max-w-[240px] object-contain object-left"
-                />
-              ) : (
-                <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl glass-on-dark">
-                  <FolderArchive className="text-white w-5 h-5" aria-hidden />
-                </div>
+              {showEmbedLogo && (
+                branding.logoUrl ? (
+                  <img
+                    src={branding.logoUrl}
+                    alt={branding.portalName || APP_CONFIG.portalName}
+                    className="shrink-0 h-10 w-auto max-w-[240px] object-contain object-left"
+                  />
+                ) : (
+                  <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl glass-on-dark">
+                    <FolderArchive className="text-white w-5 h-5" aria-hidden />
+                  </div>
+                )
               )}
               <div className="min-w-0">
                 <h1 className="font-headline text-lg font-bold text-white leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
@@ -204,7 +207,6 @@ export default function PublicView() {
             </p>
             {publishedNarrative && (
               <div className="glass-on-dark glass-sheen mb-8 rounded-2xl p-5 leading-relaxed text-white/90 shadow-xl">
-                <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] font-semibold text-white/70"><Sparkles className="w-4 h-4" aria-hidden /> Project Story</div>
                 <p className="text-base sm:text-lg whitespace-pre-line">{publishedNarrative}</p>
               </div>
             )}
