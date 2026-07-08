@@ -130,6 +130,8 @@ type AppSettings = {
   aiPmApproachEnabled: boolean;
   aiRequireHumanApproval: boolean;
   privacyMode: "public-read" | "private-read";
+  publicLayout?: "standard" | "embed";
+  embedShowLogo?: boolean;
   suiteName: string;
   portalName: string;
   logoDataUrl: string;
@@ -973,6 +975,8 @@ function validateSettings(input: unknown): AppSettings | null {
     normalizedEnabledProviders.some((provider) => !ALLOWED_PROVIDERS.has(provider)) ||
     !normalizedEnabledProviders.includes(source.activeProvider) ||
     (source.privacyMode !== "public-read" && source.privacyMode !== "private-read") ||
+    (source.publicLayout !== undefined && source.publicLayout !== "standard" && source.publicLayout !== "embed") ||
+    (source.embedShowLogo !== undefined && typeof source.embedShowLogo !== "boolean") ||
     typeof source.suiteName !== "string" ||
     source.suiteName.trim().length === 0 ||
     source.suiteName.length > 80 ||
@@ -1026,6 +1030,8 @@ function validateSettings(input: unknown): AppSettings | null {
     aiPmApproachEnabled: source.aiPmApproachEnabled,
     aiRequireHumanApproval: source.aiRequireHumanApproval,
     privacyMode: source.privacyMode,
+    publicLayout: source.publicLayout === "embed" ? "embed" : "standard",
+    embedShowLogo: typeof source.embedShowLogo === "boolean" ? source.embedShowLogo : true,
     suiteName: source.suiteName.trim(),
     portalName: source.portalName.trim(),
     logoDataUrl: source.logoDataUrl,
@@ -1055,6 +1061,8 @@ function toFirestoreFields(settings: AppSettings): Record<string, { stringValue?
     aiPmApproachEnabled: { booleanValue: settings.aiPmApproachEnabled },
     aiRequireHumanApproval: { booleanValue: settings.aiRequireHumanApproval },
     privacyMode: { stringValue: settings.privacyMode },
+    ...(settings.publicLayout !== undefined && { publicLayout: { stringValue: settings.publicLayout } }),
+    ...(settings.embedShowLogo !== undefined && { embedShowLogo: { booleanValue: settings.embedShowLogo } }),
     suiteName: { stringValue: settings.suiteName },
     portalName: { stringValue: settings.portalName },
     logoDataUrl: { stringValue: settings.logoDataUrl },
@@ -1089,6 +1097,8 @@ function fromFirestoreFields(
     aiPmApproachEnabled: fields.aiPmApproachEnabled?.booleanValue,
     aiRequireHumanApproval: fields.aiRequireHumanApproval?.booleanValue,
     privacyMode: fields.privacyMode?.stringValue as AppSettings["privacyMode"] | undefined,
+    publicLayout: fields.publicLayout?.stringValue as AppSettings["publicLayout"] | undefined,
+    embedShowLogo: fields.embedShowLogo?.booleanValue,
     suiteName: fields.suiteName?.stringValue,
     portalName: fields.portalName?.stringValue,
     logoDataUrl: fields.logoDataUrl?.stringValue,
@@ -1603,8 +1613,10 @@ app.use(
     callback(new Error("CORS origin denied"));
   }),
 );
-// Logo uploads in settings can approach validateSettings' 150k cap; 16kb caused PayloadTooLarge / unhandled 500s on save
-app.use(express.json({ limit: "350kb" }));
+// The settings payload can carry a base64 logo (150k-char cap) plus a base64 hero image (600k-char cap), so the
+// global parser limit must exceed their combined size; per-route limits (e.g. ADMIN_SETTINGS_MAX_BODY_BYTES) still
+// apply the real caps after parsing. 350kb rejected legal hero uploads with a misleading 413.
+app.use(express.json({ limit: "1mb" }));
 app.use((
   err: unknown,
   _req: express.Request,
@@ -1613,7 +1625,7 @@ app.use((
 ) => {
   const e = err as { statusCode?: number; type?: string; message?: string };
   if (e?.type === "entity.too.large" || (e?.statusCode === 413 && res.headersSent === false)) {
-    res.status(413).json({ error: "Request body too large. Remove or use a smaller logo image and try again." });
+    res.status(413).json({ error: "Request body too large. Remove or use smaller logo/hero images and try again." });
     return;
   }
   if (res.headersSent) {

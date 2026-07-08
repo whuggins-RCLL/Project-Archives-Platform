@@ -79,6 +79,10 @@ export interface Settings {
   aiPmApproachEnabled: boolean;
   aiRequireHumanApproval: boolean;
   privacyMode: 'public-read' | 'private-read';
+  /** Public homepage chrome: 'standard' keeps the top nav bar; 'embed' hides it and moves the title and Team Login into the hero (for embedding, e.g. Google Sites). */
+  publicLayout?: 'standard' | 'embed';
+  /** In embed layout, whether to show the branding logo in the hero identity block. Defaults to true. */
+  embedShowLogo?: boolean;
   suiteName: string;
   portalName: string;
   logoDataUrl?: string;
@@ -275,6 +279,8 @@ export const api = {
           aiPmApproachEnabled: data.aiPmApproachEnabled ?? true,
           aiRequireHumanApproval: data.aiRequireHumanApproval ?? true,
           privacyMode: data.privacyMode ?? 'private-read',
+          publicLayout: data.publicLayout === 'embed' ? 'embed' : 'standard',
+          embedShowLogo: data.embedShowLogo ?? true,
           suiteName: data.suiteName ?? 'AI Librarian Suite',
           portalName: data.portalName ?? 'Project Archives',
           logoDataUrl: data.logoDataUrl ?? '',
@@ -302,6 +308,8 @@ export const api = {
         aiPmApproachEnabled: true,
         aiRequireHumanApproval: true,
         privacyMode: 'private-read',
+        publicLayout: 'standard',
+        embedShowLogo: true,
         suiteName: 'AI Librarian Suite',
         portalName: 'Project Archives',
         logoDataUrl: '',

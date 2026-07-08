@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, Sparkles, ChevronDown, ChevronUp } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
@@ -102,11 +102,14 @@ export default function PublicView() {
     [settings.heroQuickLinks],
   );
   const publishedNarrative = (settings.heroNarrativePublished ?? '').trim();
+  const isEmbedLayout = settings.publicLayout === 'embed';
+  const showEmbedLogo = settings.embedShowLogo ?? true;
 
   return (
     <div className="min-h-screen app-canvas font-body">
       <a href="#main-content" className="skip-link">Skip to main content</a>
-      {/* Header */}
+      {/* Header — hidden in embed layout, where the title and Team Login move into the hero */}
+      {!isEmbedLayout && (
       <header className="glass-nav sticky top-0 z-30">
         <div className="content-shell h-16 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -137,9 +140,10 @@ export default function PublicView() {
           </div>
         </div>
       </header>
+      )}
 
-      {/* Hero Section — pulled up behind the translucent nav so the image bleeds into it */}
-      <div className="relative isolate overflow-hidden text-white -mt-16">
+      {/* Hero Section — in the standard layout it's pulled up behind the translucent nav so the image bleeds into it */}
+      <div className={`relative isolate overflow-hidden text-white ${isEmbedLayout ? '' : '-mt-16'}`}>
         {branding.heroImageUrl ? (
           <>
             <img
@@ -159,11 +163,42 @@ export default function PublicView() {
         {/* Ambient glow accents */}
         <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-3xl" aria-hidden />
 
-        <div className="content-shell pt-28 pb-20 sm:pt-32 sm:pb-24 lg:pt-36 lg:pb-28">
+        {/* Embed layout: brand identity and Team Login live inside the hero instead of a nav bar */}
+        {isEmbedLayout && (
+          <div className="content-shell pt-6 sm:pt-8 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              {showEmbedLogo && (
+                branding.logoUrl ? (
+                  <img
+                    src={branding.logoUrl}
+                    alt={branding.portalName || APP_CONFIG.portalName}
+                    className="shrink-0 h-10 w-auto max-w-[240px] object-contain object-left"
+                  />
+                ) : (
+                  <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl glass-on-dark">
+                    <FolderArchive className="text-white w-5 h-5" aria-hidden />
+                  </div>
+                )
+              )}
+              <div className="min-w-0">
+                <h1 className="font-headline text-lg font-bold text-white leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
+                <p className="text-xs text-white/70 truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <ThemeToggle tone="on-dark" />
+              <Link
+                to="/login"
+                className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md"
+              >
+                Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </Link>
+            </div>
+          </div>
+        )}
+
+        <div className={`content-shell ${isEmbedLayout ? 'pt-10 pb-16 sm:pt-12 sm:pb-20' : 'pt-28 pb-20 sm:pt-32 sm:pb-24 lg:pt-36 lg:pb-28'}`}>
           <div className="max-w-3xl xl:max-w-4xl animate-fade-in-up">
-            <span className="mb-6 inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-white/90">
-              <Sparkles className="w-3.5 h-3.5" aria-hidden /> {APP_CONFIG.heroBadge}
-            </span>
             <h2 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold font-headline tracking-tight mb-6 leading-[1.05]">
               {APP_CONFIG.heroTitle}
             </h2>
@@ -172,7 +207,6 @@ export default function PublicView() {
             </p>
             {publishedNarrative && (
               <div className="glass-on-dark glass-sheen mb-8 rounded-2xl p-5 leading-relaxed text-white/90 shadow-xl">
-                <div className="mb-2 inline-flex items-center gap-2 text-xs uppercase tracking-[0.16em] font-semibold text-white/70"><Sparkles className="w-4 h-4" aria-hidden /> Project Story</div>
                 <p className="text-base sm:text-lg whitespace-pre-line">{publishedNarrative}</p>
               </div>
             )}
