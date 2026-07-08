@@ -6,7 +6,6 @@ export const APP_CONFIG = {
   subHeading: "Stakeholder Portal",
   
   // Hero Section
-  heroBadge: "What We're Building",
   heroTitle: "Building What's Next",
   heroSubtitle: "Real projects, real progress. See how we're applying AI across research, operations, and services.",
   

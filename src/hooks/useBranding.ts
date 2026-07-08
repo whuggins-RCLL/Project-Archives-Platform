@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS: Settings = {
   aiPmApproachEnabled: true,
   aiRequireHumanApproval: true,
   privacyMode: 'private-read',
+  publicLayout: 'standard',
   suiteName: APP_CONFIG.appName,
   portalName: APP_CONFIG.portalName,
   logoDataUrl: '',

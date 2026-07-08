@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, Bot, Key, Shield, Upload } from 'lucide-react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
-
-/** Keep the base64 hero image comfortably under the server's 600k-char limit. */
-const HERO_IMAGE_MAX_BYTES = 400 * 1024;
+import { prepareImageDataUrl, HERO_IMAGE_LIMITS, LOGO_IMAGE_LIMITS } from '../lib/imageUpload';
 
 export default function SettingsView({
   canManageSettings,
@@ -32,6 +30,7 @@ export default function SettingsView({
     aiPmApproachEnabled: true,
     aiRequireHumanApproval: true,
     privacyMode: 'private-read',
+    publicLayout: 'standard',
     suiteName: 'AI Librarian Suite',
     portalName: 'Project Archives',
     logoDataUrl: '',
@@ -268,6 +267,41 @@ export default function SettingsView({
             </p>
           </div>
 
+          <div>
+            <h3 className="font-bold text-on-surface mb-3">Public Page Layout</h3>
+            <p className="text-sm text-on-surface-variant -mt-1 mb-3">
+              Choose how the public homepage chrome is arranged. Embed mode is designed for placing the page inside
+              another site (for example a Google Sites iframe).
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                {
+                  id: 'standard',
+                  name: 'Standard (top nav bar)',
+                  desc: 'Keeps the sticky navigation bar with the title, theme toggle, and Team Login above the hero.'
+                },
+                {
+                  id: 'embed',
+                  name: 'Embed (no nav bar)',
+                  desc: 'Hides the nav bar and moves the title and Team Login into the hero — ideal for Google Sites embeds.'
+                }
+              ].map((mode) => (
+                <div
+                  key={mode.id}
+                  onClick={() => !readOnly && setSettings({ ...settings, publicLayout: mode.id as Settings['publicLayout'] })}
+                  className={`p-4 rounded-lg border-2 transition-all ${
+                    (settings.publicLayout ?? 'standard') === mode.id
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant/20 hover:border-primary/30'
+                  } ${readOnly ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'}`}
+                >
+                  <div className="font-bold text-sm">{mode.name}</div>
+                  <div className="text-xs text-on-surface-variant mt-1">{mode.desc}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-4">
             <h3 className="font-bold text-on-surface">Branding</h3>
             <p className="text-sm text-on-surface-variant -mt-2 mb-1">
@@ -338,15 +372,18 @@ export default function SettingsView({
                 accept="image/*"
                 disabled={readOnly}
                 className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
+                onChange={async (e) => {
+                  const input = e.target;
+                  const file = input.files?.[0];
                   if (!file) return;
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const result = typeof reader.result === 'string' ? reader.result : '';
+                  try {
+                    const result = await prepareImageDataUrl(file, LOGO_IMAGE_LIMITS);
                     setSettings((prev) => ({ ...prev, logoDataUrl: result }));
-                  };
-                  reader.readAsDataURL(file);
+                  } catch (error) {
+                    setToast({ type: 'error', message: getErrorMessage(error, 'Could not process the logo image. Please try a different file.') });
+                  } finally {
+                    input.value = '';
+                  }
                 }}
               />
               {settings.logoDataUrl && (
@@ -379,24 +416,22 @@ export default function SettingsView({
                 accept="image/*"
                 disabled={readOnly}
                 className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
+                onChange={async (e) => {
+                  const input = e.target;
+                  const file = input.files?.[0];
                   if (!file) return;
-                  if (file.size > HERO_IMAGE_MAX_BYTES) {
-                    setToast({ type: 'error', message: 'Hero image is too large. Please choose an image under 400 KB (a compressed JPG works best).' });
-                    e.target.value = '';
-                    return;
-                  }
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const result = typeof reader.result === 'string' ? reader.result : '';
+                  try {
+                    const result = await prepareImageDataUrl(file, HERO_IMAGE_LIMITS);
                     setSettings((prev) => ({ ...prev, heroImageDataUrl: result }));
-                  };
-                  reader.readAsDataURL(file);
+                  } catch (error) {
+                    setToast({ type: 'error', message: getErrorMessage(error, 'Could not process the hero image. Please try a different file.') });
+                  } finally {
+                    input.value = '';
+                  }
                 }}
               />
               <p className="text-xs text-on-surface-variant mt-2">
-                Shown behind the hero on the public homepage with a brand-colored overlay for readable text. Use a wide, high-quality image (about 1600&times;900) under 400&nbsp;KB. Leave empty to use the branded gradient.
+                Shown behind the hero on the public homepage with a brand-colored overlay for readable text. Use a wide image (about 1600&times;900); large files are automatically resized and compressed to fit. Leave empty to use the branded gradient.
               </p>
               {settings.heroImageDataUrl && (
                 <div className="mt-3 space-y-2">
