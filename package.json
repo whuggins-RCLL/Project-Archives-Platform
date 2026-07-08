@@ -11,6 +11,7 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "ci:guard": "node scripts/ci-guard-persistent-state.mjs",
+    "ci:rules-sync": "node scripts/check-firestore-rules-sync.mjs",
     "audit:deps": "node scripts/run-npm-audit.mjs",
     "grant:owner": "node scripts/grant-owner-by-email.mjs"
   },

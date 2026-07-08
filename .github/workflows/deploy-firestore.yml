@@ -14,6 +14,12 @@ on:
   # Allow manual redeploys, e.g. after a rules change that failed to deploy.
   workflow_dispatch:
 
+permissions:
+  contents: read
+  # Needed so a failed deploy can file/refresh the tracking issue instead of
+  # failing silently while production keeps running stale rules.
+  issues: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -27,10 +33,10 @@ jobs:
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
 
-      - name: Deploy Firestore rules and indexes
+      - name: Prepare deploy credentials
+        id: creds
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-          GOOGLE_APPLICATION_CREDENTIALS: /tmp/sa.json
         run: |
           set -euo pipefail
 
@@ -41,16 +47,25 @@ jobs:
 
           printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > /tmp/sa.json
           PROJECT_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/sa.json','utf8')).project_id)")
-          echo "Deploying Firestore rules and indexes to project: $PROJECT_ID"
+          SA_EMAIL=$(node -e "console.log(JSON.parse(require('fs').readFileSync('/tmp/sa.json','utf8')).client_email)")
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "sa_email=$SA_EMAIL" >> "$GITHUB_OUTPUT"
+          echo "Deploying to project $PROJECT_ID as $SA_EMAIL"
+
+      - name: Deploy Firestore rules and indexes
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: /tmp/sa.json
+          PROJECT_ID: ${{ steps.creds.outputs.project_id }}
+          SA_EMAIL: ${{ steps.creds.outputs.sa_email }}
+        run: |
+          set -euo pipefail
 
           # The deploy service account can write Firestore rules/indexes but is not
           # granted serviceusage.services.get. Because of that, firebase-tools' "ensure
           # required API is enabled" precheck fails with HTTP 403 from
           # serviceusage.googleapis.com and aborts the deploy *before* any rules are
-          # pushed -- which is why every rules change (collaborators, isPublic, etc.)
-          # silently failed to reach production and surfaced as "permission denied"
-          # errors in the app. The Firestore API is already enabled on the project, so
-          # pre-seed firebase-tools' API-enablement cache to skip that precheck.
+          # pushed. The Firestore API is already enabled on the project, so pre-seed
+          # firebase-tools' API-enablement cache to skip that precheck.
           CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/configstore"
           mkdir -p "$CONFIG_DIR"
           node -e "
@@ -67,4 +82,87 @@ jobs:
             fs.writeFileSync(file, JSON.stringify(cache));
           " "$CONFIG_DIR/firebase-tools.json" "$PROJECT_ID"
 
-          firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive --force
+          if ! firebase deploy --only firestore --project "$PROJECT_ID" --non-interactive --force; then
+            echo "::error::Firestore deploy failed. If the log above shows a 403 from firebaserules.googleapis.com, the service account $SA_EMAIL is missing IAM roles on project $PROJECT_ID. Grant it 'Firebase Rules Admin' (roles/firebaserules.admin) and 'Cloud Datastore Index Admin' (roles/datastore.indexAdmin) in Google Cloud IAM, then re-run this workflow (Actions -> Deploy Firestore Rules & Indexes -> Run workflow)."
+            exit 1
+          fi
+
+      - name: Verify production rules match this commit
+        env:
+          PROJECT_ID: ${{ steps.creds.outputs.project_id }}
+        run: |
+          set -euo pipefail
+
+          # A deploy that exits 0 is not proof the rules landed; fetch the released
+          # ruleset back from production and diff it against the repo so stale rules
+          # can never masquerade as a green deploy again.
+          gcloud auth activate-service-account --key-file=/tmp/sa.json --quiet
+          TOKEN=$(gcloud auth print-access-token)
+
+          RULESET=$(curl -sfS -H "Authorization: Bearer $TOKEN" \
+            "https://firebaserules.googleapis.com/v1/projects/$PROJECT_ID/releases/cloud.firestore" \
+            | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).rulesetName));")
+
+          curl -sfS -H "Authorization: Bearer $TOKEN" \
+            "https://firebaserules.googleapis.com/v1/$RULESET" \
+            | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>process.stdout.write(JSON.parse(d).source.files[0].content));" \
+            > /tmp/deployed.rules
+
+          if ! diff -u firestore.rules /tmp/deployed.rules; then
+            echo "::error::The ruleset live in production does not match firestore.rules in this commit. The deploy did not take effect."
+            exit 1
+          fi
+          echo "Verified: production ruleset matches firestore.rules at $GITHUB_SHA."
+
+      - name: File or update tracking issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PROJECT_ID: ${{ steps.creds.outputs.project_id }}
+          SA_EMAIL: ${{ steps.creds.outputs.sa_email }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          PROJECT_ID="${PROJECT_ID:-<project_id in the FIREBASE_SERVICE_ACCOUNT_JSON secret>}"
+          SA_EMAIL="${SA_EMAIL:-<client_email in the FIREBASE_SERVICE_ACCOUNT_JSON secret>}"
+
+          cat > /tmp/issue-body.md <<'EOF'
+          The **Deploy Firestore Rules & Indexes** workflow failed, so the Firestore security rules running in production are **stale**. Until this is fixed, any project field added to `firestore.rules` after the last successful deploy will be rejected with "permission denied" when users hit Save.
+
+          Failed run: __RUN_URL__
+
+          ### Most likely fix (one-time IAM grant)
+
+          The deploy service account `__SA_EMAIL__` needs these roles on Google Cloud project `__PROJECT_ID__`:
+
+          - **Firebase Rules Admin** (`roles/firebaserules.admin`) — deploy security rules
+          - **Cloud Datastore Index Admin** (`roles/datastore.indexAdmin`) — deploy indexes
+
+          Via `gcloud` (run as a project owner):
+
+          ```
+          gcloud projects add-iam-policy-binding __PROJECT_ID__ \
+            --member="serviceAccount:__SA_EMAIL__" --role="roles/firebaserules.admin"
+          gcloud projects add-iam-policy-binding __PROJECT_ID__ \
+            --member="serviceAccount:__SA_EMAIL__" --role="roles/datastore.indexAdmin"
+          ```
+
+          Or in the console: IAM & Admin → IAM → edit `__SA_EMAIL__` → add both roles.
+
+          Then re-run the deploy: **Actions → Deploy Firestore Rules & Indexes → Run workflow**.
+
+          ### Immediate manual workaround
+
+          Paste the contents of `firestore.rules` from `main` into **Firebase console → Firestore Database → Rules → Publish**. That unblocks users right away, but fix the workflow so future rules changes deploy automatically.
+          EOF
+
+          sed -i "s|__PROJECT_ID__|$PROJECT_ID|g; s|__SA_EMAIL__|$SA_EMAIL|g; s|__RUN_URL__|$RUN_URL|g" /tmp/issue-body.md
+
+          TITLE="Firestore rules deploy failing — production rules are stale"
+          NUMBER=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$NUMBER" ]; then
+            gh issue comment "$NUMBER" --body-file /tmp/issue-body.md
+          else
+            gh issue create --title "$TITLE" --body-file /tmp/issue-body.md
+          fi

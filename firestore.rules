@@ -292,6 +292,16 @@ service cloud.firestore {
         );
     }
 
+    match /suiteActions/{entryId} {
+      allow read: if isInternalUser() && isAdminRole();
+      allow create: if isInternalUser() && canEditContent() &&
+        hasRequiredFields(['action', 'details', 'createdAt']) &&
+        hasOnlyAllowedFields(['action', 'details', 'createdAt']) &&
+        isValidString(request.resource.data.action, 1, 100) &&
+        request.resource.data.details is map &&
+        request.resource.data.createdAt is timestamp;
+    }
+
     match /adminAudit/{entryId} {
       allow read, write: if isInternalUser() && canManageRoles();
     }
