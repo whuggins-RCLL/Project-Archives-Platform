@@ -23,5 +23,8 @@ jobs:
       - name: Persistent-state guard
         run: npm run ci:guard
 
+      - name: Firestore rules / client sync guard
+        run: npm run ci:rules-sync
+
       - name: Build
         run: npm run build
