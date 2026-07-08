@@ -12,12 +12,16 @@ export default function SettingsView({
   loadingRole,
   onRoleRefreshRequested,
   onSettingsUpdated,
+  onSettingsPreview,
 }: {
   canManageSettings: boolean,
   canViewSettings: boolean,
   loadingRole: boolean,
   onRoleRefreshRequested?: () => Promise<void>,
+  /** Called only with settings confirmed by the server (fetched or successfully saved). */
   onSettingsUpdated?: (settings: Settings) => void,
+  /** Called with unsaved in-progress edits for live preview; must not be persisted. */
+  onSettingsPreview?: (settings: Settings) => void,
 }) {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [settings, setSettings] = useState<Settings>({
@@ -133,8 +137,11 @@ export default function SettingsView({
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
+  // Live preview of unsaved branding edits. This intentionally goes through the
+  // preview channel: committing here would cache unsaved edits on this device
+  // and make settings look saved when the server never received them.
   useEffect(() => {
-    onSettingsUpdated?.(settings);
+    onSettingsPreview?.(settings);
   }, [settings.primaryColor, settings.brandDarkColor, settings.portalName, settings.suiteName, settings.logoDataUrl, settings.heroImageDataUrl]);
 
   if (loading || loadingRole) return <div className="p-10">Loading settings...</div>;

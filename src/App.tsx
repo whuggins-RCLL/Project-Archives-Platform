@@ -63,7 +63,7 @@ function InternalApp() {
     rawRole,
   } = useUserRole();
   const modalRef = useRef<HTMLDivElement | null>(null);
-  const { branding, settings, setSettings: setBrandingSettings, isBrandingHydrated } = useBranding();
+  const { branding, settings, setSettings: setBrandingSettings, previewSettings: previewBrandingSettings, isBrandingHydrated } = useBranding();
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
@@ -283,6 +283,9 @@ function InternalApp() {
             onSettingsUpdated={(next) => {
               setBrandingSettings(next);
               applyBrandingToDocument(next);
+            }}
+            onSettingsPreview={(next) => {
+              previewBrandingSettings(next);
             }}
           />
         );

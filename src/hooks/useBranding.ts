@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 let preloadedSettings: Settings | null = null;
-let preloadPromise: Promise<Settings> | null = null;
+let serverFetchPromise: Promise<Settings> | null = null;
 
 function saveCachedSettings(settings: Settings): void {
   try {
@@ -45,7 +45,7 @@ function saveCachedSettings(settings: Settings): void {
 
 function commitBrandingSettings(settings: Settings): void {
   preloadedSettings = settings;
-  preloadPromise = Promise.resolve(settings);
+  serverFetchPromise = Promise.resolve(settings);
   applyBrandingToDocument(settings);
   saveCachedSettings(settings);
 }
@@ -73,26 +73,31 @@ export function applyBrandingToDocument(settings: Pick<Settings, 'primaryColor' 
   document.documentElement.style.setProperty('--brand-dark', settings.brandDarkColor);
 }
 
-const resolveBrandingSettings = async (): Promise<Settings> => {
-  if (preloadedSettings) {
-    return preloadedSettings;
-  }
-
-  if (!preloadPromise) {
-    preloadPromise = api.getSettings()
+/**
+ * Fetch settings from the server and commit them as the source of truth.
+ * The localStorage cache is only a fast-paint/offline fallback — it must never
+ * mask what is actually stored on the backend, otherwise settings look saved
+ * on this device while other devices see nothing.
+ */
+const resolveBrandingSettings = (): Promise<Settings> => {
+  if (!serverFetchPromise) {
+    serverFetchPromise = api.getSettings()
       .then((response) => {
         commitBrandingSettings(response);
         return response;
       })
       .catch(() => {
-        const cached = readCachedSettings();
-        preloadedSettings = cached ?? DEFAULT_SETTINGS;
-        applyBrandingToDocument(preloadedSettings);
-        return preloadedSettings;
+        // Server unreachable: clear the promise so a later mount can retry,
+        // and fall back to the last known copy for this session.
+        serverFetchPromise = null;
+        const fallback = preloadedSettings ?? readCachedSettings() ?? DEFAULT_SETTINGS;
+        preloadedSettings = fallback;
+        applyBrandingToDocument(fallback);
+        return fallback;
       });
   }
 
-  return preloadPromise;
+  return serverFetchPromise;
 };
 
 export async function preloadBrandingSettings(): Promise<void> {
@@ -104,7 +109,12 @@ export async function preloadBrandingSettings(): Promise<void> {
     applyBrandingToDocument(cached);
   }
 
-  await resolveBrandingSettings();
+  const revalidation = resolveBrandingSettings();
+  // With a cached copy we can paint immediately and let the server copy land
+  // via useBranding's effect; without one, wait so first paint shows real data.
+  if (!cached) {
+    await revalidation;
+  }
 }
 
 export function useBranding() {
@@ -135,6 +145,21 @@ export function useBranding() {
     });
   }, []);
 
+  /**
+   * Live-preview unsaved edits (e.g. while typing in the settings form).
+   * Updates React state and document CSS variables only — never the
+   * localStorage cache, so unsaved edits can't masquerade as saved settings.
+   */
+  const previewSettings = useCallback<Dispatch<SetStateAction<Settings>>>((value) => {
+    setSettings((previous) => {
+      const next = typeof value === 'function'
+        ? (value as (previous: Settings) => Settings)(previous)
+        : value;
+      applyBrandingToDocument(next);
+      return next;
+    });
+  }, []);
+
   const branding = useMemo(() => ({
     /** Short product name shown in compact chrome (e.g. top bar). */
     suiteName: settings.suiteName || APP_CONFIG.appName,
@@ -145,5 +170,5 @@ export function useBranding() {
     heroImageUrl: settings.heroImageDataUrl || '',
   }), [settings]);
 
-  return { settings, setSettings: setSettingsAndCache, branding, isBrandingHydrated };
+  return { settings, setSettings: setSettingsAndCache, previewSettings, branding, isBrandingHydrated };
 }
