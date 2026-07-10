@@ -234,7 +234,8 @@ export default function PublicView() {
               aria-hidden
               className="absolute inset-0 -z-20 h-full w-full object-cover"
             />
-            <div className="absolute inset-0 -z-10 bg-gradient-to-br from-brand-dark/90 via-brand-dark/75 to-primary/70" aria-hidden />
+            {/* Raw brand variables (not theme tokens) so the overlay — and the hero image under it — looks the same in dark mode. */}
+            <div className="absolute inset-0 -z-10 bg-gradient-to-br from-(--brand-dark)/90 via-(--brand-dark)/75 to-(--brand-primary)/70" aria-hidden />
           </>
         ) : (
           <>
