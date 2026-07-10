@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3 } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
+import CommunityIntakeForm from '../components/CommunityIntakeForm';
+import { getLikedProjectIds, persistLikedProjectIds } from '../lib/communityIntake';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
 import { applyProjectFilters, getFilterOptions, ProjectFilterQuery } from '../lib/projectFilters';
 import { useSavedViews } from '../hooks/useSavedViews';
@@ -71,8 +73,63 @@ export default function PublicView() {
   const [loading, setLoading] = useState(true);
   const [filterQuery, setFilterQuery] = useState<ProjectFilterQuery>(DEFAULT_FILTER_QUERY);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [likedIds, setLikedIds] = useState<Set<string>>(() => getLikedProjectIds());
+  // Optimistic like counts: `base` is the server count at click time, so once the realtime
+  // snapshot delivers a different server value the override is ignored automatically.
+  const [likeOverrides, setLikeOverrides] = useState<Record<string, { base: number; next: number }>>({});
+  const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const { views, saveView, deleteView } = useSavedViews('public');
   const { branding, settings } = useBranding();
+
+  const displayLikeCount = (project: Project): number => {
+    const serverCount = typeof project.likeCount === 'number' ? project.likeCount : 0;
+    const override = likeOverrides[project.id];
+    if (override && override.base === serverCount) return Math.max(0, override.next);
+    return Math.max(0, serverCount);
+  };
+
+  const toggleLike = async (project: Project) => {
+    if (likePendingIds.has(project.id)) return;
+    const hasLiked = likedIds.has(project.id);
+    const action = hasLiked ? 'unlike' : 'like';
+    const serverCount = typeof project.likeCount === 'number' ? Math.max(0, project.likeCount) : 0;
+
+    setLikePendingIds((prev) => new Set(prev).add(project.id));
+    setLikeOverrides((prev) => ({
+      ...prev,
+      [project.id]: { base: serverCount, next: serverCount + (action === 'like' ? 1 : -1) },
+    }));
+    setLikedIds((prev) => {
+      const next = new Set<string>(prev);
+      if (action === 'like') next.add(project.id); else next.delete(project.id);
+      persistLikedProjectIds(next);
+      return next;
+    });
+
+    try {
+      await api.togglePublicProjectLike(project.id, action);
+    } catch (error) {
+      console.error('Failed to update like:', error);
+      // Roll back the optimistic update.
+      setLikeOverrides((prev) => {
+        const next = { ...prev };
+        delete next[project.id];
+        return next;
+      });
+      setLikedIds((prev) => {
+        const next = new Set<string>(prev);
+        if (action === 'like') next.delete(project.id); else next.add(project.id);
+        persistLikedProjectIds(next);
+        return next;
+      });
+    } finally {
+      setLikePendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(project.id);
+        return next;
+      });
+    }
+  };
 
   const toggleExpanded = (projectId: string) => {
     setExpandedIds((prev) => {
@@ -235,8 +292,14 @@ export default function PublicView() {
                 <p className="text-base sm:text-lg whitespace-pre-line">{publishedNarrative}</p>
               </div>
             )}
-            {heroQuickLinks.length > 0 && (
-              <div className="mb-8 flex flex-wrap gap-3">
+            <div className="mb-8 flex flex-wrap gap-3">
+                <a
+                  href="#suggest-a-project"
+                  className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-6 py-2.5 text-sm font-semibold text-white shadow-lg transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-300" aria-hidden />
+                  Suggest a project
+                </a>
                 {heroQuickLinks.map((link) => (
                   <a
                     key={link.id}
@@ -249,8 +312,7 @@ export default function PublicView() {
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
                   </a>
                 ))}
-              </div>
-            )}
+            </div>
             <div className="flex flex-wrap gap-4">
               <div className="glass-on-dark glass-sheen rounded-2xl p-4 flex items-center gap-4 shadow-lg">
                 <div className="p-3 bg-white/15 rounded-xl">
@@ -433,14 +495,35 @@ export default function PublicView() {
                     )}
                     <span className="text-xs font-medium text-on-surface-variant">{project.owner.name}</span>
                   </div>
-                  <div className="flex items-center gap-1 text-on-surface-variant/70">
-                    <Clock className="w-3.5 h-3.5" aria-hidden />
-                    <span
-                      className="text-[10px] uppercase font-bold tracking-wider"
-                      title={(toDate(project.updatedAt) ?? toDate(project.createdAt))?.toLocaleString() || 'Unknown update time'}
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => toggleLike(project)}
+                      disabled={likePendingIds.has(project.id)}
+                      aria-pressed={likedIds.has(project.id)}
+                      aria-label={likedIds.has(project.id) ? `Unlike ${project.title}` : `Like ${project.title}`}
+                      title={likedIds.has(project.id) ? 'You like this project' : 'Like this project'}
+                      className={`group/like inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-wait ${
+                        likedIds.has(project.id)
+                          ? 'border-rose-300/60 bg-rose-50 text-rose-600'
+                          : 'border-outline-variant/30 bg-surface-container-lowest/70 text-on-surface-variant hover:border-rose-300/60 hover:text-rose-500'
+                      }`}
                     >
-                      {formatLastUpdated(project)}
-                    </span>
+                      <Heart
+                        className={`w-3.5 h-3.5 transition-transform group-hover/like:scale-110 ${likedIds.has(project.id) ? 'fill-current' : ''}`}
+                        aria-hidden
+                      />
+                      {displayLikeCount(project)}
+                    </button>
+                    <div className="flex items-center gap-1 text-on-surface-variant/70">
+                      <Clock className="w-3.5 h-3.5" aria-hidden />
+                      <span
+                        className="text-[10px] uppercase font-bold tracking-wider"
+                        title={(toDate(project.updatedAt) ?? toDate(project.createdAt))?.toLocaleString() || 'Unknown update time'}
+                      >
+                        {formatLastUpdated(project)}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -451,6 +534,24 @@ export default function PublicView() {
             ))}
           </div>
         )}
+
+        {/* Community project suggestions */}
+        <section id="suggest-a-project" className="mt-20 scroll-mt-24" aria-labelledby="suggest-a-project-heading">
+          <div className="mb-8 max-w-3xl">
+            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary">
+              <Sparkles className="h-3.5 w-3.5" aria-hidden />
+              For the SLS community
+            </span>
+            <h2 id="suggest-a-project-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">
+              Suggest a project
+            </h2>
+            <p className="text-on-surface-variant mt-2">
+              Share an idea with our team in about a minute. Every suggestion lands on our project board for review —
+              submitting one doesn&rsquo;t guarantee it will be built, but it helps shape what we work on next.
+            </p>
+          </div>
+          <CommunityIntakeForm />
+        </section>
       </main>
 
       {/* Footer */}

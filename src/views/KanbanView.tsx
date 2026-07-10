@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, Filter, Users, Plus, MoreHorizontal, CheckCircle2, MoveDown, Minimize2, Maximize2, Globe, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Filter, Users, Plus, MoreHorizontal, CheckCircle2, MoveDown, Minimize2, Maximize2, Globe, Lock, Sparkles, Heart } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project, ProjectStatus } from '../types';
@@ -203,8 +203,23 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
               {project.isPublic === false ? <Lock className="w-2.5 h-2.5" /> : <Globe className="w-2.5 h-2.5" />}
               {project.isPublic === false ? 'Private' : 'Public'}
             </span>
+            {project.source === 'community' && (
+              <span
+                className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter bg-violet-100 text-violet-800"
+                title="Suggested by the SLS community through the public intake form"
+              >
+                <Sparkles className="w-2.5 h-2.5" />
+                SLS Community
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1.5">
+            {typeof project.likeCount === 'number' && project.likeCount > 0 && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-500" title={`${project.likeCount} public ${project.likeCount === 1 ? 'like' : 'likes'}`}>
+                <Heart className="w-3 h-3 fill-current" />
+                {project.likeCount}
+              </span>
+            )}
             {isLaunched && <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-dim" aria-label="In production" />}
             <MoreHorizontal className="w-5 h-5 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity" />
           </div>

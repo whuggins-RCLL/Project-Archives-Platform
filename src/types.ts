@@ -128,6 +128,16 @@ export interface ProjectArtifactLink {
   type?: ProjectArtifactLinkType;
 }
 
+/** Details captured by the public "Suggest a project" intake form. */
+export interface CommunityIntake {
+  submitterName: string;
+  submitterEmail: string;
+  category: string;
+  goal?: string;
+  audience?: string;
+  submittedAt?: string;
+}
+
 export interface Project {
   id: string;
   code: string;
@@ -144,6 +154,11 @@ export interface Project {
   preservationScore: number;
   riskFactor: string;
   isPublic?: boolean;
+  /** Public-page like counter; incremented server-side via /api/public/projects/:id/like. */
+  likeCount?: number;
+  /** 'community' marks projects suggested through the public intake form (vs. added by the team). */
+  source?: 'community' | string;
+  intake?: CommunityIntake;
   milestones?: Milestone[];
   dependencies?: Dependency[];
   approvalCheckpoints?: ApprovalCheckpoint[];

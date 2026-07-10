@@ -141,6 +141,16 @@ const toProjectUpdatePayload = (updates: Partial<Project>): Partial<Project> => 
 };
 
 
+export interface CommunitySuggestionInput {
+  name: string;
+  email: string;
+  projectName: string;
+  category: string;
+  description: string;
+  goal: string;
+  audience?: string;
+}
+
 export interface AddCommentOptions {
   parentId?: string;
   mentions?: string[];
@@ -551,6 +561,48 @@ export const api = {
   },
 
   getCurrentUserId: (): string | null => auth.currentUser?.uid ?? null,
+
+  /** Anonymous public-page like/unlike. Writes happen server-side; no auth required. */
+  togglePublicProjectLike: async (projectId: string, action: 'like' | 'unlike'): Promise<{ likeCount: number }> => {
+    const response = await fetch(`/api/public/projects/${encodeURIComponent(projectId)}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to record your like right now.');
+    return { likeCount: typeof payload.likeCount === 'number' ? payload.likeCount : 0 };
+  },
+
+  /** Anonymous public intake: creates a private 'Intake / Proposed' project flagged as a community suggestion. */
+  submitCommunitySuggestion: async (input: CommunitySuggestionInput): Promise<{ id: string; code: string }> => {
+    const response = await fetch('/api/public/suggestions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Unable to submit your suggestion right now.');
+    return {
+      id: typeof payload.id === 'string' ? payload.id : '',
+      code: typeof payload.code === 'string' ? payload.code : '',
+    };
+  },
+
+  /** Emails the submitter a copy of a stored suggestion. Throws with `notConfigured` when no email webhook is set up. */
+  emailSuggestionCopy: async (suggestionId: string, email: string): Promise<void> => {
+    const response = await fetch(`/api/public/suggestions/${encodeURIComponent(suggestionId)}/email-copy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.error || 'Unable to send the email copy right now.') as Error & { notConfigured?: boolean };
+      error.notConfigured = payload.notConfigured === true;
+      throw error;
+    }
+  },
 
   logSuiteAction: async (action: string, details: Record<string, unknown>): Promise<void> => {
     try {

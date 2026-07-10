@@ -935,6 +935,60 @@ Description: ${project.description}`;
         </div>
       </div>
 
+      {project.source === 'community' && (
+        <section
+          className="mb-6 rounded-lg border border-violet-300/40 bg-violet-50 p-6"
+          aria-label="Community suggestion details"
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-5 h-5 text-violet-600" aria-hidden />
+            <h2 className="font-headline text-lg font-bold text-violet-900">Suggested by the SLS community</h2>
+          </div>
+          <p className="text-sm text-on-surface-variant mb-4">
+            This project arrived through the public intake form and defaults to private. Review it, then flip Public
+            Dashboard Visibility manually if it should appear on the public page.
+          </p>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
+            {project.intake?.submitterName && (
+              <div>
+                <dt className="text-xs font-bold uppercase text-on-surface-variant">Submitted by</dt>
+                <dd className="text-on-surface">{project.intake.submitterName}</dd>
+              </div>
+            )}
+            {project.intake?.submitterEmail && (
+              <div>
+                <dt className="text-xs font-bold uppercase text-on-surface-variant">Email</dt>
+                <dd><a href={`mailto:${project.intake.submitterEmail}`} className="text-primary underline">{project.intake.submitterEmail}</a></dd>
+              </div>
+            )}
+            {project.intake?.category && (
+              <div>
+                <dt className="text-xs font-bold uppercase text-on-surface-variant">Category</dt>
+                <dd className="text-on-surface">{project.intake.category}</dd>
+              </div>
+            )}
+            {project.intake?.submittedAt && (
+              <div>
+                <dt className="text-xs font-bold uppercase text-on-surface-variant">Submitted</dt>
+                <dd className="text-on-surface">{new Date(project.intake.submittedAt).toLocaleString()}</dd>
+              </div>
+            )}
+            {project.intake?.goal && (
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-bold uppercase text-on-surface-variant">Goal</dt>
+                <dd className="text-on-surface whitespace-pre-line">{project.intake.goal}</dd>
+              </div>
+            )}
+            {project.intake?.audience && (
+              <div className="sm:col-span-2">
+                <dt className="text-xs font-bold uppercase text-on-surface-variant">Who it would help</dt>
+                <dd className="text-on-surface">{project.intake.audience}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
+      )}
+
       <div className="grid grid-cols-12 gap-6">
         <div className="col-span-12 lg:col-span-8 space-y-6">
           <section className="bg-surface-container-lowest p-8 rounded-lg shadow-sm">
