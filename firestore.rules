@@ -143,11 +143,14 @@ service cloud.firestore {
       // any key is missing here, so a new feature field (e.g. `collaborators`)
       // that is added to the app but not to this list -- or that is added here but
       // never deployed -- surfaces as a "permission denied" error on save.
+      // `likeCount`, `source`, and `intake` are written server-side (public likes and the
+      // community intake form) but must stay listed here: update rules validate the whole
+      // resulting document, so omitting them breaks every client edit of those projects.
       let allowedFields = [
         'title', 'description', 'status', 'priority', 'tags', 'dueDate',
         'assignee', 'createdAt', 'updatedAt', 'code', 'owner', 'collaborators', 'artifactLinks', 'isPublic', 'progress',
         'department', 'preservationScore', 'riskFactor', 'aiDrafts', 'pmApproach',
-        'milestones', 'dependencies', 'approvalCheckpoints'
+        'milestones', 'dependencies', 'approvalCheckpoints', 'likeCount', 'source', 'intake'
       ];
 
       return hasRequiredFields([
@@ -176,7 +179,10 @@ service cloud.firestore {
              isValidString(data.riskFactor, 1, 50) &&
              (!('milestones' in data) || data.milestones is list) &&
              (!('dependencies' in data) || data.dependencies is list) &&
-             (!('approvalCheckpoints' in data) || data.approvalCheckpoints is list);
+             (!('approvalCheckpoints' in data) || data.approvalCheckpoints is list) &&
+             (!('likeCount' in data) || data.likeCount is number) &&
+             (!('source' in data) || isValidString(data.source, 1, 40)) &&
+             (!('intake' in data) || data.intake is map);
     }
 
     function isValidComment(data) {

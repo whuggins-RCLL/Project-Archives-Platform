@@ -1661,6 +1661,294 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
+// ---------------------------------------------------------------------------
+// Public community endpoints (no auth): likes + "Suggest a project" intake.
+// Anonymous visitors cannot write to Firestore directly (rules only allow
+// public reads), so these routes perform the writes with server credentials.
+// ---------------------------------------------------------------------------
+
+/** Keep in sync with COMMUNITY_SUGGESTION_CATEGORIES in src/lib/communityIntake.ts. */
+const PUBLIC_SUGGESTION_CATEGORIES = new Set([
+  "AI Learning Hub Suggestions",
+  "AI Upload Suggestions",
+  "New Guides",
+  "Coding Help",
+  "Research & Data Tools",
+  "Workflow Automation",
+  "Trainings & Workshops",
+  "Other",
+]);
+
+const PUBLIC_LIKE_RATE_LIMIT = { maxRequests: 30, windowMs: 60_000 };
+const PUBLIC_SUGGESTION_RATE_LIMIT = { maxRequests: 5, windowMs: 10 * 60_000 };
+const PUBLIC_SUGGESTION_MAX_BODY_BYTES = 24 * 1024;
+const PUBLIC_EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const FIRESTORE_DOC_ID_REGEX = /^[A-Za-z0-9_-]{1,128}$/;
+
+function publicIntakeEmailWebhookUrl(): string {
+  return process.env.INTAKE_EMAIL_WEBHOOK_URL || process.env.OPS_DIGEST_EMAIL_WEBHOOK_URL || "";
+}
+
+function cleanPublicText(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function cleanPublicMultilineText(value: unknown, maxLength: number): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\r\n/g, "\n").trim().slice(0, maxLength);
+}
+
+function initialsFromName(name: string): string {
+  const parts = name.split(/\s+/).filter(Boolean);
+  const initials = parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
+  return initials || "CS";
+}
+
+/** Atomically adjusts a project's likeCount via a Firestore commit field transform. */
+async function applyLikeCountTransform(projectId: string, delta: 1 | -1): Promise<void> {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
+  const firebaseProjectId = getFirebaseProjectId();
+  const databasePath = getFirestoreDatabasePathSegment();
+  const documentName = `projects/${firebaseProjectId}/databases/${databasePath}/documents/projects/${projectId}`;
+  const response = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/${databasePath}/documents:commit`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        writes: [{
+          transform: {
+            document: documentName,
+            fieldTransforms: [{ fieldPath: "likeCount", increment: { integerValue: String(delta) } }],
+          },
+        }],
+      }),
+    },
+  );
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as { error?: { message?: string } };
+    throw new Error(data.error?.message || "Failed to update like count");
+  }
+}
+
+app.post("/api/public/projects/:projectId/like", async (req, res) => {
+  try {
+    if (!enforceRequestSizeLimit(req, 1024)) {
+      return res.status(413).json({ error: "Request body too large." });
+    }
+    const rate = await checkRateLimitDistributed(getClientIp(req), {
+      ...PUBLIC_LIKE_RATE_LIMIT,
+      namespace: "public-like",
+    });
+    if (!rate.allowed) {
+      res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+      return res.status(429).json({ error: "Too many reactions right now. Please try again in a minute." });
+    }
+
+    const projectId = req.params.projectId;
+    if (!FIRESTORE_DOC_ID_REGEX.test(projectId)) {
+      return res.status(400).json({ error: "Invalid project id" });
+    }
+    const action = (req.body as { action?: unknown } | undefined)?.action;
+    if (action !== "like" && action !== "unlike") {
+      return res.status(400).json({ error: "action must be 'like' or 'unlike'" });
+    }
+
+    const doc = await firestoreCall(`projects/${projectId}`).catch(() => null);
+    if (!doc || !doc.fields) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const parsed = parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    if (parsed.isPublic === false) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const currentCount = typeof parsed.likeCount === "number" && Number.isFinite(parsed.likeCount)
+      ? Math.max(0, Math.floor(parsed.likeCount))
+      : 0;
+    if (action === "unlike" && currentCount === 0) {
+      return res.json({ likeCount: 0 });
+    }
+
+    await applyLikeCountTransform(projectId, action === "like" ? 1 : -1);
+    return res.json({ likeCount: Math.max(0, currentCount + (action === "like" ? 1 : -1)) });
+  } catch (error) {
+    console.error("Public like failed:", error instanceof Error ? error.message : error);
+    return res.status(500).json({ error: "Unable to record your like right now. Please try again later." });
+  }
+});
+
+app.post("/api/public/suggestions", async (req, res) => {
+  try {
+    if (!enforceRequestSizeLimit(req, PUBLIC_SUGGESTION_MAX_BODY_BYTES)) {
+      return res.status(413).json({ error: "Request body too large." });
+    }
+    const rate = await checkRateLimitDistributed(getClientIp(req), {
+      ...PUBLIC_SUGGESTION_RATE_LIMIT,
+      namespace: "public-suggest",
+    });
+    if (!rate.allowed) {
+      res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+      return res.status(429).json({ error: "Too many submissions from this connection. Please try again a little later." });
+    }
+
+    const body = (req.body || {}) as Record<string, unknown>;
+    const name = cleanPublicText(body.name, 100);
+    const email = cleanPublicText(body.email, 254);
+    const projectName = cleanPublicText(body.projectName, 100);
+    const category = cleanPublicText(body.category, 80);
+    const description = cleanPublicMultilineText(body.description, 4000);
+    const goal = cleanPublicMultilineText(body.goal, 1000);
+    const audience = cleanPublicText(body.audience, 300);
+
+    if (!name) return res.status(400).json({ error: "Please tell us your name." });
+    if (!PUBLIC_EMAIL_REGEX.test(email)) return res.status(400).json({ error: "Please provide a valid email address." });
+    if (!projectName) return res.status(400).json({ error: "Please give your idea a short project name." });
+    if (!PUBLIC_SUGGESTION_CATEGORIES.has(category)) return res.status(400).json({ error: "Please pick one of the listed categories." });
+    if (description.length < 10) return res.status(400).json({ error: "Please describe your idea in a sentence or two." });
+    if (!goal) return res.status(400).json({ error: "Please tell us what this idea should accomplish." });
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    // SLS- prefix (vs. the AI- prefix used for team-created projects) is a quick visual
+    // identifier for community-suggested cards; the random suffix avoids a uniqueness query.
+    const code = `SLS-${nowIso.slice(0, 10).replace(/-/g, "")}-${nowIso.slice(11, 19).replace(/:/g, "")}-${randomUUID().slice(0, 4).toUpperCase()}`;
+
+    const intakeFields: Record<string, Record<string, unknown>> = {
+      submitterName: { stringValue: name },
+      submitterEmail: { stringValue: email },
+      category: { stringValue: category },
+      goal: { stringValue: goal },
+      submittedAt: { stringValue: nowIso },
+    };
+    if (audience) intakeFields.audience = { stringValue: audience };
+
+    const created = await firestoreCall("projects", {
+      method: "POST",
+      body: {
+        fields: {
+          title: { stringValue: projectName },
+          description: { stringValue: description },
+          status: { stringValue: "Intake / Proposed" },
+          priority: { stringValue: "Medium" },
+          tags: { arrayValue: { values: [{ stringValue: "Community Suggestion" }] } },
+          code: { stringValue: code },
+          owner: {
+            mapValue: {
+              fields: {
+                name: { stringValue: name },
+                initials: { stringValue: initialsFromName(name) },
+              },
+            },
+          },
+          // Community suggestions start private; the team reviews them and flips them public manually.
+          isPublic: { booleanValue: false },
+          progress: { integerValue: "0" },
+          department: { stringValue: category },
+          preservationScore: { integerValue: "0" },
+          riskFactor: { stringValue: "Low" },
+          likeCount: { integerValue: "0" },
+          source: { stringValue: "community" },
+          intake: { mapValue: { fields: intakeFields } },
+          createdAt: { timestampValue: nowIso },
+          updatedAt: { timestampValue: nowIso },
+        },
+      },
+    });
+
+    const createdId = typeof created.name === "string" ? created.name.split("/").pop() || "" : "";
+    auditLog("public_suggestion_created", { code, category, ip: getClientIp(req) });
+    return res.status(201).json({ id: createdId, code });
+  } catch (error) {
+    console.error("Public suggestion failed:", error instanceof Error ? error.message : error);
+    return res.status(500).json({ error: "Unable to submit your suggestion right now. Please try again later." });
+  }
+});
+
+app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) => {
+  try {
+    if (!enforceRequestSizeLimit(req, 2048)) {
+      return res.status(413).json({ error: "Request body too large." });
+    }
+    const rate = await checkRateLimitDistributed(getClientIp(req), {
+      ...PUBLIC_SUGGESTION_RATE_LIMIT,
+      namespace: "public-suggest-email",
+    });
+    if (!rate.allowed) {
+      res.setHeader("Retry-After", String(rate.retryAfterSeconds));
+      return res.status(429).json({ error: "Too many email requests. Please try again a little later." });
+    }
+
+    const suggestionId = req.params.suggestionId;
+    if (!FIRESTORE_DOC_ID_REGEX.test(suggestionId)) {
+      return res.status(400).json({ error: "Invalid suggestion id" });
+    }
+    const email = cleanPublicText((req.body as { email?: unknown } | undefined)?.email, 254);
+    if (!PUBLIC_EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: "Please provide a valid email address." });
+    }
+
+    const webhookUrl = publicIntakeEmailWebhookUrl();
+    if (!webhookUrl) {
+      return res.status(503).json({
+        error: "Email delivery is not configured on the server.",
+        notConfigured: true,
+      });
+    }
+
+    const doc = await firestoreCall(`projects/${suggestionId}`).catch(() => null);
+    if (!doc || !doc.fields) {
+      return res.status(404).json({ error: "Suggestion not found" });
+    }
+    const parsed = parseFirestoreDocument(doc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    // Only community-suggested projects can be emailed, and only with the content we stored —
+    // this endpoint must not become a relay for arbitrary user-authored email.
+    if (parsed.source !== "community") {
+      return res.status(404).json({ error: "Suggestion not found" });
+    }
+
+    const intake = (parsed.intake && typeof parsed.intake === "object" ? parsed.intake : {}) as Record<string, unknown>;
+    const lines = [
+      "Thank you for suggesting a project to the Stanford Law School team!",
+      "Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.",
+      "",
+      `Reference code: ${String(parsed.code || suggestionId)}`,
+      `Project name: ${String(parsed.title || "")}`,
+      `Category: ${String(intake.category || parsed.department || "")}`,
+      `Submitted by: ${String(intake.submitterName || "")} (${String(intake.submitterEmail || "")})`,
+      `Submitted at: ${String(intake.submittedAt || "")}`,
+      "",
+      "Description:",
+      String(parsed.description || ""),
+      "",
+      "Goal:",
+      String(intake.goal || ""),
+    ];
+    if (intake.audience) {
+      lines.push("", "Who it would help:", String(intake.audience));
+    }
+
+    const emailResponse = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: email,
+        subject: `Copy of your project suggestion (${String(parsed.code || suggestionId)})`,
+        body: lines.join("\n"),
+      }),
+    });
+    if (!emailResponse.ok) {
+      return res.status(502).json({ error: "The email service could not deliver the message. Please try again later." });
+    }
+    auditLog("public_suggestion_email_copy_sent", { suggestionId, ip: getClientIp(req) });
+    return res.json({ sent: true });
+  } catch (error) {
+    console.error("Suggestion email copy failed:", error instanceof Error ? error.message : error);
+    return res.status(500).json({ error: "Unable to send the email copy right now. Please try again later." });
+  }
+});
+
 app.get("/api/debug/env", (req, res) => {
   // Never expose environment/secret diagnostics in production deployments.
   if (isProduction || isVercel) {
