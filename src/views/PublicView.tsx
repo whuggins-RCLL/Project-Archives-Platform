@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
@@ -13,6 +13,12 @@ import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
 import { getValidArtifactLinks, normalizeArtifactUrl } from '../lib/artifactLinks';
 
 const DESCRIPTION_PREVIEW_LIMIT = 160;
+const STATUS_GROUP_ORDER = ['In Progress', 'Planning', 'On Hold', 'Launched'] as const;
+
+function getStatusGroupRank(status: string): number {
+  const index = STATUS_GROUP_ORDER.indexOf(status as typeof STATUS_GROUP_ORDER[number]);
+  return index === -1 ? STATUS_GROUP_ORDER.length : index;
+}
 
 type TimestampLike =
   | string
@@ -96,6 +102,25 @@ export default function PublicView() {
 
   const publicProjects = useMemo(() => projects.filter((project) => project.isPublic !== false), [projects]);
   const visibleProjects = useMemo(() => applyProjectFilters(publicProjects, filterQuery), [publicProjects, filterQuery]);
+  const projectGroups = useMemo(() => {
+    const grouped = visibleProjects.reduce<Record<string, Project[]>>((acc, project) => {
+      const status = project.status || 'Uncategorized';
+      if (!acc[status]) acc[status] = [];
+      acc[status].push(project);
+      return acc;
+    }, {});
+
+    return (Object.entries(grouped) as Array<[string, Project[]]>)
+      .sort(([statusA], [statusB]) => {
+        const rankDiff = getStatusGroupRank(statusA) - getStatusGroupRank(statusB);
+        return rankDiff || statusA.localeCompare(statusB);
+      })
+      .map(([status, items]) => ({
+        status,
+        items: [...items].sort((a, b) => a.title.localeCompare(b.title)),
+      }));
+  }, [visibleProjects]);
+  const departmentCount = useMemo(() => new Set(visibleProjects.map((project) => project.department).filter(Boolean)).size, [visibleProjects]);
   const filterOptions = useMemo(() => getFilterOptions(publicProjects), [publicProjects]);
   const heroQuickLinks = useMemo(
     () => (settings.heroQuickLinks ?? []).filter((link) => link.label.trim() && link.url.trim()),
@@ -252,9 +277,27 @@ export default function PublicView() {
 
       {/* Projects Grid */}
       <main id="main-content" tabIndex={-1} className="content-shell py-16 focus:outline-none" aria-labelledby="portfolio-heading">
-        <div className="mb-10">
-          <h2 id="portfolio-heading" className="text-2xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
-          <p className="text-on-surface-variant mt-2">An overview of our ongoing and completed AI transformation projects.</p>
+        <div className="mb-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+          <div>
+            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary">
+              <Layers3 className="h-3.5 w-3.5" aria-hidden />
+              Organized by stage
+            </span>
+            <h2 id="portfolio-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
+            <p className="text-on-surface-variant mt-2 max-w-3xl">
+              Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
+            </p>
+          </div>
+          <dl className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-end" aria-label="Visible portfolio summary">
+            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Projects</dt>
+              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{visibleProjects.length}</dd>
+            </div>
+            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
+              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Departments</dt>
+              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{departmentCount}</dd>
+            </div>
+          </dl>
         </div>
 
         <ProjectFilterBar
@@ -284,8 +327,20 @@ export default function PublicView() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-6">
-            {visibleProjects.map((project, index) => {
+          <div className="space-y-10">
+            {projectGroups.map((group) => (
+              <section key={group.status} className="rounded-[1.75rem] border border-outline-variant/20 bg-surface-container-lowest/25 p-4 sm:p-5" aria-labelledby={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`}>
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 id={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`} className="font-headline text-xl font-extrabold text-brand-dark">{group.status}</h3>
+                    <p className="text-sm text-on-surface-variant">{group.items.length} {group.items.length === 1 ? 'project' : 'projects'} in this stage</p>
+                  </div>
+                  <span className="rounded-full border border-outline-variant/25 bg-surface-container-lowest/70 px-3 py-1 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                    {group.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+                  {group.items.map((project, index) => {
               const isExpanded = expandedIds.has(project.id);
               const description = project.description ?? '';
               const canExpand = description.length > DESCRIPTION_PREVIEW_LIMIT;
@@ -293,7 +348,7 @@ export default function PublicView() {
               return (
               <div
                 key={project.id}
-                className="glass-card lift overflow-hidden flex flex-col animate-fade-in-up"
+                className="public-project-card glass-card glass-sheen lift overflow-hidden flex flex-col animate-fade-in-up"
                 style={{ animationDelay: `${Math.min(index * 60, 480)}ms` }}
               >
                 <div className="p-6 flex-1">
@@ -390,7 +445,10 @@ export default function PublicView() {
                 </div>
               </div>
               );
-            })}
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </main>
