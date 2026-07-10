@@ -458,7 +458,7 @@ export default function SettingsView({
                 <div className="mt-3 space-y-2">
                   <div className="relative overflow-hidden rounded-xl border border-outline-variant/30">
                     <img src={settings.heroImageDataUrl} alt="Hero background preview" className="h-28 w-full object-cover" />
-                    <div className="absolute inset-0 bg-gradient-to-br from-brand-dark/85 via-brand-dark/60 to-primary/50" />
+                    <div className="absolute inset-0 bg-gradient-to-br from-(--brand-dark)/85 via-(--brand-dark)/60 to-(--brand-primary)/50" />
                     <div className="absolute inset-0 flex items-center px-4">
                       <span className="font-headline text-sm font-bold text-white drop-shadow">Hero preview with overlay</span>
                     </div>

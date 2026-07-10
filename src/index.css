@@ -46,14 +46,19 @@
   --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.55);
   --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.45), 0 30px 70px rgba(0, 0, 0, 0.6);
 
-  --color-primary: #8ab4ff;
+  /* Brand family derived from the configurable brand colors so custom
+     branding survives dark mode instead of collapsing to a stock blue.
+     Tints mix toward white in oklch to keep the brand hue while staying
+     legible on dark surfaces; brand-dark stays near-white because it is
+     used as heading/body text throughout. */
+  --color-primary: color-mix(in oklch, var(--brand-primary) 50%, white);
   --color-brand-dark: #f4f7fb;
 
-  --color-primary-container: #123866;
-  --color-on-primary-container: #e8f0ff;
-  --color-primary-fixed: #d8e6ff;
-  --color-on-primary-fixed: #071b33;
-  --color-on-primary-fixed-variant: #28476f;
+  --color-primary-container: color-mix(in oklab, var(--brand-primary) 60%, #10161f);
+  --color-on-primary-container: color-mix(in oklch, var(--brand-primary) 18%, white);
+  --color-primary-fixed: color-mix(in oklch, var(--brand-primary) 25%, white);
+  --color-on-primary-fixed: color-mix(in oklab, var(--brand-primary) 80%, black);
+  --color-on-primary-fixed-variant: color-mix(in oklab, var(--brand-primary) 85%, white);
 
   --color-secondary: #d0d7e2;
   --color-secondary-container: #2d3745;
@@ -100,14 +105,16 @@
     --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.4), 0 18px 40px rgba(0, 0, 0, 0.55);
     --shadow-xl: 0 8px 16px rgba(0, 0, 0, 0.45), 0 30px 70px rgba(0, 0, 0, 0.6);
 
-    --color-primary: #8ab4ff;
+    /* Brand family derived from the configurable brand colors — keep in
+       sync with the :root[data-theme="dark"] block above. */
+    --color-primary: color-mix(in oklch, var(--brand-primary) 50%, white);
     --color-brand-dark: #f4f7fb;
 
-    --color-primary-container: #123866;
-    --color-on-primary-container: #e8f0ff;
-    --color-primary-fixed: #d8e6ff;
-    --color-on-primary-fixed: #071b33;
-    --color-on-primary-fixed-variant: #28476f;
+    --color-primary-container: color-mix(in oklab, var(--brand-primary) 60%, #10161f);
+    --color-on-primary-container: color-mix(in oklch, var(--brand-primary) 18%, white);
+    --color-primary-fixed: color-mix(in oklch, var(--brand-primary) 25%, white);
+    --color-on-primary-fixed: color-mix(in oklab, var(--brand-primary) 80%, black);
+    --color-on-primary-fixed-variant: color-mix(in oklab, var(--brand-primary) 85%, white);
 
     --color-secondary: #d0d7e2;
     --color-secondary-container: #2d3745;
@@ -244,6 +251,22 @@ html[data-theme="dark"] .text-violet-800,
 html[data-theme="dark"] .text-violet-900 { color: #ddd6fe !important; }
 html[data-theme="dark"] .border-violet-300\/40 { border-color: color-mix(in srgb, #8b5cf6 50%, var(--color-outline-variant)) !important; }
 
+/* Brand gradient surfaces (buttons, icon tiles, progress bars, nav accents)
+   keep the real brand colors in dark mode. Their foreground is white, so the
+   lightened dark-mode text tokens would wash them out and lose the brand. */
+html[data-theme="dark"] .from-primary {
+  --tw-gradient-from: var(--brand-primary);
+}
+html[data-theme="dark"] .to-brand-dark {
+  --tw-gradient-to: var(--brand-dark);
+}
+
+/* Modal backdrop: brand-dark flips to near-white for text in dark mode, so
+   scrims must use the raw brand variable to stay a darkening overlay. */
+html[data-theme="dark"] .bg-brand-dark\/40 {
+  background-color: color-mix(in oklab, var(--brand-dark) 40%, transparent) !important;
+}
+
 body {
   color-scheme: light dark;
   background-color: var(--color-surface);
@@ -322,7 +345,7 @@ select {
   outline: none;
   box-shadow:
     0 0 0 2px var(--color-surface),
-    0 0 0 4px color-mix(in srgb, var(--brand-primary) 55%, transparent);
+    0 0 0 4px color-mix(in srgb, var(--color-primary) 55%, transparent);
   border-radius: 8px;
 }
 
