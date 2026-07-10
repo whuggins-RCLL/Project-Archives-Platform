@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { FolderArchive, LogIn } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { APP_CONFIG } from '../config';
 import { useBranding } from '../hooks/useBranding';
+import { useAuthUser } from '../hooks/useAuthUser';
 import ThemeToggle from '../components/ThemeToggle';
 
 export default function LoginView() {
@@ -12,6 +13,22 @@ export default function LoginView() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { branding } = useBranding();
+  const { user, isAuthReady } = useAuthUser();
+
+  // Firebase persists the session — someone who is already signed in (e.g.
+  // coming back from the public portal) goes straight to the dashboard
+  // instead of being asked to authenticate again.
+  if (!isAuthReady) {
+    return (
+      <div className="relative min-h-screen flex items-center justify-center font-body text-white overflow-hidden">
+        <div className="brand-hero absolute inset-0 -z-20" aria-hidden />
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/30 border-t-white" role="status" aria-label="Checking your session" />
+      </div>
+    );
+  }
+  if (user) {
+    return <Navigate to="/app" replace />;
+  }
 
   const handleLogin = async () => {
     setIsLoading(true);

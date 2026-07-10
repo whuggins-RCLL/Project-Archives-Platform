@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
+import { auth } from '../lib/firebase';
+import { useAuthUser } from '../hooks/useAuthUser';
 import { APP_CONFIG } from '../config';
 import CommunityIntakeForm from '../components/CommunityIntakeForm';
 import { getLikedProjectIds, persistLikedProjectIds } from '../lib/communityIntake';
@@ -80,6 +83,16 @@ export default function PublicView() {
   const [likePendingIds, setLikePendingIds] = useState<Set<string>>(new Set());
   const { views, saveView, deleteView } = useSavedViews('public');
   const { branding, settings } = useBranding();
+  const { user, isAuthReady } = useAuthUser();
+  const isSignedIn = isAuthReady && Boolean(user);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Failed to sign out:', error);
+    }
+  };
 
   const displayLikeCount = (project: Project): number => {
     const serverCount = typeof project.likeCount === 'number' ? project.likeCount : 0;
@@ -177,7 +190,6 @@ export default function PublicView() {
         items: [...items].sort((a, b) => a.title.localeCompare(b.title)),
       }));
   }, [visibleProjects]);
-  const departmentCount = useMemo(() => new Set(visibleProjects.map((project) => project.department).filter(Boolean)).size, [visibleProjects]);
   const filterOptions = useMemo(() => getFilterOptions(publicProjects), [publicProjects]);
   const heroQuickLinks = useMemo(
     () => (settings.heroQuickLinks ?? []).filter((link) => link.label.trim() && link.url.trim()),
@@ -213,12 +225,32 @@ export default function PublicView() {
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <ThemeToggle />
-            <Link
-              to="/login"
-              className="group inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
-            >
-              Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
-            </Link>
+            {isSignedIn ? (
+              <>
+                <Link
+                  to="/app"
+                  className="group inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+                >
+                  Back to Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => void handleSignOut()}
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-on-surface-variant transition-colors hover:bg-error/10 hover:text-error"
+                  title="Sign out"
+                >
+                  <LogOut className="w-4 h-4" aria-hidden />
+                  <span className="hidden sm:inline">Sign out</span>
+                </button>
+              </>
+            ) : (
+              <Link
+                to="/login"
+                className="group inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+              >
+                Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -270,12 +302,32 @@ export default function PublicView() {
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <ThemeToggle tone="on-dark" />
-              <Link
-                to="/login"
-                className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md"
-              >
-                Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
-              </Link>
+              {isSignedIn ? (
+                <>
+                  <Link
+                    to="/app"
+                    className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md"
+                  >
+                    Back to Dashboard <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => void handleSignOut()}
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+                    title="Sign out"
+                  >
+                    <LogOut className="w-4 h-4" aria-hidden />
+                    <span className="hidden sm:inline">Sign out</span>
+                  </button>
+                </>
+              ) : (
+                <Link
+                  to="/login"
+                  className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md"
+                >
+                  Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                </Link>
+              )}
             </div>
           </div>
         )}
@@ -340,27 +392,15 @@ export default function PublicView() {
 
       {/* Projects Grid */}
       <main id="main-content" tabIndex={-1} className="content-shell py-16 focus:outline-none" aria-labelledby="portfolio-heading">
-        <div className="mb-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div>
-            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary">
-              <Layers3 className="h-3.5 w-3.5" aria-hidden />
-              Organized by stage
-            </span>
-            <h2 id="portfolio-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
-            <p className="text-on-surface-variant mt-2 max-w-3xl">
-              Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
-            </p>
-          </div>
-          <dl className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-end" aria-label="Visible portfolio summary">
-            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Projects</dt>
-              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{visibleProjects.length}</dd>
-            </div>
-            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Departments</dt>
-              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{departmentCount}</dd>
-            </div>
-          </dl>
+        <div className="mb-10 max-w-3xl">
+          <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary">
+            <Layers3 className="h-3.5 w-3.5" aria-hidden />
+            Organized by stage
+          </span>
+          <h2 id="portfolio-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
+          <p className="text-on-surface-variant mt-2">
+            Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
+          </p>
         </div>
 
         <ProjectFilterBar
@@ -390,17 +430,16 @@ export default function PublicView() {
             </p>
           </div>
         ) : (
-          <div className="space-y-10">
+          <div className="space-y-14">
             {projectGroups.map((group) => (
-              <section key={group.status} className="rounded-[1.75rem] border border-outline-variant/20 bg-surface-container-lowest/25 p-4 sm:p-5" aria-labelledby={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`}>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 id={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`} className="font-headline text-xl font-extrabold text-brand-dark">{group.status}</h3>
-                    <p className="text-sm text-on-surface-variant">{group.items.length} {group.items.length === 1 ? 'project' : 'projects'} in this stage</p>
-                  </div>
-                  <span className="rounded-full border border-outline-variant/25 bg-surface-container-lowest/70 px-3 py-1 text-xs font-bold uppercase tracking-wider text-on-surface-variant">
-                    {group.status}
+              <section key={group.status} aria-labelledby={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`}>
+                <div className="mb-6 flex items-center gap-3">
+                  <span className="h-7 w-1.5 rounded-full bg-gradient-to-b from-primary to-brand-dark" aria-hidden />
+                  <h3 id={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`} className="font-headline text-xl font-extrabold text-brand-dark">{group.status}</h3>
+                  <span className="rounded-full border border-primary/15 bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
+                    {group.items.length} {group.items.length === 1 ? 'project' : 'projects'}
                   </span>
+                  <span className="hidden sm:block h-px flex-1 bg-gradient-to-r from-outline-variant/40 to-transparent" aria-hidden />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
                   {group.items.map((project, index) => {
@@ -485,7 +524,7 @@ export default function PublicView() {
                     </div>
                   )}
                 </div>
-                <div className="bg-surface-container-low/60 px-6 py-4 border-t border-outline-variant/15 flex items-center justify-between">
+                <div className="px-6 py-4 border-t border-outline-variant/15 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {project.owner.avatar ? (
                       <img src={project.owner.avatar} alt={project.owner.name} className="w-6 h-6 rounded-full object-cover" />
