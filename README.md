@@ -5,6 +5,8 @@ The Digital Archivist is a comprehensive Kanban and Portfolio management tool de
 ## Features
 
 - **Public Stakeholder Dashboard**: A read-only view of active and launched projects, providing transparency without exposing internal drafts.
+- **Public Community Intake Form**: A "Suggest a project" form on the public page that lets visitors propose ideas. Submissions land on the internal Kanban board (Intake / Proposed, private by default) and submitters can request an emailed copy of their suggestion (see **Email Trigger Setup for the Public Intake Form**).
+- **Accessible by Design**: Built to the WCAG 2.1 AA standard — full keyboard operability, screen-reader support, and high-contrast theming (see **Accessibility**).
 - **Internal Kanban Board**: Drag-and-drop interface for managing projects across different stages (Intake, Active, Launched).
 - **Priority & Portfolio Views**: High-level overviews of project priorities, risk factors, and preservation scores.
 - **Detailed Project Records**: In-depth view of individual projects, including metadata, tags, governance checkpoints, and an advanced collaboration thread with mentions, edit history, reactions, nested replies, and attachments.
@@ -132,6 +134,11 @@ GROC_BASE_URL=
 # Optional operations digest delivery webhooks
 SLACK_WEBHOOK_URL=
 OPS_DIGEST_EMAIL_WEBHOOK_URL=
+
+# Optional email trigger for the public intake form ("email me a copy")
+# Falls back to OPS_DIGEST_EMAIL_WEBHOOK_URL if unset; see
+# "Email Trigger Setup for the Public Intake Form" below.
+INTAKE_EMAIL_WEBHOOK_URL=
 ```
 
 *(Note: Keep `.env` out of version control so API keys are never committed. This project includes `.env.example` as the template for required values.)*
@@ -175,7 +182,7 @@ Use this checklist when configuring a production Vercel project:
 - `VITE_PROJECT_GITHUB_BASE_URL`
 - `VITE_PROJECT_DRIVE_FOLDER_BASE_URL`
 - `GEMINI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `GEMMA_API_KEY`, `GEMMA_BASE_URL`, `GROC_API_KEY`, `GROC_BASE_URL`
-- `SLACK_WEBHOOK_URL`, `OPS_DIGEST_EMAIL_WEBHOOK_URL`
+- `SLACK_WEBHOOK_URL`, `OPS_DIGEST_EMAIL_WEBHOOK_URL`, `INTAKE_EMAIL_WEBHOOK_URL`
 
 ## Google Drive & Google Calendar Integration Setup
 
@@ -417,6 +424,117 @@ The digest includes:
 - Overdue stage notifications (project age in stage exceeds target thresholds)
 - Weekly digest summary delivery to Slack / Email webhooks when configured
 
+## Email Trigger Setup for the Public Intake Form
+
+The public page includes a **"Suggest a project"** intake form. After a visitor
+submits an idea, the thank-you screen offers to email them a copy of their
+submission (reference code, project name, category, description, and goal).
+That email is delivered through a **webhook** you provide — the app does not
+ship with a built-in mail server.
+
+### How it works
+
+1. The visitor submits the form (`POST /api/public/suggestions`). The
+   suggestion is stored as a private project on the Kanban board under
+   **Intake / Proposed** with `source: "community"` and an `SLS-` reference code.
+2. If the visitor asks for an email copy, the server calls
+   `POST /api/public/suggestions/:id/email-copy`, which forwards a message to
+   your configured webhook.
+3. The webhook receives a JSON `POST` request with this payload:
+
+   ```json
+   {
+     "to": "visitor@example.com",
+     "subject": "Copy of your project suggestion (SLS-20260711-...)",
+     "body": "Thank you for suggesting a project...\n\nReference code: ..."
+   }
+   ```
+
+   `body` is plain text. Your webhook must respond with a 2xx status for the
+   send to be reported as successful.
+
+### 1. Create the webhook endpoint
+
+Any automation platform that accepts an inbound HTTP request and sends an
+email will work. Common options:
+
+- **Zapier / Make (Integromat)**: Webhook trigger → Email/Gmail/SendGrid action.
+  Map `to`, `subject`, and `body` from the incoming JSON.
+- **Google Apps Script**: a `doPost(e)` web app that parses the JSON and calls
+  `MailApp.sendEmail(payload.to, payload.subject, payload.body)`.
+- **SendGrid / Postmark / etc.** behind a small serverless function that maps
+  the payload to the provider's send API.
+
+### 2. Configure the environment variable
+
+Set the webhook URL in `.env` (and in Vercel → Project Settings →
+Environment Variables):
+
+```env
+INTAKE_EMAIL_WEBHOOK_URL=https://your-email-automation-webhook
+```
+
+If `INTAKE_EMAIL_WEBHOOK_URL` is not set, the server falls back to
+`OPS_DIGEST_EMAIL_WEBHOOK_URL` (the same webhook used for the weekly ops
+digest), so you can reuse one endpoint for both. This is a server-side
+variable — do **not** prefix it with `VITE_`.
+
+Redeploy (or restart the server) after changing the value.
+
+### 3. Behavior when no webhook is configured
+
+The feature degrades gracefully: the email-copy endpoint returns
+`503 { notConfigured: true }`, and the form UI falls back to a `mailto:` link
+that opens the visitor's own mail app with the submission pre-filled. The
+intake form itself keeps working either way — only automated email delivery
+requires the webhook.
+
+### Abuse protections (built in, no setup required)
+
+- Per-IP rate limiting: 5 submissions and 5 email-copy requests per 10 minutes
+  (distributed via Upstash Redis when configured).
+- Email copies can only be sent for projects created through the intake form
+  (`source: "community"`), and the email body is built server-side from the
+  stored submission only — the endpoint cannot be used to relay arbitrary
+  user-authored email.
+- Request-size caps and email-address validation on both endpoints.
+
+### Testing the trigger
+
+1. Set `INTAKE_EMAIL_WEBHOOK_URL` and restart the server.
+2. Open the public page, submit a test suggestion via **Suggest a project**.
+3. On the thank-you screen, enter an email address you control and request a copy.
+4. Confirm the webhook fired and the email arrived; the server also records a
+   `public_suggestion_email_copy_sent` audit log entry.
+
+## Accessibility
+
+This application is built to conform to **WCAG 2.1 Level AA**, with color
+contrast tuned beyond the AA minimum toward AAA margins. Accessibility work
+shipped in v1.4.0 includes:
+
+- **Keyboard operability everywhere**: skip-to-content link, keyboard-driven
+  Kanban drag and drop (Enter opens a project, Space picks up/drops a card),
+  keyboard-operable cards, table rows, and option pickers, and Escape-to-close
+  for drawers and dialogs.
+- **Accessible modals**: proper dialog roles, initial focus, focus trapping,
+  and focus restoration on close across all modal dialogs and the site tour.
+- **Screen-reader support**: accessible names for all inputs, selects,
+  switches, and icon-only buttons; `role="status"`/`role="alert"`
+  announcements for toasts, errors, and loading states; per-view document
+  titles; and correct heading structure.
+- **Semantics**: `scope="col"` table headers, `aria-current` navigation,
+  radiogroup/checkbox roles on card pickers, progressbar attributes,
+  decorative icons hidden from assistive tech, and screen-reader-only
+  new-tab warnings on external links.
+- **High-contrast theming**: light- and dark-theme color tokens verified with
+  a WCAG relative-luminance calculator against every background they render
+  on, with fixes for previously unreadable combinations. Status is no longer
+  conveyed by color or strikethrough alone.
+
+Accessibility regressions are treated as bugs — please report any barriers
+you encounter via the repository's issue tracker.
+
 ### Deploying to Vercel with AI Features
 Because the app now uses an Express backend to secure the API keys, you must deploy it as a Node.js server rather than a static site.
 1. In Vercel, set the **Build Command** to `npm run build`.
@@ -485,6 +603,34 @@ If your organization needs public showcase behavior, explicitly set `settings/gl
 - `firestore.rules`: The security rules for the Firestore database.
 
 ## Changelog
+
+### v1.4.0
+
+- **Public community intake form.** A glass-styled **Suggest a project**
+  section on the public page lets visitors propose ideas with premade
+  categories and a plain-language form. Submissions land on the internal
+  Kanban board under Intake / Proposed — private by default, tagged with an
+  `SLS-` reference code and a "Community" badge — and the record view shows
+  the submitter's details.
+- **Email trigger for submission copies.** After submitting, visitors can
+  request an emailed copy of their suggestion, delivered through
+  `INTAKE_EMAIL_WEBHOOK_URL` (falling back to `OPS_DIGEST_EMAIL_WEBHOOK_URL`),
+  with a `mailto:` fallback when no webhook is configured. See **Email
+  Trigger Setup for the Public Intake Form**.
+- **Public project likes.** Public overview cards get a like button with
+  live counts, recorded server-side with atomic increments and per-IP rate
+  limiting.
+- **Accessibility (WCAG 2.1 AA).** Comprehensive pass across the app:
+  skip-to-content link, focus-managed modals with Escape-to-close, keyboard
+  drag and drop on the Kanban board, accessible names for all controls,
+  status/alert announcements for toasts and errors, per-view document titles,
+  and semantic fixes throughout. Color contrast raised beyond the AA minimum
+  toward AAA margins, with invisible-text bugs fixed. See **Accessibility**.
+- **Fix: no more re-login from the public page.** Team members with a live
+  session who visit the public page now see a **Back to Dashboard** link
+  straight to the internal app, and the login screen automatically forwards
+  already-authenticated users to the dashboard instead of asking them to
+  sign in again.
 
 ### v1.3.0
 
