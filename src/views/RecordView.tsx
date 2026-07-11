@@ -1,5 +1,5 @@
 import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus, Globe, Lock } from 'lucide-react';
-import { type ReactElement, useEffect, useState } from 'react';
+import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { ApprovalCheckpoint, Milestone, Project, ProjectMember, ProjectArtifactLink, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
 import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
@@ -11,6 +11,75 @@ import { AI_MODEL_OPTIONS } from '../constants';
 import { INTEGRATION_CONFIG } from '../config';
 
 const DEFAULT_PROVIDER = 'gemini';
+
+/**
+ * Dialog accessibility: moves focus into the modal on open, traps Tab,
+ * closes on Escape, and restores focus to the invoking element on close.
+ * Mirrors the New Project modal behavior in App.tsx.
+ */
+function useModalAccessibility(
+  isOpen: boolean,
+  modalRef: RefObject<HTMLDivElement | null>,
+  onClose: () => void
+) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const previousActiveElement = document.activeElement as HTMLElement | null;
+    const modalElement = modalRef.current;
+    const focusableSelectors = [
+      'button:not([disabled])',
+      'input:not([disabled])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      'a[href]',
+      '[tabindex]:not([tabindex="-1"])',
+    ].join(', ');
+
+    const getFocusableElements = (): HTMLElement[] =>
+      modalElement ? (Array.from(modalElement.querySelectorAll(focusableSelectors)) as HTMLElement[]) : [];
+
+    const initialFocusable = getFocusableElements();
+    if (initialFocusable.length > 0) {
+      initialFocusable[0].focus();
+    } else {
+      modalElement?.focus();
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+
+      if (event.key !== 'Tab') return;
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) return;
+
+      const first = focusableElements[0];
+      const last = focusableElements[focusableElements.length - 1];
+      const active = document.activeElement;
+
+      if (event.shiftKey && (active === first || active === modalElement)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      previousActiveElement?.focus();
+    };
+  }, [isOpen, modalRef]);
+}
 
 export default function RecordView({ projects, loading: projectsLoading, projectId, onBack, isAdmin }: { projects: Project[], loading: boolean, projectId: string | null, onBack: () => void, isAdmin: boolean }) {
   const [project, setProject] = useState<Project | null>(null);
@@ -45,6 +114,20 @@ export default function RecordView({ projects, loading: projectsLoading, project
   const [selectedClaimUid, setSelectedClaimUid] = useState('');
   const [updatingClaim, setUpdatingClaim] = useState(false);
   const [selectedCollaboratorUid, setSelectedCollaboratorUid] = useState('');
+  const deleteModalRef = useRef<HTMLDivElement | null>(null);
+  const attachmentModalRef = useRef<HTMLDivElement | null>(null);
+  const tagModalRef = useRef<HTMLDivElement | null>(null);
+
+  useModalAccessibility(isDeleteModalOpen, deleteModalRef, () => setIsDeleteModalOpen(false));
+  useModalAccessibility(Boolean(attachmentModalTarget), attachmentModalRef, () => {
+    setAttachmentModalTarget(null);
+    setAttachmentUrlDraft('');
+    setAttachmentLabelDraft('');
+  });
+  useModalAccessibility(isTagModalOpen, tagModalRef, () => {
+    setIsTagModalOpen(false);
+    setTagDraft('');
+  });
 
   useEffect(() => {
     api.getSettings().then(setSettings);
@@ -891,7 +974,7 @@ Description: ${project.description}`;
     <div className="p-10 max-w-7xl mx-auto">
       {toast && (
         <div className="fixed top-6 right-6 z-50">
-          <div className={`px-4 py-3 rounded-lg shadow-lg border text-sm font-bold ${
+          <div role={toast.type === 'success' ? 'status' : 'alert'} className={`px-4 py-3 rounded-lg shadow-lg border text-sm font-bold ${
             toast.type === 'success'
               ? 'bg-tertiary-container text-on-tertiary-container border-tertiary-fixed/30'
               : 'bg-error-container text-error border-error/30'
@@ -902,10 +985,10 @@ Description: ${project.description}`;
       )}
       <div className="flex justify-between items-end mb-10">
         <div>
-          <nav className="flex gap-2 text-xs font-bold tracking-widest text-on-surface-variant mb-2 uppercase cursor-pointer" onClick={onBack}>
-            <span className="hover:text-primary">Portfolio</span>
-            <span>/</span>
-            <span>Project Record</span>
+          <nav aria-label="Breadcrumb" className="flex gap-2 text-xs font-bold tracking-widest text-on-surface-variant mb-2 uppercase">
+            <button type="button" onClick={onBack} className="uppercase tracking-widest font-bold hover:text-primary">Portfolio</button>
+            <span aria-hidden>/</span>
+            <span aria-current="page">Project Record</span>
           </nav>
           <h1 className="font-headline text-4xl font-extrabold text-on-surface tracking-tight">{project.title}</h1>
           <p className="text-on-surface-variant mt-2 flex items-center gap-2">
@@ -915,8 +998,8 @@ Description: ${project.description}`;
         </div>
         <div className="flex gap-3">
           {isAdmin && (
-            <button onClick={() => setIsDeleteModalOpen(true)} className="px-4 py-2 border border-error text-error font-bold rounded-sm hover:bg-error-container transition-colors flex items-center gap-2" title="Delete Project">
-              <Trash2 className="w-4 h-4" />
+            <button onClick={() => setIsDeleteModalOpen(true)} className="px-4 py-2 border border-error text-error font-bold rounded-sm hover:bg-error-container transition-colors flex items-center gap-2" title="Delete Project" aria-label="Delete project">
+              <Trash2 className="w-4 h-4" aria-hidden />
             </button>
           )}
           <button onClick={onBack} className="px-6 py-2 border border-outline-variant text-primary font-bold rounded-sm hover:bg-surface-container-low transition-colors">
@@ -1090,11 +1173,14 @@ Description: ${project.description}`;
                           <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-fixed text-[9px] text-primary">{member.initials}</span>
                           {member.name}
                           {isAdmin && (
-                            <X
-                              className="w-3 h-3 cursor-pointer"
+                            <button
+                              type="button"
                               aria-label={`Remove ${member.name} from collaborators`}
                               onClick={() => handleRemoveCollaborator(memberKey)}
-                            />
+                              className="inline-flex items-center justify-center"
+                            >
+                              <X className="w-3 h-3" aria-hidden />
+                            </button>
                           )}
                         </span>
                       );
@@ -1119,7 +1205,16 @@ Description: ${project.description}`;
                 <div className="flex flex-wrap gap-2 p-3 bg-surface-container-low rounded-lg min-h-[46px]">
                   {project.tags.map(tag => (
                     <span key={tag} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1">
-                      {tag} {isAdmin && <X className="w-3 h-3 cursor-pointer" onClick={() => setProject({...project, tags: project.tags.filter(t => t !== tag)})} />}
+                      {tag} {isAdmin && (
+                        <button
+                          type="button"
+                          aria-label={`Remove tag ${tag}`}
+                          onClick={() => setProject({...project, tags: project.tags.filter(t => t !== tag)})}
+                          className="inline-flex items-center justify-center"
+                        >
+                          <X className="w-3 h-3" aria-hidden />
+                        </button>
+                      )}
                     </span>
                   ))}
                   <button 
@@ -1297,6 +1392,7 @@ Description: ${project.description}`;
                     <input
                       className="md:col-span-3 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
                       placeholder="Label (e.g. GitHub repo)"
+                      aria-label="Artifact link label"
                       value={link.label}
                       onChange={(e) => updateArtifactLink(link.id, { label: e.target.value })}
                       disabled={!isAdmin}
@@ -1304,6 +1400,7 @@ Description: ${project.description}`;
                     <input
                       className="md:col-span-5 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
                       placeholder="https://github.com/org/repo"
+                      aria-label="Artifact link URL"
                       value={link.url}
                       onChange={(e) => {
                         const nextUrl = e.target.value;
@@ -1315,6 +1412,7 @@ Description: ${project.description}`;
                     />
                     <select
                       className="md:col-span-2 bg-surface-container rounded p-2 text-xs"
+                      aria-label="Artifact link type"
                       value={link.type ?? 'other'}
                       onChange={(e) => updateArtifactLink(link.id, { type: e.target.value as ProjectArtifactLink['type'] })}
                       disabled={!isAdmin}
@@ -1324,7 +1422,7 @@ Description: ${project.description}`;
                       ))}
                     </select>
                     {isAdmin && (
-                      <button className="md:col-span-1 text-error text-xs font-bold md:justify-self-end" onClick={() => removeArtifactLink(link.id)}>
+                      <button className="md:col-span-1 text-error text-xs font-bold md:justify-self-end" aria-label={`Remove artifact link ${link.label || link.url || ''}`.trim()} onClick={() => removeArtifactLink(link.id)}>
                         Remove
                       </button>
                     )}
@@ -1466,6 +1564,7 @@ Description: ${project.description}`;
                           <label className="block text-[10px] font-bold text-on-surface-variant uppercase mb-1">Method</label>
                           <select
                             className="w-full bg-surface-container rounded p-2 text-xs"
+                            aria-label="Project management method"
                             value={draft.pmApproach.id}
                             disabled={!isAdmin}
                             onChange={(e) => updateDraftPmApproach(draft.id, { id: e.target.value as ProjectManagementApproachId })}
@@ -1484,6 +1583,7 @@ Description: ${project.description}`;
                           <label className="block text-[10px] font-bold text-on-surface-variant uppercase mt-2 mb-1">Fit</label>
                           <select
                             className="w-full bg-surface-container rounded p-2 text-xs"
+                            aria-label="Approach fit"
                             value={draft.pmApproach.fit}
                             disabled={!isAdmin}
                             onChange={(e) => updateDraftPmApproach(draft.id, { fit: e.target.value as ProjectManagementApproach['fit'] })}
@@ -1497,6 +1597,7 @@ Description: ${project.description}`;
                           <label className="block text-[10px] font-bold text-on-surface-variant uppercase mb-1">Summary</label>
                           <textarea
                             className="w-full bg-surface-container rounded p-2 text-xs min-h-[76px]"
+                            aria-label="Approach summary"
                             value={draft.pmApproach.summary}
                             disabled={!isAdmin}
                             onChange={(e) => updateDraftPmApproach(draft.id, { summary: e.target.value })}
@@ -1506,6 +1607,7 @@ Description: ${project.description}`;
                               <label className="block text-[10px] font-bold text-on-surface-variant uppercase mb-1">Practices (comma-separated)</label>
                               <input
                                 className="w-full bg-surface-container rounded p-2 text-xs"
+                                aria-label="Practices, comma-separated"
                                 value={(draft.pmApproach.practices ?? []).join(', ')}
                                 disabled={!isAdmin}
                                 onChange={(e) => updateDraftPmApproach(draft.id, { practices: e.target.value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 8) })}
@@ -1515,6 +1617,7 @@ Description: ${project.description}`;
                               <label className="block text-[10px] font-bold text-on-surface-variant uppercase mb-1">Risks (comma-separated)</label>
                               <input
                                 className="w-full bg-surface-container rounded p-2 text-xs"
+                                aria-label="Risks, comma-separated"
                                 value={(draft.pmApproach.risks ?? []).join(', ')}
                                 disabled={!isAdmin}
                                 onChange={(e) => updateDraftPmApproach(draft.id, { risks: e.target.value.split(',').map((s) => s.trim()).filter(Boolean).slice(0, 8) })}
@@ -1524,6 +1627,7 @@ Description: ${project.description}`;
                           <label className="block text-[10px] font-bold text-on-surface-variant uppercase mt-2 mb-1">Notes (optional)</label>
                           <input
                             className="w-full bg-surface-container rounded p-2 text-xs"
+                            aria-label="Notes"
                             value={draft.pmApproach.notes ?? ''}
                             disabled={!isAdmin}
                             onChange={(e) => updateDraftPmApproach(draft.id, { notes: e.target.value })}
@@ -1582,7 +1686,7 @@ Description: ${project.description}`;
             <div className="space-y-5">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-xs font-bold text-on-surface-variant uppercase">Milestones by Stage</label>
+                  <p className="block text-xs font-bold text-on-surface-variant uppercase">Milestones by Stage</p>
                   {isAdmin && (
                     <button onClick={addMilestone} className="text-xs font-bold text-primary flex items-center gap-1">
                       <Plus className="w-3 h-3" /> Add Milestone
@@ -1594,12 +1698,14 @@ Description: ${project.description}`;
                     <div key={milestone.id} className="grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-2 bg-surface-container-low rounded-lg p-3 items-center">
                       <input
                         className="col-span-1 md:col-span-6 xl:col-span-4 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
+                        aria-label="Milestone title"
                         value={milestone.title}
                         onChange={(e) => updateMilestone(milestone.id, { title: e.target.value })}
                         disabled={!isAdmin}
                       />
                       <select
                         className="col-span-1 md:col-span-3 xl:col-span-3 bg-surface-container rounded p-2 text-xs"
+                        aria-label="Milestone stage"
                         value={milestone.stage}
                         onChange={(e) => updateMilestone(milestone.id, { stage: e.target.value as ProjectStatus })}
                         disabled={!isAdmin}
@@ -1613,6 +1719,7 @@ Description: ${project.description}`;
                       </select>
                       <select
                         className="col-span-1 md:col-span-3 xl:col-span-3 bg-surface-container rounded p-2 text-xs"
+                        aria-label="Milestone status"
                         value={milestone.status}
                         onChange={(e) => updateMilestone(milestone.id, { status: e.target.value as Milestone['status'] })}
                         disabled={!isAdmin}
@@ -1625,12 +1732,13 @@ Description: ${project.description}`;
                       <input
                         className="col-span-1 md:col-span-3 xl:col-span-2 bg-surface-container rounded p-2 text-xs"
                         type="date"
+                        aria-label="Milestone due date"
                         value={milestone.dueDate ?? ''}
                         onChange={(e) => updateMilestone(milestone.id, { dueDate: e.target.value })}
                         disabled={!isAdmin}
                       />
                       {isAdmin && (
-                        <button className="col-span-1 md:col-span-3 xl:col-span-12 text-error text-xs font-bold xl:justify-self-end" onClick={() => removeMilestone(milestone.id)}>Remove</button>
+                        <button className="col-span-1 md:col-span-3 xl:col-span-12 text-error text-xs font-bold xl:justify-self-end" aria-label={`Remove milestone ${milestone.title || ''}`.trim()} onClick={() => removeMilestone(milestone.id)}>Remove</button>
                       )}
                     </div>
                   ))}
@@ -1639,7 +1747,7 @@ Description: ${project.description}`;
 
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <label className="block text-xs font-bold text-on-surface-variant uppercase">Dependencies & Blockers</label>
+                  <p className="block text-xs font-bold text-on-surface-variant uppercase">Dependencies & Blockers</p>
                   {isAdmin && (
                     <button onClick={addDependency} className="text-xs font-bold text-primary flex items-center gap-1">
                       <Plus className="w-3 h-3" /> Add Dependency
@@ -1651,6 +1759,7 @@ Description: ${project.description}`;
                     <div key={dependency.id} className="grid grid-cols-1 md:grid-cols-6 xl:grid-cols-12 gap-2 bg-surface-container-low rounded-lg p-3 items-center">
                       <select
                         className="col-span-1 md:col-span-2 xl:col-span-2 bg-surface-container rounded p-2 text-xs"
+                        aria-label="Dependency type"
                         value={dependency.type}
                         onChange={(e) => updateDependency(dependency.id, { type: e.target.value as Dependency['type'] })}
                         disabled={!isAdmin}
@@ -1660,6 +1769,7 @@ Description: ${project.description}`;
                       </select>
                       <input
                         className="col-span-1 md:col-span-6 xl:col-span-5 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
+                        aria-label="Dependency description"
                         value={dependency.description}
                         onChange={(e) => updateDependency(dependency.id, { description: e.target.value })}
                         disabled={!isAdmin}
@@ -1667,12 +1777,14 @@ Description: ${project.description}`;
                       <input
                         className="col-span-1 md:col-span-3 xl:col-span-2 bg-surface-container rounded p-2 text-xs"
                         placeholder="Project code"
+                        aria-label="Related project code"
                         value={dependency.relatedProjectCode ?? ''}
                         onChange={(e) => updateDependency(dependency.id, { relatedProjectCode: e.target.value })}
                         disabled={!isAdmin}
                       />
                       <select
                         className="col-span-1 md:col-span-3 xl:col-span-2 bg-surface-container rounded p-2 text-xs"
+                        aria-label="Dependency status"
                         value={dependency.status}
                         onChange={(e) => updateDependency(dependency.id, { status: e.target.value as Dependency['status'] })}
                         disabled={!isAdmin}
@@ -1682,7 +1794,7 @@ Description: ${project.description}`;
                         <option value="Resolved">Resolved</option>
                       </select>
                       {isAdmin && (
-                        <button className="col-span-1 md:col-span-6 xl:col-span-1 text-error text-xs font-bold xl:justify-self-end" onClick={() => removeDependency(dependency.id)}>Remove</button>
+                        <button className="col-span-1 md:col-span-6 xl:col-span-1 text-error text-xs font-bold xl:justify-self-end" aria-label={`Remove dependency ${dependency.description || ''}`.trim()} onClick={() => removeDependency(dependency.id)}>Remove</button>
                       )}
                     </div>
                   ))}
@@ -1690,13 +1802,14 @@ Description: ${project.description}`;
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Stage Approval Checkpoints</label>
+                <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Stage Approval Checkpoints</p>
                 <div className="space-y-2">
                   {(project.approvalCheckpoints ?? []).map((checkpoint) => (
                     <div key={checkpoint.id} className="grid grid-cols-12 gap-2 bg-surface-container-low rounded-lg p-3 items-center">
                       <span className="col-span-12 md:col-span-3 text-xs font-bold">{checkpoint.stage}</span>
                       <input
                         className="col-span-12 md:col-span-4 bg-transparent border-b border-outline-variant py-1 text-sm outline-none"
+                        aria-label={`${checkpoint.stage} checkpoint name`}
                         value={checkpoint.name}
                         onChange={(e) => updateApproval(checkpoint.id, { name: e.target.value })}
                         disabled={!isAdmin}
@@ -1704,6 +1817,7 @@ Description: ${project.description}`;
                       <input
                         className="col-span-6 md:col-span-2 bg-surface-container rounded p-2 text-xs"
                         placeholder="Approver"
+                        aria-label={`${checkpoint.stage} approver`}
                         value={checkpoint.approver ?? ''}
                         onChange={(e) => updateApproval(checkpoint.id, { approver: e.target.value })}
                         disabled={!isAdmin}
@@ -1712,6 +1826,7 @@ Description: ${project.description}`;
                         <input
                           type="checkbox"
                           checked={checkpoint.required}
+                          aria-label={`${checkpoint.stage} approval required`}
                           onChange={(e) => updateApproval(checkpoint.id, { required: e.target.checked })}
                           disabled={!isAdmin}
                         />
@@ -1721,6 +1836,7 @@ Description: ${project.description}`;
                         <input
                           type="checkbox"
                           checked={checkpoint.approved}
+                          aria-label={`${checkpoint.stage} approved`}
                           onChange={(e) => updateApproval(checkpoint.id, {
                             approved: e.target.checked,
                             approvedAt: e.target.checked ? new Date().toISOString() : undefined
@@ -1739,7 +1855,7 @@ Description: ${project.description}`;
             </div>
 
             <div className="mt-6">
-              <label className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Relevant Links</label>
+              <p className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Relevant Links</p>
               <div className="space-y-2">
                 {relevantLinks.length === 0 ? (
                   <div className="text-xs text-on-surface-variant bg-surface-container-low rounded-md p-3">
@@ -1755,6 +1871,7 @@ Description: ${project.description}`;
                   >
                     {link.icon}
                     {link.label}
+                    <span className="sr-only"> (opens in new tab)</span>
                   </a>
                 ))}
                 <div className="text-[11px] text-on-surface-variant">
@@ -1776,7 +1893,7 @@ Description: ${project.description}`;
             </div>
             <div className="flex-1 p-6 space-y-6 overflow-y-auto">
               {commentError && (
-                <div className="rounded-md border border-error/30 bg-error-container/40 text-on-error-container p-3 text-xs">
+                <div role="alert" className="rounded-md border border-error/30 bg-error-container/40 text-on-error-container p-3 text-xs">
                   {commentError}
                 </div>
               )}
@@ -1821,7 +1938,8 @@ Description: ${project.description}`;
                           <div className="mt-2 space-y-1">
                             {comment.attachments.map((attachment) => (
                               <a key={attachment.id} className="text-[11px] text-primary flex items-center gap-1 hover:underline" href={attachment.url} target="_blank" rel="noreferrer">
-                                <Paperclip className="w-3 h-3" /> {attachment.name}
+                                <Paperclip className="w-3 h-3" aria-hidden /> {attachment.name}
+                                <span className="sr-only"> (opens in new tab)</span>
                               </a>
                             ))}
                           </div>
@@ -1835,6 +1953,8 @@ Description: ${project.description}`;
                                 key={emoji}
                                 onClick={() => handleToggleReaction(comment, emoji)}
                                 disabled={!canComment}
+                                aria-pressed={isActive}
+                                aria-label={`React with ${emoji}${count > 0 ? `, ${count} ${count === 1 ? 'reaction' : 'reactions'}` : ''}`}
                                 className={`text-[11px] px-2 py-1 rounded-full border ${isActive ? 'bg-primary/10 border-primary text-primary' : 'border-outline-variant text-on-surface-variant'}`}
                               >
                                 {emoji} {count > 0 ? count : ''}
@@ -1871,7 +1991,8 @@ Description: ${project.description}`;
                             <div className="mt-2 space-y-1">
                               {reply.attachments.map((attachment) => (
                                 <a key={attachment.id} className="text-[11px] text-primary flex items-center gap-1 hover:underline" href={attachment.url} target="_blank" rel="noreferrer">
-                                  <Paperclip className="w-3 h-3" /> {attachment.name}
+                                  <Paperclip className="w-3 h-3" aria-hidden /> {attachment.name}
+                                  <span className="sr-only"> (opens in new tab)</span>
                                 </a>
                               ))}
                             </div>
@@ -1887,6 +2008,7 @@ Description: ${project.description}`;
                         <input
                           className="w-full bg-surface-container-lowest rounded-md p-2 text-xs outline-none"
                           placeholder="Reply in thread…"
+                          aria-label="Reply in thread"
                           value={replyDrafts[comment.id] ?? ''}
                           onChange={(e) => setReplyDrafts((prev) => ({ ...prev, [comment.id]: e.target.value }))}
                           onKeyDown={(e) => e.key === 'Enter' && canComment && handleReply(comment.id)}
@@ -1912,6 +2034,7 @@ Description: ${project.description}`;
                 <input
                   className="w-full bg-surface-container-lowest border-none rounded-lg p-3 text-sm focus:ring-2 focus:ring-primary pr-12 outline-none"
                   placeholder="Write a comment... Use @name to mention teammates"
+                  aria-label="Write a comment"
                   type="text"
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
@@ -1921,9 +2044,10 @@ Description: ${project.description}`;
                 <button
                   onClick={handleAddComment}
                   disabled={addingComment || !canComment}
+                  aria-label="Post comment"
                   className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-primary hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {addingComment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  {addingComment ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <Send className="w-4 h-4" aria-hidden />}
                 </button>
               </div>
               <div className="flex items-center justify-between text-[11px]">
@@ -1939,7 +2063,7 @@ Description: ${project.description}`;
           </div>
 
           <div className="modern-card bg-surface-container-lowest p-6 rounded-xl">
-            <label className="block text-[10px] font-bold text-on-surface-variant uppercase mb-4 tracking-widest">Project Health</label>
+            <p className="block text-[10px] font-bold text-on-surface-variant uppercase mb-4 tracking-widest">Project Health</p>
             <div className="space-y-4">
               <div className="flex justify-between items-center text-sm">
                 <span className="text-on-surface-variant">Completion</span>
@@ -1972,12 +2096,14 @@ Description: ${project.description}`;
               </div>
               
               <div className="mt-4 pt-4 border-t border-outline-variant/10">
-                <label className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Update Progress</label>
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="100" 
-                  value={project.progress} 
+                <label htmlFor="record-update-progress" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Update Progress</label>
+                <input
+                  id="record-update-progress"
+                  type="range"
+                  min="0"
+                  max="100"
+                  aria-valuetext={`${project.progress}%`}
+                  value={project.progress}
                   onChange={(e) => setProject({...project, progress: parseInt(e.target.value)})}
                   disabled={!isAdmin}
                   className="w-full accent-primary"
@@ -1990,9 +2116,16 @@ Description: ${project.description}`;
 
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+          <div
+            ref={deleteModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-project-modal-title"
+            tabIndex={-1}
+            className="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-2xl overflow-hidden"
+          >
             <div className="p-6 border-b border-outline-variant/20">
-              <h3 className="font-headline text-xl font-bold text-on-surface">Delete Project?</h3>
+              <h3 id="delete-project-modal-title" className="font-headline text-xl font-bold text-on-surface">Delete Project?</h3>
               <p className="text-sm text-on-surface-variant mt-2">This action cannot be undone.</p>
             </div>
             <div className="p-6 bg-surface-container-low flex justify-end gap-3 border-t border-outline-variant/20">
@@ -2015,9 +2148,16 @@ Description: ${project.description}`;
 
       {attachmentModalTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-container-lowest w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
+          <div
+            ref={attachmentModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-attachment-modal-title"
+            tabIndex={-1}
+            className="bg-surface-container-lowest w-full max-w-lg rounded-xl shadow-2xl overflow-hidden"
+          >
             <div className="p-6 border-b border-outline-variant/20">
-              <h3 className="font-headline text-xl font-bold text-on-surface">Add Attachment</h3>
+              <h3 id="add-attachment-modal-title" className="font-headline text-xl font-bold text-on-surface">Add Attachment</h3>
             </div>
             <div className="p-6 space-y-4">
               <div>
@@ -2067,9 +2207,16 @@ Description: ${project.description}`;
 
       {isTagModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+          <div
+            ref={tagModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-tag-modal-title"
+            tabIndex={-1}
+            className="bg-surface-container-lowest w-full max-w-md rounded-xl shadow-2xl overflow-hidden"
+          >
             <div className="p-6 border-b border-outline-variant/20">
-              <h3 className="font-headline text-xl font-bold text-on-surface">Add Tag</h3>
+              <h3 id="add-tag-modal-title" className="font-headline text-xl font-bold text-on-surface">Add Tag</h3>
             </div>
             <div className="p-6">
               <label htmlFor="new-tag" className="block text-sm font-bold text-on-surface-variant mb-2">Tag Name</label>

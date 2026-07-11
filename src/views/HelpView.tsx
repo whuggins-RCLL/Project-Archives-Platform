@@ -113,7 +113,7 @@ export default function HelpView({
           </a>
         </div>
         {roleError && (
-          <p className="mt-3 text-sm font-semibold text-error">{roleError}</p>
+          <p role="alert" className="mt-3 text-sm font-semibold text-error">{roleError}</p>
         )}
       </section>
 
@@ -121,7 +121,7 @@ export default function HelpView({
         {helpSections.map((item) => (
           <article key={item.title} className="rounded-xl bg-surface-container-lowest border border-outline-variant/20 p-5 shadow-sm">
             <div className="h-10 w-10 rounded-lg bg-primary-container/20 flex items-center justify-center">
-              <item.icon className="h-5 w-5 text-primary" />
+              <item.icon className="h-5 w-5 text-primary" aria-hidden />
             </div>
             <h2 className="mt-4 text-base font-semibold text-brand-dark">{item.title}</h2>
             <p className="mt-2 text-sm text-on-surface-variant">{item.description}</p>

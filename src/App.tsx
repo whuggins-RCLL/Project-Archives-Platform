@@ -28,6 +28,17 @@ import { applyBrandingToDocument, useBranding } from './hooks/useBranding';
 
 import { Project } from './types';
 
+const VIEW_TITLES: Record<string, string> = {
+  kanban: 'Kanban Board',
+  'my-projects': 'My Projects',
+  priority: 'Priority Matrix',
+  portfolio: 'Portfolio Overview',
+  record: 'Project Record',
+  settings: 'Archive Settings',
+  'admin-users': 'Access Management',
+  help: 'Help',
+};
+
 const ELEVATED_ACCESS_STORAGE_KEY = 'elevated-access-ok';
 const SITE_TOUR_COMPLETED_KEY = 'site-tour-completed';
 const SITE_TOUR_DISMISSED_KEY = 'site-tour-dismissed';
@@ -87,6 +98,12 @@ function InternalApp() {
     if (!isBrandingHydrated) return;
     applyBrandingToDocument(settings);
   }, [isBrandingHydrated, settings.primaryColor, settings.brandDarkColor]);
+
+  useEffect(() => {
+    const baseTitle = branding.suiteName || 'Project Archives';
+    const viewTitle = VIEW_TITLES[currentView];
+    document.title = viewTitle ? `${viewTitle} · ${baseTitle}` : baseTitle;
+  }, [currentView, branding.suiteName]);
 
   useEffect(() => {
     if (isViewerOnly && currentView !== 'portfolio') {
@@ -342,8 +359,8 @@ function InternalApp() {
 
   if (checkingElevated || !isBrandingHydrated) {
     return (
-      <div className="app-canvas min-h-screen flex flex-col items-center justify-center gap-4 text-on-surface-variant">
-        <div className="h-10 w-10 animate-spin rounded-full border-2 border-outline-variant/30 border-t-primary" />
+      <div className="app-canvas min-h-screen flex flex-col items-center justify-center gap-4 text-on-surface-variant" role="status" aria-live="polite">
+        <div className="h-10 w-10 animate-spin rounded-full border-2 border-outline-variant/30 border-t-primary" aria-hidden />
         <p className="text-sm font-medium">Loading dashboard…</p>
       </div>
     );
@@ -353,9 +370,11 @@ function InternalApp() {
     return (
       <div className="app-canvas min-h-screen flex items-center justify-center p-6">
         <div className="glass-card w-full max-w-md p-8 space-y-4 shadow-lg animate-fade-in-up">
-          <h2 className="font-headline text-2xl font-bold text-on-surface">Admin / Owner Access</h2>
+          <h1 className="font-headline text-2xl font-bold text-on-surface">Admin / Owner Access</h1>
           <p className="text-sm text-on-surface-variant">Enter your elevated access password to continue.</p>
+          <label htmlFor="elevated-access-password" className="sr-only">Elevated access password</label>
           <input
+            id="elevated-access-password"
             type="password"
             value={elevatedPassword}
             onChange={(e) => setElevatedPassword(e.target.value)}
@@ -363,7 +382,7 @@ function InternalApp() {
             className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="Password"
           />
-          {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
+          {elevatedError && <p role="alert" className="text-sm text-error">{elevatedError}</p>}
           <button onClick={() => void handleElevatedLogin()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-white py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
             Unlock Admin Access
           </button>
@@ -376,30 +395,36 @@ function InternalApp() {
     return (
       <div className="app-canvas min-h-screen flex items-center justify-center p-6">
         <div className="glass-card w-full max-w-md p-8 space-y-3 shadow-lg animate-fade-in-up">
-          <h2 className="font-headline text-2xl font-bold text-on-surface">Change Default Password</h2>
+          <h1 className="font-headline text-2xl font-bold text-on-surface">Change Default Password</h1>
           <p className="text-sm text-on-surface-variant">You must change your initial elevated password before continuing.</p>
+          <label htmlFor="elevated-current-password" className="sr-only">Current password</label>
           <input
+            id="elevated-current-password"
             type="password"
             value={elevatedPassword}
             onChange={(e) => setElevatedPassword(e.target.value)}
             className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="Current password"
           />
+          <label htmlFor="elevated-new-password" className="sr-only">New password</label>
           <input
+            id="elevated-new-password"
             type="password"
             value={newElevatedPassword}
             onChange={(e) => setNewElevatedPassword(e.target.value)}
             className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="New password"
           />
+          <label htmlFor="elevated-confirm-password" className="sr-only">Confirm new password</label>
           <input
+            id="elevated-confirm-password"
             type="password"
             value={confirmElevatedPassword}
             onChange={(e) => setConfirmElevatedPassword(e.target.value)}
             className="w-full bg-surface-container-low border border-outline-variant/30 rounded-lg p-2.5 focus:ring-2 focus:ring-primary outline-none"
             placeholder="Confirm new password"
           />
-          {elevatedError && <p className="text-sm text-error">{elevatedError}</p>}
+          {elevatedError && <p role="alert" className="text-sm text-error">{elevatedError}</p>}
           <button onClick={() => void handleChangeElevatedPassword()} className="w-full rounded-lg bg-gradient-to-br from-primary to-brand-dark text-white py-2.5 font-bold shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all">
             Save New Password
           </button>
@@ -410,6 +435,7 @@ function InternalApp() {
 
   return (
     <div className="flex min-h-screen app-canvas text-on-surface font-body">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <Sidebar
         currentView={currentView}
         setCurrentView={setCurrentView}
@@ -441,6 +467,7 @@ function InternalApp() {
           branding={branding}
         />
         <main
+          id="main-content"
           ref={mainContentRef}
           tabIndex={-1}
           className="flex-1 relative focus:outline-none"
@@ -483,13 +510,15 @@ function InternalApp() {
               />
               <div className="mt-4 flex items-center justify-between rounded-lg border border-outline-variant/30 bg-surface-container-low px-3 py-2">
                 <div>
-                  <p className="text-sm font-bold text-on-surface">Public project</p>
-                  <p className="text-xs text-on-surface-variant">Public projects show in the public overview.</p>
+                  <p id="new-project-public-label" className="text-sm font-bold text-on-surface">Public project</p>
+                  <p id="new-project-public-description" className="text-xs text-on-surface-variant">Public projects show in the public overview.</p>
                 </div>
                 <button
                   type="button"
                   role="switch"
                   aria-checked={newProjectIsPublic}
+                  aria-labelledby="new-project-public-label"
+                  aria-describedby="new-project-public-description"
                   onClick={() => setNewProjectIsPublic((prev) => !prev)}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${newProjectIsPublic ? 'bg-primary' : 'bg-outline-variant/40'}`}
                 >

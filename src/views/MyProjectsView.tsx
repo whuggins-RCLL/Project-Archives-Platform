@@ -50,10 +50,10 @@ export default function MyProjectsView({
   return (
     <div className="p-10 max-w-6xl mx-auto">
       <header className="mb-8">
-        <h2 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface flex items-center gap-3">
-          <FolderKanban className="w-8 h-8 text-primary" />
+        <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface flex items-center gap-3">
+          <FolderKanban className="w-8 h-8 text-primary" aria-hidden />
           My Projects
-        </h2>
+        </h1>
         <p className="text-on-surface-variant mt-1 font-medium">
           Projects you own or collaborate on. Select one to open its full record.
         </p>
@@ -97,7 +97,7 @@ export default function MyProjectsView({
                 <div className="flex items-center justify-between text-[11px] text-on-surface-variant">
                   <span className="font-medium">{project.status}</span>
                   <span className="inline-flex items-center gap-1">
-                    {isPublic ? <Globe className="w-3 h-3" /> : <Lock className="w-3 h-3" />}
+                    {isPublic ? <Globe className="w-3 h-3" aria-hidden /> : <Lock className="w-3 h-3" aria-hidden />}
                     {isPublic ? 'Public' : 'Private'}
                   </span>
                 </div>
@@ -110,7 +110,7 @@ export default function MyProjectsView({
                     )}
                     <span className="text-[11px] font-medium text-on-surface-variant">{project.owner.name}</span>
                   </div>
-                  <ChevronRight className="w-4 h-4 text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <ChevronRight className="w-4 h-4 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" aria-hidden />
                 </div>
               </button>
             );
