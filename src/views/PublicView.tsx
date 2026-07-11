@@ -10,6 +10,7 @@ import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFil
 import { applyProjectFilters, getFilterOptions, ProjectFilterQuery } from '../lib/projectFilters';
 import { useSavedViews } from '../hooks/useSavedViews';
 import { useBranding } from '../hooks/useBranding';
+import { useAuthUser } from '../hooks/useAuthUser';
 import ThemeToggle from '../components/ThemeToggle';
 import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
 import { getValidArtifactLinks, normalizeArtifactUrl } from '../lib/artifactLinks';
@@ -186,6 +187,12 @@ export default function PublicView() {
   const publishedNarrative = (settings.heroNarrativePublished ?? '').trim();
   const isEmbedLayout = settings.publicLayout === 'embed';
   const showEmbedLogo = settings.embedShowLogo ?? true;
+  // Signed-in team members go straight back to the dashboard instead of
+  // being routed through the login screen again.
+  const { user: authUser, loading: authLoading } = useAuthUser();
+  const isTeamMember = !authLoading && Boolean(authUser);
+  const teamLinkTarget = isTeamMember ? '/app' : '/login';
+  const teamLinkLabel = isTeamMember ? 'Back to Dashboard' : 'Team Login';
 
   return (
     <div className="min-h-screen app-canvas font-body">
@@ -214,10 +221,10 @@ export default function PublicView() {
           <div className="flex items-center gap-2 sm:gap-3">
             <ThemeToggle />
             <Link
-              to="/login"
+              to={teamLinkTarget}
               className="group inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
             >
-              Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              {teamLinkLabel} <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
             </Link>
           </div>
         </div>
@@ -271,10 +278,10 @@ export default function PublicView() {
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <ThemeToggle tone="on-dark" />
               <Link
-                to="/login"
+                to={teamLinkTarget}
                 className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md"
               >
-                Team Login <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                {teamLinkLabel} <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
               </Link>
             </div>
           </div>

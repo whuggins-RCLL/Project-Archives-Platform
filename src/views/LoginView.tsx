@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FolderArchive, LogIn } from 'lucide-react';
 import { signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { APP_CONFIG } from '../config';
 import { useBranding } from '../hooks/useBranding';
+import { useAuthUser } from '../hooks/useAuthUser';
 import ThemeToggle from '../components/ThemeToggle';
 
 export default function LoginView() {
@@ -12,6 +13,15 @@ export default function LoginView() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { branding } = useBranding();
+  const { user: authUser } = useAuthUser();
+
+  // Team members with a live Firebase session should never be asked to sign
+  // in again — send them straight back to the dashboard.
+  useEffect(() => {
+    if (authUser) {
+      navigate('/app', { replace: true });
+    }
+  }, [authUser, navigate]);
 
   const handleLogin = async () => {
     setIsLoading(true);
