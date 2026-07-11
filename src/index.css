@@ -367,7 +367,8 @@ select {
 
 /* Frosted card: soft translucent surface with a hairline highlight border. */
 .glass-card {
-  background: var(--glass-bg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--glass-bg) 90%, white 8%), var(--glass-bg));
   backdrop-filter: blur(22px) saturate(180%);
   -webkit-backdrop-filter: blur(22px) saturate(180%);
   border: 1px solid var(--glass-border);
@@ -491,11 +492,6 @@ select {
   background: var(--color-outline-variant);
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
 
 @media (prefers-reduced-motion: reduce) {
   *,

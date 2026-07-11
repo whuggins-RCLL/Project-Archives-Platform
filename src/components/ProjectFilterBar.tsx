@@ -159,7 +159,7 @@ export default function ProjectFilterBar({
   const activeFilterCount = activeFilterChips.length;
 
   return (
-    <section className="bg-surface-container-lowest rounded-xl p-4 mb-6 border border-outline-variant/20 shadow-sm">
+    <section className="glass-card glass-sheen mb-8 rounded-2xl px-4 py-3 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <label htmlFor="project-filter-search" className="flex flex-1 flex-col gap-1 text-xs font-semibold text-on-surface-variant">
           Search
@@ -215,7 +215,7 @@ export default function ProjectFilterBar({
       </div>
 
       {filtersOpen && (
-        <div id="project-filter-advanced" className="mt-4 rounded-xl border border-outline-variant/20 bg-surface-container-low p-4">
+        <div id="project-filter-advanced" className="mt-3 rounded-xl border border-outline-variant/20 bg-surface-container-low/70 p-3">
           <div className="flex flex-wrap gap-3 items-end">
             <MultiSelect id="project-filter-priority" label="Priority" values={query.priorities} options={options.priorities || ['High', 'Medium', 'Low']} onChange={(v) => onChange({ ...query, priorities: v as ProjectFilterQuery['priorities'] })} />
             <MultiSelect id="project-filter-status" label="Status" values={query.statuses} options={options.statuses || ['Intake / Proposed', 'Scoping', 'In Progress', 'Pilot / Testing', 'Review / Approval', 'Launched']} onChange={(v) => onChange({ ...query, statuses: v as ProjectFilterQuery['statuses'] })} />
