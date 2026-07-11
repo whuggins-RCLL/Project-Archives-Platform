@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles } from 'lucide-react';
+import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { signOut } from 'firebase/auth';
 import { APP_CONFIG } from '../config';
 import CommunityIntakeForm from '../components/CommunityIntakeForm';
 import { getLikedProjectIds, persistLikedProjectIds } from '../lib/communityIntake';
@@ -14,6 +15,7 @@ import { useAuthUser } from '../hooks/useAuthUser';
 import ThemeToggle from '../components/ThemeToggle';
 import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
 import { getValidArtifactLinks, normalizeArtifactUrl } from '../lib/artifactLinks';
+import { auth } from '../lib/firebase';
 
 const DESCRIPTION_PREVIEW_LIMIT = 160;
 const STATUS_GROUP_ORDER = ['In Progress', 'Planning', 'On Hold', 'Launched'] as const;
@@ -178,7 +180,6 @@ export default function PublicView() {
         items: [...items].sort((a, b) => a.title.localeCompare(b.title)),
       }));
   }, [visibleProjects]);
-  const departmentCount = useMemo(() => new Set(visibleProjects.map((project) => project.department).filter(Boolean)).size, [visibleProjects]);
   const filterOptions = useMemo(() => getFilterOptions(publicProjects), [publicProjects]);
   const heroQuickLinks = useMemo(
     () => (settings.heroQuickLinks ?? []).filter((link) => link.label.trim() && link.url.trim()),
@@ -193,6 +194,14 @@ export default function PublicView() {
   const isTeamMember = !authLoading && Boolean(authUser);
   const teamLinkTarget = isTeamMember ? '/app' : '/login';
   const teamLinkLabel = isTeamMember ? 'Back to Dashboard' : 'Team Login';
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   return (
     <div className="min-h-screen app-canvas font-body">
@@ -226,6 +235,15 @@ export default function PublicView() {
             >
               {teamLinkLabel} <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
             </Link>
+            {isTeamMember && (
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="group inline-flex items-center gap-2 rounded-full border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-2 text-sm font-semibold text-brand-dark shadow-sm transition-all hover:border-primary/40 hover:shadow-md"
+              >
+                Sign out <LogOut className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -283,6 +301,15 @@ export default function PublicView() {
               >
                 {teamLinkLabel} <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
               </Link>
+              {isTeamMember && (
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="group inline-flex items-center gap-2 rounded-full glass-on-dark px-4 py-2 text-sm font-semibold text-white shadow-sm transition-all hover:shadow-md"
+                >
+                  Sign out <LogOut className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -359,16 +386,6 @@ export default function PublicView() {
               Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
             </p>
           </div>
-          <dl className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-end" aria-label="Visible portfolio summary">
-            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Projects</dt>
-              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{visibleProjects.length}</dd>
-            </div>
-            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Departments</dt>
-              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{departmentCount}</dd>
-            </div>
-          </dl>
         </div>
 
         <ProjectFilterBar
@@ -400,8 +417,8 @@ export default function PublicView() {
         ) : (
           <div className="space-y-10">
             {projectGroups.map((group) => (
-              <section key={group.status} className="rounded-[1.75rem] border border-outline-variant/20 bg-surface-container-lowest/25 p-4 sm:p-5" aria-labelledby={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`}>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <section key={group.status} className="scroll-mt-24" aria-labelledby={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`}>
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-4">
                   <div>
                     <h3 id={`status-${group.status.replace(/\s+/g, '-').toLowerCase()}`} className="font-headline text-xl font-extrabold text-brand-dark">{group.status}</h3>
                     <p className="text-sm text-on-surface-variant">{group.items.length} {group.items.length === 1 ? 'project' : 'projects'} in this stage</p>
@@ -494,7 +511,7 @@ export default function PublicView() {
                     </div>
                   )}
                 </div>
-                <div className="bg-surface-container-low/60 px-6 py-4 border-t border-outline-variant/15 flex items-center justify-between">
+                <div className="border-t border-white/20 bg-gradient-to-r from-white/35 to-white/10 px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     {project.owner.avatar ? (
                       <img src={project.owner.avatar} alt={project.owner.name} className="w-6 h-6 rounded-full object-cover" />
