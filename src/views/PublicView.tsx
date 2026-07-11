@@ -178,7 +178,6 @@ export default function PublicView() {
         items: [...items].sort((a, b) => a.title.localeCompare(b.title)),
       }));
   }, [visibleProjects]);
-  const departmentCount = useMemo(() => new Set(visibleProjects.map((project) => project.department).filter(Boolean)).size, [visibleProjects]);
   const filterOptions = useMemo(() => getFilterOptions(publicProjects), [publicProjects]);
   const heroQuickLinks = useMemo(
     () => (settings.heroQuickLinks ?? []).filter((link) => link.label.trim() && link.url.trim()),
@@ -348,27 +347,16 @@ export default function PublicView() {
 
       {/* Projects Grid */}
       <main id="main-content" tabIndex={-1} className="content-shell py-16 focus:outline-none" aria-labelledby="portfolio-heading">
-        <div className="mb-10 grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-          <div>
-            <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary">
-              <Layers3 className="h-3.5 w-3.5" aria-hidden />
-              Organized by stage
-            </span>
-            <h2 id="portfolio-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
-            <p className="text-on-surface-variant mt-2 max-w-3xl">
-              Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
-            </p>
-          </div>
-          <dl className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:justify-end" aria-label="Visible portfolio summary">
-            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Projects</dt>
-              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{visibleProjects.length}</dd>
-            </div>
-            <div className="glass-card glass-sheen rounded-2xl px-4 py-3 text-center">
-              <dt className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Departments</dt>
-              <dd className="mt-1 font-headline text-2xl font-extrabold text-brand-dark">{departmentCount}</dd>
-            </div>
-          </dl>
+        {/* The hero stats above are the single source for portfolio counts — no duplicate tiles here. */}
+        <div className="mb-10 max-w-3xl">
+          <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-primary/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary">
+            <Layers3 className="h-3.5 w-3.5" aria-hidden />
+            Organized by stage
+          </span>
+          <h2 id="portfolio-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
+          <p className="text-on-surface-variant mt-2">
+            Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
+          </p>
         </div>
 
         <ProjectFilterBar

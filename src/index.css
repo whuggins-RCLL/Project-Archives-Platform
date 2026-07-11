@@ -491,12 +491,6 @@ select {
   background: var(--color-outline-variant);
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
