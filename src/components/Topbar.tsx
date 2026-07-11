@@ -68,10 +68,10 @@ export default function Topbar({
           <div className="text-right hidden md:block">
             <p className="text-xs font-bold text-brand-dark">{auth.currentUser?.displayName || 'Librarian Alpha'}</p>
             <p className="text-[10px] text-on-surface-variant" title={`Role key: ${rawRole}`}>{roleLabel}</p>
-            {roleError && <p className="text-[10px] text-error">{roleError}</p>}
+            {roleError && <p role="alert" className="text-[10px] text-error">{roleError}</p>}
           </div>
           <img
-            alt="Librarian Profile"
+            alt={auth.currentUser?.displayName ? `${auth.currentUser.displayName} profile photo` : 'Profile photo'}
             className="w-9 h-9 rounded-full object-cover border-2 border-primary-container/20"
             src={auth.currentUser?.photoURL || "https://lh3.googleusercontent.com/aida-public/AB6AXuCrUohiq7QaL3CoEGKLCQXm_0DX3H64LvxWn_3O2RnliwqAX1kozCZ-4UQSStVHxP1i1KCvCa75Bg3m8YvYZ-1cqm_RZJF2CBihZv--y4riJjpXDdzdTmj96F6p_Acw0cWGfYYGT_v5cEznpL-Ps327O0tY9NkU5yEOYdyTAL9Wjx0vLHJJqTtfHpU3F21uqhWz5brZJvwUUdAEhbwLLuENJdZsKoGJuF6OCGX-mss6_U3cDu0N20cwzOQ9Iikj22mUrKZSPsu1eg"}
           />

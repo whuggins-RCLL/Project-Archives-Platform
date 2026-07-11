@@ -310,6 +310,7 @@ export default function PublicView() {
                     className="group inline-flex items-center gap-2 rounded-full bg-white px-6 py-2.5 text-sm font-semibold text-brand-dark shadow-lg shadow-black/25 ring-1 ring-white/40 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   >
                     {link.label}
+                    <span className="sr-only"> (opens in new tab)</span>
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" aria-hidden />
                   </a>
                 ))}
@@ -458,6 +459,7 @@ export default function PublicView() {
                         >
                           <ArtifactLinkIcon type={link.type} className="w-3.5 h-3.5" />
                           {link.label}
+                          <span className="sr-only"> (opens in new tab)</span>
                         </a>
                       ))}
                     </div>

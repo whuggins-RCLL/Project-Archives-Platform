@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, Globe, FolderKanban } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
@@ -32,6 +33,17 @@ export default function Sidebar({
     logoUrl?: string;
   }
 }) {
+  useEffect(() => {
+    if (!isMobileOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onMobileClose();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isMobileOpen, onMobileClose]);
+
   const navItems = viewerOnlyMode
     ? [{ id: 'portfolio', icon: Calendar, label: 'Portfolio Overview' }]
     : [
@@ -46,6 +58,7 @@ export default function Sidebar({
       <div
         className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200 lg:hidden ${isMobileOpen ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
         onClick={onMobileClose}
+        aria-hidden="true"
       />
       <aside className={`h-screen w-64 fixed left-0 top-0 z-50 glass-panel border-r border-outline-variant/15 flex flex-col py-8 px-6 space-y-4 transform transition-transform duration-200 lg:z-40 lg:translate-x-0 ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       <button
@@ -81,12 +94,13 @@ export default function Sidebar({
           </div>
         </div>
       </div>
-      <nav className="flex-1 space-y-1">
+      <nav className="flex-1 space-y-1" aria-label="Main navigation">
         {navItems.map((item) => {
           const isActive = currentView === item.id;
           return (
             <button
               key={item.id}
+              aria-current={isActive ? 'page' : undefined}
               onClick={() => {
                 setCurrentView(item.id);
                 onMobileClose();
@@ -100,7 +114,7 @@ export default function Sidebar({
               {isActive && (
                 <span className="absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-primary to-brand-dark" aria-hidden />
               )}
-              <item.icon className={`w-5 h-5 transition-colors ${isActive ? 'text-primary' : ''}`} />
+              <item.icon className={`w-5 h-5 transition-colors ${isActive ? 'text-primary' : ''}`} aria-hidden />
               <span className="font-inter text-sm font-medium tracking-wide">{item.label}</span>
             </button>
           );

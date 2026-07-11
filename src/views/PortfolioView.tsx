@@ -254,7 +254,7 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
           </div>
         </div>
         {suiteActionMessage && (
-          <div className="mb-4 rounded-lg border border-outline-variant/20 bg-surface-container-low px-4 py-2 text-xs font-medium text-on-surface-variant">
+          <div role="status" aria-live="polite" className="mb-4 rounded-lg border border-outline-variant/20 bg-surface-container-low px-4 py-2 text-xs font-medium text-on-surface-variant">
             {suiteActionMessage}
           </div>
         )}
@@ -274,7 +274,7 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
               <Database className="w-5 h-5 text-primary" />
             </div>
             <div className="text-4xl font-headline font-black text-primary">{metrics.totalRecords}</div>
-            <div className="mt-2 text-xs font-medium text-on-tertiary-container flex items-center gap-1">
+            <div className="mt-2 text-xs font-medium text-emerald-800 flex items-center gap-1">
               <TrendingUp className="w-3 h-3" />
               {intakeTrendDisplay} vs {metrics.baselineLabel}
             </div>
@@ -342,11 +342,11 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-surface-container-low/50">
-                <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Project Name</th>
-                <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Visibility</th>
-                <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Risk Factor</th>
-                <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Completion</th>
-                <th className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest text-right">Preservation Score</th>
+                <th scope="col" className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Project Name</th>
+                <th scope="col" className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Visibility</th>
+                <th scope="col" className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Risk Factor</th>
+                <th scope="col" className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest">Completion</th>
+                <th scope="col" className="p-4 text-xs font-bold text-on-secondary-container uppercase tracking-widest text-right">Preservation Score</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-outline-variant/5">
@@ -355,12 +355,20 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
-                        <BookOpen className="w-4 h-4 text-primary" />
+                        <BookOpen className="w-4 h-4 text-primary" aria-hidden />
                       </div>
-                      <div>
-                        <div className="text-sm font-bold text-on-surface leading-none">{project.title}</div>
-                        <div className="text-[10px] text-on-surface-variant">Archivist: {project.owner.name}</div>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onProjectClick(project.id);
+                        }}
+                        className="text-left"
+                        aria-label={`Open project ${project.title}`}
+                      >
+                        <span className="block text-sm font-bold text-on-surface leading-none">{project.title}</span>
+                        <span className="block text-[10px] text-on-surface-variant">Archivist: {project.owner.name}</span>
+                      </button>
                     </div>
                   </td>
                   <td className="p-4">
@@ -370,7 +378,7 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
                       }`}
                       title={project.isPublic === false ? 'Private — hidden from the public dashboard' : 'Public — shown on the public dashboard'}
                     >
-                      {project.isPublic === false ? <Lock className="w-3 h-3" /> : <Globe className="w-3 h-3" />}
+                      {project.isPublic === false ? <Lock className="w-3 h-3" aria-hidden /> : <Globe className="w-3 h-3" aria-hidden />}
                       {project.isPublic === false ? 'Private' : 'Public'}
                     </span>
                   </td>
@@ -384,7 +392,14 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
                     </span>
                   </td>
                   <td className="p-4">
-                    <div className="w-32 h-1 bg-surface-container-high rounded-full overflow-hidden">
+                    <div
+                      role="progressbar"
+                      aria-valuenow={project.progress}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={`${project.title} completion`}
+                      className="w-32 h-1 bg-surface-container-high rounded-full overflow-hidden"
+                    >
                       <div className="bg-primary h-full" style={{ width: `${project.progress}%` }}></div>
                     </div>
                   </td>

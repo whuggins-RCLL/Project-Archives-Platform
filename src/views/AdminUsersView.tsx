@@ -133,7 +133,7 @@ export default function AdminUsersView({
 
   return (
     <div className="p-8 space-y-6">
-      {toast && <div className="fixed top-6 right-6 z-40 rounded-lg bg-tertiary-container px-4 py-2 text-sm font-bold">{toast}</div>}
+      {toast && <div role="status" aria-live="polite" className="fixed top-6 right-6 z-40 rounded-lg bg-tertiary-container px-4 py-2 text-sm font-bold text-on-tertiary-container">{toast}</div>}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-extrabold">Access Management</h1>
         <div className="flex items-center gap-2">
@@ -149,18 +149,18 @@ export default function AdminUsersView({
         </div>
       )}
       <div className="bg-white rounded-xl border p-4 flex gap-3 items-center">
-        <Search className="w-4 h-4 text-slate-500" />
-        <input className="flex-1 outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email, uid" />
-        <select value={filter} onChange={(e) => setFilter(e.target.value as AppRole | 'all')} className="border rounded px-3 py-2">
+        <Search className="w-4 h-4 text-slate-500" aria-hidden />
+        <input className="flex-1 outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email, uid" aria-label="Search users by name, email, or uid" />
+        <select value={filter} onChange={(e) => setFilter(e.target.value as AppRole | 'all')} className="border rounded px-3 py-2" aria-label="Filter by role">
           {ROLE_FILTERS.map((role) => <option key={role} value={role}>{role === 'all' ? 'All roles' : role}</option>)}
         </select>
       </div>
 
-      {error && <div className="rounded-lg border border-error/40 bg-error/10 p-3 text-sm">{error}</div>}
+      {error && <div role="alert" className="rounded-lg border border-error/40 bg-error/10 p-3 text-sm">{error}</div>}
       {loading ? <div>Loading users...</div> : (
         <div className="bg-white rounded-xl border overflow-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50"><tr><th className="p-3 text-left">Name</th><th className="p-3 text-left">Email</th><th className="p-3 text-left">Role</th><th className="p-3 text-left">Status</th><th className="p-3 text-left">UID</th><th className="p-3 text-left">Last Updated</th><th className="p-3 text-left">Role/Status</th>{PERMISSION_COLUMNS.map((permission) => <th key={permission.key} className="p-3 text-left">{permission.label}</th>)}</tr></thead>
+            <thead className="bg-slate-50"><tr><th scope="col" className="p-3 text-left">Name</th><th scope="col" className="p-3 text-left">Email</th><th scope="col" className="p-3 text-left">Role</th><th scope="col" className="p-3 text-left">Status</th><th scope="col" className="p-3 text-left">UID</th><th scope="col" className="p-3 text-left">Last Updated</th><th scope="col" className="p-3 text-left">Role/Status</th>{PERMISSION_COLUMNS.map((permission) => <th scope="col" key={permission.key} className="p-3 text-left">{permission.label}</th>)}</tr></thead>
             <tbody>
             {visible.map((user) => (
               <tr key={user.uid} className="border-t align-top">
@@ -173,11 +173,11 @@ export default function AdminUsersView({
                 <td className="p-3">
                   <div className="flex flex-wrap gap-2">
                     {(['owner','admin','collaborator','viewer'] as AppRole[]).filter((role) => role !== 'owner' || currentRole === 'owner').map((role) => (
-                      <button key={role} className="px-2 py-1 border rounded text-xs" disabled={user.role === role} onClick={() => void mutateRole(user.uid, role)}>{role}</button>
+                      <button key={role} className="px-2 py-1 border rounded text-xs" disabled={user.role === role} aria-label={`Set role of ${user.email} to ${role}`} onClick={() => void mutateRole(user.uid, role)}>{role}</button>
                     ))}
                     {user.status === 'active'
-                      ? <button className="px-2 py-1 border rounded text-xs" onClick={() => void mutateStatus(user.uid, 'disable')}>disable</button>
-                      : <button className="px-2 py-1 border rounded text-xs" onClick={() => void mutateStatus(user.uid, 'enable')}>enable</button>}
+                      ? <button className="px-2 py-1 border rounded text-xs" aria-label={`Disable access for ${user.email}`} onClick={() => void mutateStatus(user.uid, 'disable')}>disable</button>
+                      : <button className="px-2 py-1 border rounded text-xs" aria-label={`Enable access for ${user.email}`} onClick={() => void mutateStatus(user.uid, 'enable')}>enable</button>}
                   </div>
                 </td>
                 {PERMISSION_COLUMNS.map((permission) => {
@@ -191,6 +191,7 @@ export default function AdminUsersView({
                           type="checkbox"
                           checked={checked}
                           disabled={savingPermissionKey === key}
+                          aria-label={`${permission.label} for ${user.email}`}
                           onChange={(event) => void mutatePermission(user, permission.key, event.target.checked)}
                         />
                         {savingPermissionKey === key ? 'Saving...' : 'Allow'}

@@ -65,9 +65,9 @@ export default function LoginView() {
             </div>
           )}
         </div>
-        <h2 className="mt-6 text-center text-3xl font-extrabold font-headline tracking-tight">
+        <h1 className="mt-6 text-center text-3xl font-extrabold font-headline tracking-tight">
           Team Login
-        </h2>
+        </h1>
         <p className="mt-2 text-center text-sm text-white/70">
           Sign in to the {branding.suiteName || APP_CONFIG.appName} workspace for {branding.portalName || APP_CONFIG.portalName}
         </p>
@@ -84,7 +84,7 @@ export default function LoginView() {
             {isLoading ? 'Signing in...' : 'Sign in with Google'}
           </button>
 
-          {error && <p className="mt-4 text-sm text-red-200">{error}</p>}
+          {error && <p role="alert" className="mt-4 text-sm text-red-200">{error}</p>}
 
           <div className="mt-6 text-center">
             <button

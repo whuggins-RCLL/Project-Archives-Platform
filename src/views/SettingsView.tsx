@@ -171,7 +171,7 @@ export default function SettingsView({
       <div className="max-w-3xl mx-auto">
       {toast && (
         <div className="fixed top-6 right-6 z-50 animate-fade-in-up">
-          <div className={`px-4 py-3 rounded-xl shadow-lg border text-sm font-bold ${
+          <div role={toast.type === 'error' ? 'alert' : 'status'} className={`px-4 py-3 rounded-xl shadow-lg border text-sm font-bold ${
             toast.type === 'success'
               ? 'bg-tertiary-container text-on-tertiary-container border-tertiary-fixed/30'
               : 'bg-error-container text-error border-error/30'
@@ -235,7 +235,7 @@ export default function SettingsView({
               This is the master switch for the public dashboard at the site root. Turn on Public Read to share out, then
               choose per project which ones appear using the Public/Private toggle on each project record.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" role="radiogroup" aria-label="Public dashboard access mode">
               {[
                 {
                   id: 'public-read',
@@ -250,7 +250,17 @@ export default function SettingsView({
               ].map((mode) => (
                 <div
                   key={mode.id}
+                  role="radio"
+                  aria-checked={settings.privacyMode === mode.id}
+                  aria-disabled={readOnly || undefined}
+                  tabIndex={0}
                   onClick={() => !readOnly && setSettings({ ...settings, privacyMode: mode.id as Settings['privacyMode'] })}
+                  onKeyDown={(e) => {
+                    if (!readOnly && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      setSettings({ ...settings, privacyMode: mode.id as Settings['privacyMode'] });
+                    }
+                  }}
                   className={`p-4 rounded-lg border-2 transition-all ${
                     settings.privacyMode === mode.id
                       ? 'border-primary bg-primary/5'
@@ -274,7 +284,7 @@ export default function SettingsView({
               Choose how the public homepage chrome is arranged. Embed mode is designed for placing the page inside
               another site (for example a Google Sites iframe).
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" role="radiogroup" aria-label="Public page layout">
               {[
                 {
                   id: 'standard',
@@ -289,7 +299,17 @@ export default function SettingsView({
               ].map((mode) => (
                 <div
                   key={mode.id}
+                  role="radio"
+                  aria-checked={(settings.publicLayout ?? 'standard') === mode.id}
+                  aria-disabled={readOnly || undefined}
+                  tabIndex={0}
                   onClick={() => !readOnly && setSettings({ ...settings, publicLayout: mode.id as Settings['publicLayout'] })}
+                  onKeyDown={(e) => {
+                    if (!readOnly && (e.key === 'Enter' || e.key === ' ')) {
+                      e.preventDefault();
+                      setSettings({ ...settings, publicLayout: mode.id as Settings['publicLayout'] });
+                    }
+                  }}
                   className={`p-4 rounded-lg border-2 transition-all ${
                     (settings.publicLayout ?? 'standard') === mode.id
                       ? 'border-primary bg-primary/5'
@@ -315,6 +335,7 @@ export default function SettingsView({
                     className="sr-only peer"
                     checked={settings.embedShowLogo ?? true}
                     disabled={readOnly}
+                    aria-label="Show logo in embed header"
                     onChange={(e) => setSettings({ ...settings, embedShowLogo: e.target.checked })}
                   />
                   <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
@@ -538,9 +559,9 @@ export default function SettingsView({
               <p className="text-xs text-on-surface-variant">Add quick-link buttons shown on the public homepage hero section.</p>
               {(settings.heroQuickLinks ?? []).map((link, idx) => (
                 <div key={link.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
-                  <input className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm" placeholder="Button label" value={link.label} maxLength={40} disabled={readOnly} onChange={(e) => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).map((x, i) => i === idx ? { ...x, label: e.target.value } : x) })} />
-                  <input className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm" placeholder="https://..." value={link.url} maxLength={500} disabled={readOnly} onChange={(e) => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).map((x, i) => i === idx ? { ...x, url: e.target.value } : x) })} />
-                  <button type="button" className="px-3 py-2 text-sm rounded-lg border border-outline-variant/30" disabled={readOnly} onClick={() => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).filter((_, i) => i !== idx) })}>Remove</button>
+                  <input className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm" placeholder="Button label" aria-label={`Hero button ${idx + 1} label`} value={link.label} maxLength={40} disabled={readOnly} onChange={(e) => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).map((x, i) => i === idx ? { ...x, label: e.target.value } : x) })} />
+                  <input className="bg-surface-container-low border border-outline-variant/20 rounded-lg p-2 text-sm" placeholder="https://..." aria-label={`Hero button ${idx + 1} URL`} value={link.url} maxLength={500} disabled={readOnly} onChange={(e) => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).map((x, i) => i === idx ? { ...x, url: e.target.value } : x) })} />
+                  <button type="button" className="px-3 py-2 text-sm rounded-lg border border-outline-variant/30" aria-label={`Remove hero button ${link.label || idx + 1}`} disabled={readOnly} onClick={() => setSettings({ ...settings, heroQuickLinks: (settings.heroQuickLinks ?? []).filter((_, i) => i !== idx) })}>Remove</button>
                 </div>
               ))}
               <button
@@ -569,6 +590,7 @@ export default function SettingsView({
                 className="sr-only peer"
                 checked={settings.aiEnabled}
                 disabled={readOnly}
+                aria-label="Enable AI"
                 onChange={(e) => {
                   const on = e.target.checked;
                   setSettings((prev) => ({
@@ -585,7 +607,7 @@ export default function SettingsView({
           <div className={`space-y-3 ${readOnly ? 'opacity-50 pointer-events-none' : ''}`}>
             <h3 className="font-bold text-on-surface">Public overview narrative</h3>
             <p className="text-xs text-on-surface-variant">Write an overview statement for the public overview page. Publish it to make it visible, and unpublish anytime.</p>
-            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="Write your public overview statement here..." />
+            <textarea className="w-full min-h-28 bg-surface-container-low border border-outline-variant/20 rounded-lg p-3 text-sm" aria-label="Public overview narrative" disabled={readOnly} maxLength={6000} value={settings.heroNarrativeDraft ?? ''} onChange={(e) => setSettings({ ...settings, heroNarrativeDraft: e.target.value })} placeholder="Write your public overview statement here..." />
             {(settings.heroNarrativePublished ?? '').trim() ? (
               <p className="text-xs font-semibold text-emerald-700">Live on the public overview page.</p>
             ) : (
@@ -604,22 +626,35 @@ export default function SettingsView({
             <p className="text-xs text-on-surface-variant -mt-2 mb-3">
               Select one or more providers. Users can toggle providers while choosing models on project records.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {AI_PROVIDER_OPTIONS.map(provider => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" role="group" aria-label="Enabled AI providers">
+              {AI_PROVIDER_OPTIONS.map(provider => {
+                const toggleProvider = () => {
+                  if (readOnly) return;
+                  const currentlyEnabled = settings.enabledProviders.includes(provider.id);
+                  if (currentlyEnabled && settings.enabledProviders.length === 1) return;
+                  const nextEnabledProviders = currentlyEnabled
+                    ? settings.enabledProviders.filter((id) => id !== provider.id)
+                    : [...settings.enabledProviders, provider.id];
+                  setSettings({
+                    ...settings,
+                    enabledProviders: nextEnabledProviders,
+                    activeProvider: nextEnabledProviders.includes(settings.activeProvider) ? settings.activeProvider : nextEnabledProviders[0],
+                  });
+                };
+                return (
                 <div
                   key={provider.id}
-                  onClick={() => {
-                    if (readOnly) return;
-                    const currentlyEnabled = settings.enabledProviders.includes(provider.id);
-                    if (currentlyEnabled && settings.enabledProviders.length === 1) return;
-                    const nextEnabledProviders = currentlyEnabled
-                      ? settings.enabledProviders.filter((id) => id !== provider.id)
-                      : [...settings.enabledProviders, provider.id];
-                    setSettings({
-                      ...settings,
-                      enabledProviders: nextEnabledProviders,
-                      activeProvider: nextEnabledProviders.includes(settings.activeProvider) ? settings.activeProvider : nextEnabledProviders[0],
-                    });
+                  role="checkbox"
+                  aria-checked={settings.enabledProviders.includes(provider.id)}
+                  aria-disabled={readOnly || undefined}
+                  aria-label={`Enable ${provider.name}`}
+                  tabIndex={0}
+                  onClick={toggleProvider}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleProvider();
+                    }
                   }}
                   className={`p-4 rounded-lg border-2 transition-all ${
                     settings.enabledProviders.includes(provider.id)
@@ -633,7 +668,8 @@ export default function SettingsView({
                   </div>
                   <div className="text-xs text-on-surface-variant mt-1">{provider.desc}</div>
                 </div>
-              ))}
+                );
+              })}
             </div>
             <p className="text-xs text-on-surface-variant mt-2">At least one provider must remain enabled.</p>
           </div>
@@ -658,6 +694,7 @@ export default function SettingsView({
                     className="sr-only peer"
                     checked={settings[feature.key as keyof Settings] as boolean}
                     disabled={readOnly}
+                    aria-label={feature.title}
                     onChange={(e) => setSettings({ ...settings, [feature.key]: e.target.checked })}
                   />
                   <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
@@ -687,6 +724,7 @@ export default function SettingsView({
                     className="sr-only peer"
                     checked={settings[feature.key as keyof Settings] as boolean}
                     disabled={readOnly}
+                    aria-label={feature.title}
                     onChange={(e) => setSettings({ ...settings, [feature.key]: e.target.checked })}
                   />
                   <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>

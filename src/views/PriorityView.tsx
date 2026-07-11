@@ -81,7 +81,16 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
             {highPriority.map((project, index) => (
               <div
                 key={project.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open project ${project.title}`}
                 onClick={() => onProjectClick(project.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onProjectClick(project.id);
+                  }
+                }}
                 className={`bg-surface-container-lowest p-5 rounded-xl shadow-[0_8px_32px_rgba(25,28,30,0.04)] border border-transparent hover:border-primary/10 transition-all cursor-pointer group ${index === 0 ? '' : 'lg:col-span-2 flex flex-col md:flex-row gap-6'}`}
               >
                 {index === 0 ? (
@@ -94,7 +103,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                     <p className="text-on-surface-variant text-sm line-clamp-2 mb-4">{project.description}</p>
                     <div className="flex items-center justify-between">
                       <div className="flex -space-x-2">
-                        <div className="w-8 h-8 rounded-full border-2 border-white bg-primary-container flex items-center justify-center text-[10px] font-bold text-primary">{project.owner.name.charAt(0)}</div>
+                        <div className="w-8 h-8 rounded-full border-2 border-white bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{project.owner.name.charAt(0)}</div>
                       </div>
                       <span className="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -117,7 +126,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                           <span className="text-xs font-semibold">{project.tags.length} Tags</span>
                         </div>
                         <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-lg">
-                          <CheckCircle2 className="w-3 h-3 text-on-tertiary-container" />
+                          <CheckCircle2 className="w-3 h-3 text-emerald-800" aria-hidden />
                           <span className="text-xs font-semibold">{project.progress}% Complete</span>
                         </div>
                       </div>
@@ -147,25 +156,25 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-container-low/50">
-                  <th className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Archive Project</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Owner</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Status</th>
-                  <th className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Health</th>
-                  <th className="px-6 py-4"></th>
+                  <th scope="col" className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Archive Project</th>
+                  <th scope="col" className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Owner</th>
+                  <th scope="col" className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Status</th>
+                  <th scope="col" className="px-6 py-4 text-[11px] font-bold text-on-surface-variant uppercase tracking-widest font-label">Health</th>
+                  <th scope="col" className="px-6 py-4"><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-outline-variant/10">
                 {mediumPriority.map(project => (
                   <tr key={project.id} onClick={() => onProjectClick(project.id)} className="hover:bg-surface-container-low transition-colors group cursor-pointer">
                     <td className="px-6 py-4"><div className="flex flex-col"><span className="font-headline font-bold text-on-surface">{project.title}</span><span className="text-xs text-on-surface-variant line-clamp-1">{project.description}</span></div></td>
-                    <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center text-[10px] font-bold text-primary">{project.owner.name.charAt(0)}</div><span className="text-sm font-medium text-on-surface">{project.owner.name}</span></div></td>
+                    <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{project.owner.name.charAt(0)}</div><span className="text-sm font-medium text-on-surface">{project.owner.name}</span></div></td>
                     <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
                       project.status === 'In Progress' ? 'bg-surface-container-high text-secondary' :
                       project.status === 'Launched' ? 'bg-tertiary-container text-tertiary-fixed' :
                       'bg-surface-container-low text-on-surface-variant'
                     }`}>{project.status}</span></td>
                     <td className="px-6 py-4"><div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-tertiary-fixed-dim" style={{ width: `${project.progress}%` }}></div></div></td>
-                    <td className="px-6 py-4 text-right"><button aria-label={`Open ${project.title}`} title="Open project record" onClick={() => onProjectClick(project.id)} className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"><MoreHorizontal className="w-5 h-5" /></button></td>
+                    <td className="px-6 py-4 text-right"><button aria-label={`Open ${project.title}`} title="Open project record" onClick={() => onProjectClick(project.id)} className="text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"><MoreHorizontal className="w-5 h-5" /></button></td>
                   </tr>
                 ))}
                 {mediumPriority.length === 0 && (
@@ -190,7 +199,16 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
             {lowPriority.map((project, index) => (
               <div
                 key={project.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open project ${project.title}`}
                 onClick={() => onProjectClick(project.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onProjectClick(project.id);
+                  }
+                }}
                 className={`p-5 rounded-xl border border-outline-variant/20 group cursor-pointer hover:border-primary/30 transition-colors ${
                   index % 3 === 2 ? 'md:col-span-2 bg-primary text-white flex items-center justify-between relative overflow-hidden' : 'md:col-span-1 bg-surface-container-low/40'
                 }`}
@@ -198,12 +216,12 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                 {index % 3 === 2 ? (
                   <>
                     <div className="relative z-10"><h4 className="font-headline font-bold text-lg mb-1 leading-tight">{project.title}</h4><p className="text-xs text-blue-100 max-w-[200px] line-clamp-2">{project.description}</p></div>
-                    <Brain className="w-24 h-24 text-white/10 absolute -right-4 -bottom-4" />
-                    <button onClick={() => onProjectClick(project.id)} className="relative z-10 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all">View</button>
+                    <Brain className="w-24 h-24 text-white/10 absolute -right-4 -bottom-4" aria-hidden />
+                    <button aria-label={`View project ${project.title}`} onClick={(e) => { e.stopPropagation(); onProjectClick(project.id); }} className="relative z-10 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs font-bold transition-all">View</button>
                   </>
                 ) : (
                   <>
-                    <History className="w-6 h-6 text-primary mb-3" />
+                    <History className="w-6 h-6 text-primary mb-3" aria-hidden />
                     <h4 className="font-headline font-bold text-sm mb-1 line-clamp-1">{project.title}</h4>
                     <p className="text-xs text-on-surface-variant line-clamp-2">{project.description}</p>
                   </>

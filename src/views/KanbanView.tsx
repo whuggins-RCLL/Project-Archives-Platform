@@ -97,9 +97,25 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
   };
 
   const handleKeyboardDrag = async (e: React.KeyboardEvent, project: Project) => {
-    if (!isAdmin) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (keyboardDraggedProjectId === project.id) {
+        setKeyboardDraggedProjectId(null);
+      } else {
+        onProjectClick(project.id);
+      }
+      return;
+    }
 
-    if (e.key === 'Enter' || e.key === ' ') {
+    if (!isAdmin) {
+      if (e.key === ' ') {
+        e.preventDefault();
+        onProjectClick(project.id);
+      }
+      return;
+    }
+
+    if (e.key === ' ') {
       e.preventDefault();
       setKeyboardDraggedProjectId((current) => current === project.id ? null : project.id);
       return;
@@ -200,7 +216,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
               className={`inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter ${project.isPublic === false ? 'bg-surface-container text-on-surface-variant' : 'bg-tertiary-container text-on-tertiary-container'}`}
               title={project.isPublic === false ? 'Private — hidden from the public dashboard' : 'Public — shown on the public dashboard'}
             >
-              {project.isPublic === false ? <Lock className="w-2.5 h-2.5" /> : <Globe className="w-2.5 h-2.5" />}
+              {project.isPublic === false ? <Lock className="w-2.5 h-2.5" aria-hidden /> : <Globe className="w-2.5 h-2.5" aria-hidden />}
               {project.isPublic === false ? 'Private' : 'Public'}
             </span>
             {project.source === 'community' && (
@@ -208,20 +224,20 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
                 className="inline-flex items-center gap-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-tighter bg-violet-100 text-violet-800"
                 title="Suggested by the SLS community through the public intake form"
               >
-                <Sparkles className="w-2.5 h-2.5" />
+                <Sparkles className="w-2.5 h-2.5" aria-hidden />
                 SLS Community
               </span>
             )}
           </div>
           <div className="flex items-center gap-1.5">
             {typeof project.likeCount === 'number' && project.likeCount > 0 && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-500" title={`${project.likeCount} public ${project.likeCount === 1 ? 'like' : 'likes'}`}>
-                <Heart className="w-3 h-3 fill-current" />
+              <span className="inline-flex items-center gap-0.5 text-[10px] font-bold text-rose-500" title={`${project.likeCount} public ${project.likeCount === 1 ? 'like' : 'likes'}`} aria-label={`${project.likeCount} public ${project.likeCount === 1 ? 'like' : 'likes'}`}>
+                <Heart className="w-3 h-3 fill-current" aria-hidden />
                 {project.likeCount}
               </span>
             )}
-            {isLaunched && <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-dim" aria-label="In production" />}
-            <MoreHorizontal className="w-5 h-5 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity" />
+            {isLaunched && <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-dim" role="img" aria-label="In production" />}
+            <MoreHorizontal className="w-5 h-5 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity" aria-hidden />
           </div>
         </div>
         <h4 className={`font-bold ${isCompactBoard ? 'text-[13px] mb-2' : 'text-sm mb-3'} leading-snug`}>{project.title}</h4>
@@ -249,13 +265,13 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
               {project.owner.avatar ? (
                 <img className="w-6 h-6 rounded-full object-cover" src={project.owner.avatar} alt={project.owner.name} />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-primary">{project.owner.initials}</div>
+                <div className="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{project.owner.initials}</div>
               )}
               <span className="text-[10px] font-medium text-on-surface-variant">{project.owner.name}</span>
             </div>
             {isLaunched && (
               <div className="flex items-center space-x-1 text-tertiary-fixed-dim">
-                <CheckCircle2 className="w-4 h-4" />
+                <CheckCircle2 className="w-4 h-4" aria-hidden />
                 <span className="text-[10px] font-bold">In Production</span>
               </div>
             )}
@@ -326,7 +342,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
         <div className={`${isCompactBoard ? 'space-y-2' : 'space-y-3'} overflow-y-auto pr-1 kanban-scroll flex-1`}>
           {displayedProjects.length === 0 && (
             <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-outline-variant/40 rounded-lg bg-surface-container-lowest/70">
-              <MoveDown className="w-8 h-8 text-primary/60 mb-2" />
+              <MoveDown className="w-8 h-8 text-primary/60 mb-2" aria-hidden />
               <p className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant">Drop cards here</p>
               <p className="text-[11px] text-on-surface-variant/70 mt-1">Nothing in this lane yet.</p>
             </div>
@@ -341,7 +357,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
     <div className="p-10 min-h-screen flex flex-col relative">
       {statusMessage && (
         <div className="fixed top-6 right-6 z-50">
-          <div className="px-4 py-3 rounded-lg shadow-lg border text-sm font-bold bg-error-container text-error border-error/30">
+          <div role="alert" className="px-4 py-3 rounded-lg shadow-lg border text-sm font-bold bg-error-container text-error border-error/30">
             {statusMessage.text}
           </div>
         </div>
@@ -349,7 +365,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
       <header className="mb-8 flex flex-col space-y-6">
         <div className="flex justify-between items-end">
           <div>
-            <h2 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface">Global Project Board</h2>
+            <h1 className="font-headline text-3xl font-extrabold tracking-tight text-on-surface">Global Project Board</h1>
             <p className="text-on-surface-variant mt-1 font-medium">Managing {filteredProjects.length} filtered streams across the library network.</p>
           </div>
           <div className="flex items-center space-x-3">
@@ -407,7 +423,7 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
 
       <div className="flex-1 overflow-x-auto pb-12 kanban-scroll">
         <p id="kanban-keyboard-instructions" className="sr-only">
-          Press Enter or Space to pick up or drop a card. While picked up, use arrow keys to move it between columns. Press Escape to cancel.
+          Press Enter to open a project. Press Space to pick up or drop a card. While a card is picked up, use the arrow keys to move it between columns, and press Escape to cancel.
         </p>
         <div className={`flex h-full min-w-max ${isCompactBoard ? 'space-x-3' : 'space-x-6'}`}>
           {COLUMNS.filter(col => !LATE_STAGE_STATUS_SET.has(col.title)).map(renderColumn)}
