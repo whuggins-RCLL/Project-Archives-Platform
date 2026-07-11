@@ -103,7 +103,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                     <p className="text-on-surface-variant text-sm line-clamp-2 mb-4">{project.description}</p>
                     <div className="flex items-center justify-between">
                       <div className="flex -space-x-2">
-                        <div className="w-8 h-8 rounded-full border-2 border-white bg-primary-container flex items-center justify-center text-[10px] font-bold text-primary">{project.owner.name.charAt(0)}</div>
+                        <div className="w-8 h-8 rounded-full border-2 border-white bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{project.owner.name.charAt(0)}</div>
                       </div>
                       <span className="text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -126,7 +126,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                           <span className="text-xs font-semibold">{project.tags.length} Tags</span>
                         </div>
                         <div className="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-lg">
-                          <CheckCircle2 className="w-3 h-3 text-on-tertiary-container" />
+                          <CheckCircle2 className="w-3 h-3 text-emerald-800" aria-hidden />
                           <span className="text-xs font-semibold">{project.progress}% Complete</span>
                         </div>
                       </div>
@@ -167,7 +167,7 @@ export default function PriorityView({ projects, loading, onProjectClick }: { pr
                 {mediumPriority.map(project => (
                   <tr key={project.id} onClick={() => onProjectClick(project.id)} className="hover:bg-surface-container-low transition-colors group cursor-pointer">
                     <td className="px-6 py-4"><div className="flex flex-col"><span className="font-headline font-bold text-on-surface">{project.title}</span><span className="text-xs text-on-surface-variant line-clamp-1">{project.description}</span></div></td>
-                    <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-primary-container flex items-center justify-center text-[10px] font-bold text-primary">{project.owner.name.charAt(0)}</div><span className="text-sm font-medium text-on-surface">{project.owner.name}</span></div></td>
+                    <td className="px-6 py-4"><div className="flex items-center gap-2"><div className="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{project.owner.name.charAt(0)}</div><span className="text-sm font-medium text-on-surface">{project.owner.name}</span></div></td>
                     <td className="px-6 py-4"><span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${
                       project.status === 'In Progress' ? 'bg-surface-container-high text-secondary' :
                       project.status === 'Launched' ? 'bg-tertiary-container text-tertiary-fixed' :

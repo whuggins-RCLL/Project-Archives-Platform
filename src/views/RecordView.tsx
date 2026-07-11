@@ -1170,7 +1170,7 @@ Description: ${project.description}`;
                       const memberKey = getProjectMemberKey(member);
                       return (
                         <span key={memberKey} className="bg-secondary-container text-on-secondary-fixed text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-2">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-fixed text-[9px] text-primary">{member.initials}</span>
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary-fixed text-[9px] text-on-primary-fixed">{member.initials}</span>
                           {member.name}
                           {isAdmin && (
                             <button
@@ -1345,10 +1345,11 @@ Description: ${project.description}`;
                       {(project.milestones ?? []).map((milestone) => (
                         <li key={milestone.id} className="flex items-center gap-2 text-sm text-on-surface">
                           {milestone.status === 'Complete' ? (
-                            <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-variant shrink-0" />
+                            <CheckCircle2 className="w-4 h-4 text-emerald-800 shrink-0" aria-hidden />
                           ) : (
-                            <div className="w-4 h-4 rounded-full border-2 border-on-surface-variant shrink-0"></div>
+                            <div className="w-4 h-4 rounded-full border-2 border-on-surface-variant shrink-0" aria-hidden></div>
                           )}
+                          {milestone.status === 'Complete' && <span className="sr-only">Complete: </span>}
                           <span className={milestone.status === 'Complete' ? 'line-through text-on-surface-variant' : ''}>{milestone.title}</span>
                         </li>
                       ))}
@@ -1553,7 +1554,7 @@ Description: ${project.description}`;
                         {isAdmin && (
                           <button
                             onClick={() => adoptPmApproach(draft.id)}
-                            className="text-[11px] px-2 py-1 rounded bg-tertiary-fixed-variant text-white font-bold"
+                            className="text-[11px] px-2 py-1 rounded bg-tertiary-container text-white font-bold"
                           >
                             Adopt on project
                           </button>
@@ -1639,7 +1640,7 @@ Description: ${project.description}`;
 
                   {isAdmin && draft.status === 'pending' && (
                     <div className="mt-3 flex gap-2">
-                      <button onClick={() => updateDraftStatus(draft.id, 'approved')} className="text-xs px-3 py-1.5 rounded bg-tertiary-fixed-variant text-white font-bold">Approve</button>
+                      <button onClick={() => updateDraftStatus(draft.id, 'approved')} className="text-xs px-3 py-1.5 rounded bg-tertiary-container text-white font-bold">Approve</button>
                       <button onClick={() => updateDraftStatus(draft.id, 'rejected')} className="text-xs px-3 py-1.5 rounded bg-error text-white font-bold">Reject</button>
                     </div>
                   )}
@@ -1909,7 +1910,7 @@ Description: ${project.description}`;
                       {comment.author.avatar ? (
                         <img alt={comment.author.name} className="w-8 h-8 rounded-full" src={comment.author.avatar} />
                       ) : (
-                        <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-primary">{comment.author.initials}</div>
+                        <div className="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{comment.author.initials}</div>
                       )}
                       <div className="bg-surface-container-low p-3 rounded-lg flex-1">
                         <div className="flex justify-between items-center mb-1 gap-2">
@@ -2087,7 +2088,7 @@ Description: ${project.description}`;
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-on-surface-variant">Preservation Score</span>
-                  <span className="text-tertiary-fixed-variant font-bold">{project.preservationScore}</span>
+                  <span className="text-emerald-800 font-bold">{project.preservationScore}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-on-surface-variant">Status</span>

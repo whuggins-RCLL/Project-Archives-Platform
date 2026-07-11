@@ -274,7 +274,7 @@ export default function PortfolioView({ projects, loading, onProjectClick, onPro
               <Database className="w-5 h-5 text-primary" />
             </div>
             <div className="text-4xl font-headline font-black text-primary">{metrics.totalRecords}</div>
-            <div className="mt-2 text-xs font-medium text-on-tertiary-container flex items-center gap-1">
+            <div className="mt-2 text-xs font-medium text-emerald-800 flex items-center gap-1">
               <TrendingUp className="w-3 h-3" />
               {intakeTrendDisplay} vs {metrics.baselineLabel}
             </div>

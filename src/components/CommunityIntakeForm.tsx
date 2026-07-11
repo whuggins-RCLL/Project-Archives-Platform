@@ -46,7 +46,7 @@ function buildMailtoFallback(receipt: SubmissionReceipt): string {
 }
 
 const inputClasses =
-  'w-full rounded-xl border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/60 shadow-sm outline-none transition-all focus:border-primary/50 focus:ring-2 focus:ring-primary/30';
+  'w-full rounded-xl border border-outline-variant/30 bg-surface-container-lowest/70 px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant/75 shadow-sm outline-none transition-all focus:border-primary/50 focus:ring-2 focus:ring-primary/30';
 
 export default function CommunityIntakeForm() {
   const [form, setForm] = useState<CommunitySuggestionPayload>(EMPTY_FORM);

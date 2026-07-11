@@ -133,7 +133,7 @@ export default function AdminUsersView({
 
   return (
     <div className="p-8 space-y-6">
-      {toast && <div role="status" aria-live="polite" className="fixed top-6 right-6 z-40 rounded-lg bg-tertiary-container px-4 py-2 text-sm font-bold">{toast}</div>}
+      {toast && <div role="status" aria-live="polite" className="fixed top-6 right-6 z-40 rounded-lg bg-tertiary-container px-4 py-2 text-sm font-bold text-on-tertiary-container">{toast}</div>}
       <div className="flex items-center justify-between gap-4">
         <h1 className="text-3xl font-extrabold">Access Management</h1>
         <div className="flex items-center gap-2">

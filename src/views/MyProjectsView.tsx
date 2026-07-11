@@ -106,7 +106,7 @@ export default function MyProjectsView({
                     {project.owner.avatar ? (
                       <img className="w-6 h-6 rounded-full object-cover" src={project.owner.avatar} alt={project.owner.name} />
                     ) : (
-                      <div className="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-primary">{project.owner.initials}</div>
+                      <div className="w-6 h-6 rounded-full bg-primary-fixed flex items-center justify-center text-[10px] font-bold text-on-primary-fixed">{project.owner.initials}</div>
                     )}
                     <span className="text-[11px] font-medium text-on-surface-variant">{project.owner.name}</span>
                   </div>
