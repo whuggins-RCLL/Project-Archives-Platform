@@ -626,6 +626,11 @@ If your organization needs public showcase behavior, explicitly set `settings/gl
   status/alert announcements for toasts and errors, per-view document titles,
   and semantic fixes throughout. Color contrast raised beyond the AA minimum
   toward AAA margins, with invisible-text bugs fixed. See **Accessibility**.
+- **Fix: no more re-login from the public page.** Team members with a live
+  session who visit the public page now see a **Back to Dashboard** link
+  straight to the internal app, and the login screen automatically forwards
+  already-authenticated users to the dashboard instead of asking them to
+  sign in again.
 
 ### v1.3.0
 
