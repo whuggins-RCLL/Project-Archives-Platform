@@ -2,7 +2,6 @@ import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, 
 import { db, auth } from './firebase';
 import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
 import { buildPortfolioMetrics } from './portfolioAnalytics';
-import { APP_CONFIG } from '../config';
 
 enum OperationType {
   CREATE = 'create',
@@ -293,8 +292,8 @@ export const api = {
           privacyMode: data.privacyMode ?? 'private-read',
           publicLayout: data.publicLayout === 'embed' ? 'embed' : 'standard',
           embedShowLogo: data.embedShowLogo ?? true,
-          suiteName: data.suiteName ?? APP_CONFIG.appName,
-          portalName: data.portalName ?? APP_CONFIG.portalName,
+          suiteName: data.suiteName ?? 'AI Librarian Suite',
+          portalName: data.portalName ?? 'Project Archives',
           logoDataUrl: data.logoDataUrl ?? '',
           heroImageDataUrl: data.heroImageDataUrl ?? '',
           primaryColor: data.primaryColor ?? '#002045',
@@ -323,8 +322,8 @@ export const api = {
         privacyMode: 'private-read',
         publicLayout: 'standard',
         embedShowLogo: true,
-        suiteName: APP_CONFIG.appName,
-        portalName: APP_CONFIG.portalName,
+        suiteName: 'AI Librarian Suite',
+        portalName: 'Project Archives',
         logoDataUrl: '',
         heroImageDataUrl: '',
         primaryColor: '#002045',

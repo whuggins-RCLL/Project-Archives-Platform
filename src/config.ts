@@ -1,16 +1,16 @@
 export const APP_CONFIG = {
   // Brand Naming
-  appName: "SLS AI Social",
-  orgName: "Stanford Law School",
-  portalName: "SLS AI Social",
-  subHeading: "Community AI Exchange",
+  appName: "AI Librarian Suite",
+  orgName: "Your Organization",
+  portalName: "Project Archives",
+  subHeading: "Stakeholder Portal",
   
   // Hero Section
-  heroTitle: "SLS AI Social",
-  heroSubtitle: "A private Stanford Law School space for students, faculty, and staff to share practical AI ideas, prompts, projects, and conversations.",
+  heroTitle: "Building What's Next",
+  heroSubtitle: "Real projects, real progress. See how we're applying AI across research, operations, and services.",
   
   // Footer
-  footerText: "SLS AI Social. All rights reserved.",
+  footerText: "AI Librarian Suite. All rights reserved.",
 };
 
 const normalizeBaseUrl = (value: string | undefined): string | null => {

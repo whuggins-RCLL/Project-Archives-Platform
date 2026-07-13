@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, Globe, FolderKanban } from 'lucide-react';
+import { FolderArchive, Kanban, AlertCircle, Calendar, Plus, HelpCircle, Settings2, X, Users, Globe, FolderKanban } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { APP_CONFIG } from '../config';
 import Button from './Button';
@@ -79,8 +79,8 @@ export default function Sidebar({
               />
             </div>
           ) : (
-            <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark text-base font-extrabold tracking-tight text-white shadow-md">
-              SLS
+            <div className="shrink-0 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
+              <FolderArchive className="text-white w-7 h-7" aria-hidden />
             </div>
           )}
           <div className="min-w-0 pt-0.5">
