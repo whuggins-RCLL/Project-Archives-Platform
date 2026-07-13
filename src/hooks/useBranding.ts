@@ -26,6 +26,7 @@ const DEFAULT_SETTINGS: Settings = {
   primaryColor: '#002045',
   brandDarkColor: '#1A365D',
   customFooter: '',
+  showFooter: true,
   helpContactEmail: '',
   googleDriveFolderBaseUrl: '',
   googleCalendarId: '',

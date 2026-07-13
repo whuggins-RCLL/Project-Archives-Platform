@@ -91,6 +91,7 @@ export interface Settings {
   primaryColor: string;
   brandDarkColor: string;
   customFooter?: string;
+  showFooter?: boolean;
   helpContactEmail?: string;
   googleDriveFolderBaseUrl?: string;
   googleCalendarId?: string;
@@ -299,6 +300,7 @@ export const api = {
           primaryColor: data.primaryColor ?? '#002045',
           brandDarkColor: data.brandDarkColor ?? '#1A365D',
           customFooter: data.customFooter ?? '',
+          showFooter: data.showFooter ?? true,
           helpContactEmail: data.helpContactEmail ?? '',
           googleDriveFolderBaseUrl: data.googleDriveFolderBaseUrl ?? '',
           googleCalendarId: data.googleCalendarId ?? '',
@@ -328,6 +330,7 @@ export const api = {
         primaryColor: '#002045',
         brandDarkColor: '#1A365D',
         customFooter: '',
+        showFooter: true,
         helpContactEmail: '',
         googleDriveFolderBaseUrl: '',
         googleCalendarId: '',
