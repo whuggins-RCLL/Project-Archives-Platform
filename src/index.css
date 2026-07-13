@@ -418,12 +418,31 @@ select {
 /* ---------- Brand hero backdrops ---------- */
 /* Rich, layered mesh gradient built from the configurable brand colors. */
 .brand-hero {
-  background-color: var(--brand-dark);
+  background-color: #090506;
   background-image:
-    radial-gradient(60% 90% at 12% 8%, color-mix(in srgb, var(--brand-primary) 90%, white 4%) 0%, transparent 60%),
-    radial-gradient(55% 80% at 88% 18%, color-mix(in srgb, var(--brand-primary) 70%, black 12%) 0%, transparent 55%),
-    radial-gradient(70% 90% at 78% 92%, color-mix(in srgb, var(--brand-dark) 92%, white 10%) 0%, transparent 60%),
-    linear-gradient(135deg, var(--brand-dark) 0%, color-mix(in srgb, var(--brand-primary) 55%, var(--brand-dark)) 100%);
+    radial-gradient(65% 90% at 16% 10%, color-mix(in srgb, var(--brand-primary) 46%, #120406) 0%, transparent 62%),
+    radial-gradient(52% 78% at 88% 18%, color-mix(in srgb, var(--brand-primary) 36%, #050505) 0%, transparent 58%),
+    radial-gradient(70% 90% at 78% 92%, color-mix(in srgb, var(--brand-dark) 50%, #050505) 0%, transparent 64%),
+    linear-gradient(135deg, #050505 0%, color-mix(in srgb, var(--brand-dark) 38%, #080506) 52%, #160507 100%);
+}
+
+/* Subtle liquid screensaver backdrop used for immersive auth screens. */
+.liquid-hero {
+  background-color: #050505;
+  background-image:
+    radial-gradient(42% 58% at 22% 22%, rgba(146, 18, 28, 0.46) 0%, rgba(146, 18, 28, 0.14) 38%, transparent 70%),
+    radial-gradient(38% 54% at 78% 18%, rgba(74, 7, 12, 0.48) 0%, transparent 68%),
+    radial-gradient(48% 60% at 66% 82%, rgba(104, 12, 20, 0.36) 0%, transparent 70%),
+    radial-gradient(54% 66% at 8% 88%, rgba(0, 0, 0, 0.9) 0%, transparent 72%),
+    linear-gradient(135deg, #030303 0%, #130305 45%, #050505 100%);
+  background-size: 135% 135%, 120% 120%, 145% 145%, 130% 130%, 100% 100%;
+  animation: liquid-drift 24s ease-in-out infinite alternate;
+}
+
+@keyframes liquid-drift {
+  0% { background-position: 0% 20%, 100% 0%, 40% 100%, 0% 100%, 0% 0%; }
+  50% { background-position: 18% 8%, 82% 24%, 64% 82%, 18% 70%, 0% 0%; }
+  100% { background-position: 8% 36%, 92% 12%, 52% 92%, 10% 84%, 0% 0%; }
 }
 
 /* Thin luminous grid overlay for depth on hero sections. */

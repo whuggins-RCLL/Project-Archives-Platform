@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { Project } from '../types';
-import { FolderArchive, ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles, LogOut } from 'lucide-react';
+import { ArrowRight, BarChart3, Clock, ShieldCheck, ChevronDown, ChevronUp, Layers3, Heart, Sparkles, LogOut } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { APP_CONFIG } from '../config';
@@ -218,8 +218,8 @@ export default function PublicView() {
                 className="shrink-0 h-10 w-auto max-w-[240px] object-contain object-left"
               />
             ) : (
-              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-brand-dark shadow-md">
-                <FolderArchive className="text-white w-5 h-5" aria-hidden />
+              <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-brand-dark text-sm font-extrabold text-white shadow-md">
+                SLS
               </div>
             )}
             <div className="min-w-0">
@@ -283,8 +283,8 @@ export default function PublicView() {
                     className="shrink-0 h-10 w-auto max-w-[240px] object-contain object-left"
                   />
                 ) : (
-                  <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl glass-on-dark">
-                    <FolderArchive className="text-white w-5 h-5" aria-hidden />
+                  <div className="shrink-0 flex h-11 w-11 items-center justify-center rounded-xl glass-on-dark text-sm font-extrabold text-white">
+                    SLS
                   </div>
                 )
               )}
@@ -584,8 +584,7 @@ export default function PublicView() {
       {/* Footer */}
       <footer className="glass-nav border-t border-outline-variant/20 py-12 mt-12">
         <div className="content-shell text-center">
-          <div className="flex items-center justify-center space-x-2 mb-4 opacity-60">
-            <FolderArchive className="w-5 h-5 text-brand-dark" aria-hidden />
+          <div className="mb-4 opacity-70">
             <span className="font-headline font-bold text-brand-dark">{branding.portalName || APP_CONFIG.portalName}</span>
           </div>
           <p className="text-sm text-on-surface-variant">
