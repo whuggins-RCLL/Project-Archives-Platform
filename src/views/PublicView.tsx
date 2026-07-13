@@ -224,7 +224,7 @@ export default function PublicView() {
             )}
             <div className="min-w-0">
               <h1 className="font-headline text-lg font-bold text-brand-dark leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
-              <p className="text-xs text-on-surface-variant truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
+              <p className="text-xs text-on-surface-variant truncate">{branding.suiteName || APP_CONFIG.appName}</p>
             </div>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -290,7 +290,7 @@ export default function PublicView() {
               )}
               <div className="min-w-0">
                 <h1 className="font-headline text-lg font-bold text-white leading-tight truncate">{branding.portalName || APP_CONFIG.portalName}</h1>
-                <p className="text-xs text-white/70 truncate">{branding.suiteName || APP_CONFIG.appName} · {APP_CONFIG.subHeading}</p>
+                <p className="text-xs text-white/70 truncate">{branding.suiteName || APP_CONFIG.appName}</p>
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -582,6 +582,7 @@ export default function PublicView() {
       </main>
 
       {/* Footer */}
+      {(settings.showFooter ?? true) && (
       <footer className="glass-nav border-t border-outline-variant/20 py-12 mt-12">
         <div className="content-shell text-center">
           <div className="mb-4 opacity-70">
@@ -599,6 +600,7 @@ export default function PublicView() {
           )}
         </div>
       </footer>
+      )}
     </div>
   );
 }

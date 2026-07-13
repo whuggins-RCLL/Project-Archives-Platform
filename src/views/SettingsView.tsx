@@ -40,6 +40,7 @@ export default function SettingsView({
     primaryColor: '#002045',
     brandDarkColor: '#1A365D',
     customFooter: '',
+    showFooter: true,
     helpContactEmail: '',
     googleDriveFolderBaseUrl: '',
     googleCalendarId: '',
@@ -494,6 +495,23 @@ export default function SettingsView({
                   </button>
                 </div>
               )}
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-xl border border-outline-variant/20 bg-surface-container-low/60 p-4">
+              <div>
+                <h4 className="text-sm font-bold text-on-surface">Show public footer</h4>
+                <p className="text-xs text-on-surface-variant mt-1">Turn off to hide the entire footer on the public overview page, including footer text and help contact.</p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={settings.showFooter ?? true}
+                  disabled={readOnly}
+                  aria-label="Show public footer"
+                  onChange={(e) => setSettings({ ...settings, showFooter: e.target.checked })}
+                />
+                <div className="w-11 h-6 bg-surface-container-high peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+              </label>
             </div>
             <div>
               <label htmlFor="settings-custom-footer" className="block text-xs font-bold text-on-surface-variant uppercase mb-2">Custom Footer</label>
