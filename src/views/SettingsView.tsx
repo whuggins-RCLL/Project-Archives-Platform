@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, Save, Bot, Key, Shield, Upload } from 'lucide
 import { api, getErrorMessage, Settings } from '../lib/api';
 import { AI_PROVIDER_OPTIONS } from '../lib/uiDefaults';
 import { prepareImageDataUrl, HERO_IMAGE_LIMITS, LOGO_IMAGE_LIMITS } from '../lib/imageUpload';
+import { APP_CONFIG } from '../config';
 
 export default function SettingsView({
   canManageSettings,
@@ -32,8 +33,8 @@ export default function SettingsView({
     privacyMode: 'private-read',
     publicLayout: 'standard',
     embedShowLogo: true,
-    suiteName: 'AI Librarian Suite',
-    portalName: 'Project Archives',
+    suiteName: APP_CONFIG.appName,
+    portalName: APP_CONFIG.portalName,
     logoDataUrl: '',
     heroImageDataUrl: '',
     primaryColor: '#002045',
