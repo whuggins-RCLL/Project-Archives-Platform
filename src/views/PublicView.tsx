@@ -161,7 +161,7 @@ export default function PublicView() {
   }, []);
 
   const publicProjects = useMemo(() => projects.filter((project) => project.isPublic !== false), [projects]);
-  const visibleProjects = useMemo(() => applyProjectFilters(publicProjects, filterQuery), [publicProjects, filterQuery]);
+  const visibleProjects = useMemo(() => applyProjectFilters(publicProjects, filterQuery, 'public'), [publicProjects, filterQuery]);
   const projectGroups = useMemo(() => {
     const grouped = visibleProjects.reduce<Record<string, Project[]>>((acc, project) => {
       const status = project.status || 'Uncategorized';
@@ -383,7 +383,7 @@ export default function PublicView() {
             </span>
             <h2 id="portfolio-heading" className="text-2xl sm:text-3xl font-bold text-brand-dark font-headline tracking-tight">Current Portfolio</h2>
             <p className="text-on-surface-variant mt-2 max-w-3xl">
-              Browse public initiatives grouped by delivery stage, then narrow the list with search, department, status, and saved views as the portfolio grows.
+              Browse public initiatives grouped by delivery stage, then narrow the list by the details shown on each card: owner, status, title, and description.
             </p>
           </div>
         </div>
@@ -400,6 +400,7 @@ export default function PublicView() {
             if (selected) setFilterQuery(selected.query);
           }}
           onDeleteSavedView={deleteView}
+          mode="public"
         />
 
         {loading ? (
