@@ -138,6 +138,20 @@ export interface CommunityIntake {
   submittedAt?: string;
 }
 
+
+export interface ProjectPlanningResponses {
+  projectId: string;
+  publicGoal?: string;
+  publicAudience?: string;
+  publicValue?: string;
+  publicOutcomes?: string;
+  internalComments?: string;
+  internalRisks?: string;
+  internalBlockers?: string;
+  sensitiveDependencies?: string;
+  updatedAt?: unknown;
+}
+
 export interface Project {
   id: string;
   code: string;
