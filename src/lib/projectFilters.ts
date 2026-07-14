@@ -76,25 +76,40 @@ function includesAny(list: string[], selected: string[]): boolean {
   return selected.some(item => normalized.includes(item.toLowerCase()));
 }
 
-export function applyProjectFilters(projects: Project[], query: ProjectFilterQuery): Project[] {
+export type ProjectSearchScope = 'team' | 'public';
+
+function getProjectSearchText(project: Project, scope: ProjectSearchScope): string {
+  const ownerGroup = project.owner.group || project.owner.name;
+
+  if (scope === 'public') {
+    return [
+      project.owner.name,
+      project.status,
+      project.title,
+      project.description,
+    ].join(' ').toLowerCase();
+  }
+
+  return [
+    project.title,
+    project.code,
+    project.description,
+    project.department,
+    project.owner.name,
+    ownerGroup,
+    project.status,
+    project.priority,
+    ...project.tags,
+  ].join(' ').toLowerCase();
+}
+
+export function applyProjectFilters(projects: Project[], query: ProjectFilterQuery, searchScope: ProjectSearchScope = 'team'): Project[] {
   return projects.filter((project) => {
     const ownerGroup = project.owner.group || project.owner.name;
     const normalizedSearch = query.searchTerm.trim().toLowerCase();
 
     if (normalizedSearch.length > 0) {
-      const searchableText = [
-        project.title,
-        project.code,
-        project.description,
-        project.department,
-        project.owner.name,
-        ownerGroup,
-        project.status,
-        project.priority,
-        ...project.tags,
-      ].join(' ').toLowerCase();
-
-      if (!searchableText.includes(normalizedSearch)) return false;
+      if (!getProjectSearchText(project, searchScope).includes(normalizedSearch)) return false;
     }
 
     if (query.departments.length > 0 && !query.departments.includes(project.department)) return false;

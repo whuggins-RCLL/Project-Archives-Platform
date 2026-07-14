@@ -14,7 +14,7 @@ interface FilterOptions {
   statuses?: string[];
 }
 
-function MultiSelect({ id, label, values, options, onChange }: { id: string; label: string; values: string[]; options: string[]; onChange: (v: string[]) => void }) {
+function MultiSelect({ id, label, values, options, open, onOpen, onChange }: { id: string; label: string; values: string[]; options: string[]; open: boolean; onOpen: () => void; onChange: (v: string[]) => void }) {
   const selectedCount = values.length;
 
   const toggleOption = (option: string) => {
@@ -27,18 +27,23 @@ function MultiSelect({ id, label, values, options, onChange }: { id: string; lab
   };
 
   return (
-    <details className="flex flex-col gap-1 text-xs font-semibold text-on-surface-variant min-w-[180px] relative">
-      <summary
+    <div className="flex flex-col gap-1 text-xs font-semibold text-on-surface-variant min-w-[180px] relative">
+      <button
         id={id}
-        className="bg-surface-container-low border border-outline-variant/30 rounded-md px-3 py-2 text-xs cursor-pointer list-none flex items-center justify-between gap-2"
+        type="button"
+        onClick={onOpen}
+        aria-expanded={open}
+        aria-controls={`${id}-menu`}
+        className="bg-surface-container-low border border-outline-variant/30 rounded-md px-3 py-2 text-xs cursor-pointer flex items-center justify-between gap-2"
       >
         <span>{label}</span>
         <span className="text-on-surface-variant/80 font-normal">
           {selectedCount > 0 ? `${selectedCount} selected` : 'Any'}
         </span>
-      </summary>
+      </button>
 
-      <div className="absolute top-full left-0 z-20 mt-1 w-64 max-h-56 overflow-auto bg-surface-container-low border border-outline-variant/30 rounded-md p-2 shadow-lg">
+      {open && (
+      <div id={`${id}-menu`} className="absolute top-full left-0 z-20 mt-1 w-64 max-h-56 overflow-auto bg-surface-container-low border border-outline-variant/30 rounded-md p-2 shadow-lg">
         {options.map(option => {
           const checked = values.includes(option);
           return (
@@ -57,7 +62,8 @@ function MultiSelect({ id, label, values, options, onChange }: { id: string; lab
           <p className="px-1 py-1 text-xs font-normal text-on-surface-variant/80">No options available.</p>
         ) : null}
       </div>
-    </details>
+      )}
+    </div>
   );
 }
 
@@ -70,6 +76,7 @@ export default function ProjectFilterBar({
   onSaveView,
   onApplySavedView,
   onDeleteSavedView,
+  mode = 'team',
 }: {
   query: ProjectFilterQuery;
   onChange: (query: ProjectFilterQuery) => void;
@@ -79,10 +86,13 @@ export default function ProjectFilterBar({
   onSaveView: (name: string) => void;
   onApplySavedView: (viewId: string) => void;
   onDeleteSavedView: (viewId: string) => void;
+  mode?: 'team' | 'public';
 }) {
   const [newViewName, setNewViewName] = useState('');
   const [selectedViewId, setSelectedViewId] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [openDropdownId, setOpenDropdownId] = useState<string | null>(null);
+  const isPublicMode = mode === 'public';
 
   const dueDateOptions: { value: DueDateBucket; label: string }[] = useMemo(() => [
     { value: 'all', label: 'All' },
@@ -168,7 +178,7 @@ export default function ProjectFilterBar({
             type="search"
             value={query.searchTerm}
             onChange={(event) => onChange({ ...query, searchTerm: event.target.value })}
-            placeholder="Search title, code, owner, department, tags..."
+            placeholder={isPublicMode ? 'Search owner, status, title, description...' : 'Search title, code, owner, status, priority, tags...'}
             className="bg-surface-container-low border border-outline-variant/30 rounded-lg px-3 py-2.5 text-sm text-on-surface outline-none focus:ring-2 focus:ring-primary/30"
           />
         </label>
@@ -210,23 +220,20 @@ export default function ProjectFilterBar({
             </button>
           ))
         ) : (
-          <p className="text-xs text-on-surface-variant">No filters applied. Use search or open filters to narrow the board.</p>
+          <p className="text-xs text-on-surface-variant">{isPublicMode ? 'No filters applied. Search the public card details or filter by owner and status.' : 'No filters applied. Use search or focused filters to narrow the board.'}</p>
         )}
       </div>
 
       {filtersOpen && (
         <div id="project-filter-advanced" className="mt-3 rounded-xl border border-outline-variant/20 bg-surface-container-low/70 p-3">
           <div className="flex flex-wrap gap-3 items-end">
-            <MultiSelect id="project-filter-priority" label="Priority" values={query.priorities} options={options.priorities || ['High', 'Medium', 'Low']} onChange={(v) => onChange({ ...query, priorities: v as ProjectFilterQuery['priorities'] })} />
-            <MultiSelect id="project-filter-status" label="Status" values={query.statuses} options={options.statuses || ['Intake / Proposed', 'Scoping', 'In Progress', 'Pilot / Testing', 'Review / Approval', 'Launched']} onChange={(v) => onChange({ ...query, statuses: v as ProjectFilterQuery['statuses'] })} />
-            <MultiSelect id="project-filter-department" label="Department" values={query.departments} options={options.departments} onChange={(v) => onChange({ ...query, departments: v })} />
-            <MultiSelect id="project-filter-risk" label="Risk" values={query.riskFactors} options={options.riskFactors} onChange={(v) => onChange({ ...query, riskFactors: v })} />
-            <MultiSelect id="project-filter-owners" label="Owners" values={query.owners} options={options.owners} onChange={(v) => onChange({ ...query, owners: v })} />
-            <MultiSelect id="project-filter-owner-groups" label="Owner Groups" values={query.ownerGroups} options={options.ownerGroups} onChange={(v) => onChange({ ...query, ownerGroups: v })} />
-            <MultiSelect id="project-filter-tags-all" label="Tags (All)" values={query.tagsAll} options={options.tags} onChange={(v) => onChange({ ...query, tagsAll: v })} />
-            <MultiSelect id="project-filter-tags-any" label="Tags (Any)" values={query.tagsAny} options={options.tags} onChange={(v) => onChange({ ...query, tagsAny: v })} />
+            {!isPublicMode && <MultiSelect id="project-filter-priority" label="Priority" values={query.priorities} options={options.priorities || ['High', 'Medium', 'Low']} open={openDropdownId === 'priority'} onOpen={() => setOpenDropdownId(openDropdownId === 'priority' ? null : 'priority')} onChange={(v) => onChange({ ...query, priorities: v as ProjectFilterQuery['priorities'] })} />}
+            <MultiSelect id="project-filter-status" label="Status" values={query.statuses} options={options.statuses || ['Intake / Proposed', 'Scoping', 'In Progress', 'Pilot / Testing', 'Review / Approval', 'Launched']} open={openDropdownId === 'status'} onOpen={() => setOpenDropdownId(openDropdownId === 'status' ? null : 'status')} onChange={(v) => onChange({ ...query, statuses: v as ProjectFilterQuery['statuses'] })} />
+            <MultiSelect id="project-filter-owners" label="Owners" values={query.owners} options={options.owners} open={openDropdownId === 'owners'} onOpen={() => setOpenDropdownId(openDropdownId === 'owners' ? null : 'owners')} onChange={(v) => onChange({ ...query, owners: v })} />
+            {!isPublicMode && <MultiSelect id="project-filter-owner-groups" label="Owner Groups" values={query.ownerGroups} options={options.ownerGroups} open={openDropdownId === 'ownerGroups'} onOpen={() => setOpenDropdownId(openDropdownId === 'ownerGroups' ? null : 'ownerGroups')} onChange={(v) => onChange({ ...query, ownerGroups: v })} />}
+            {!isPublicMode && <MultiSelect id="project-filter-tags-any" label="Tags" values={query.tagsAny} options={options.tags} open={openDropdownId === 'tags'} onOpen={() => setOpenDropdownId(openDropdownId === 'tags' ? null : 'tags')} onChange={(v) => onChange({ ...query, tagsAny: v })} />}
 
-            <label htmlFor="project-filter-due-date" className="flex flex-col gap-1 text-xs font-semibold text-on-surface-variant min-w-[160px]">
+            {!isPublicMode && <label htmlFor="project-filter-due-date" className="flex flex-col gap-1 text-xs font-semibold text-on-surface-variant min-w-[160px]">
               Due Date
               <select
                 id="project-filter-due-date"
@@ -238,10 +245,10 @@ export default function ProjectFilterBar({
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
-            </label>
+            </label>}
           </div>
 
-          <div className="mt-4 pt-4 border-t border-outline-variant/20 flex flex-wrap gap-2 items-center">
+          {!isPublicMode && <div className="mt-4 pt-4 border-t border-outline-variant/20 flex flex-wrap gap-2 items-center">
             <label htmlFor="project-filter-save-view" className="sr-only">Save current view name</label>
             <input
               id="project-filter-save-view"
@@ -286,7 +293,7 @@ export default function ProjectFilterBar({
             >
               <Trash2 className="w-3 h-3" /> Delete
             </Button>
-          </div>
+          </div>}
         </div>
       )}
     </section>
