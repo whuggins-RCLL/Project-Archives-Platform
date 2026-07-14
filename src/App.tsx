@@ -7,6 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Menu, X } from 'lucide-react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { Analytics } from '@vercel/analytics/react';
 import { auth, isFirebaseConfigured, missingFirebaseConfigKeys } from './lib/firebase';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
@@ -630,6 +631,7 @@ export default function App() {
         />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <Analytics />
     </BrowserRouter>
   );
 }
