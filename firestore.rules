@@ -185,6 +185,25 @@ service cloud.firestore {
              (!('intake' in data) || data.intake is map);
     }
 
+
+    function isValidProjectPlanning(data) {
+      return hasRequiredFields(['projectId', 'updatedAt']) &&
+             hasOnlyAllowedFields([
+               'projectId', 'publicGoal', 'publicAudience', 'publicValue', 'publicOutcomes',
+               'internalComments', 'internalRisks', 'internalBlockers', 'sensitiveDependencies', 'updatedAt'
+             ]) &&
+             isValidString(data.projectId, 1, 200) &&
+             (!('publicGoal' in data) || (data.publicGoal is string && data.publicGoal.size() <= 2000)) &&
+             (!('publicAudience' in data) || (data.publicAudience is string && data.publicAudience.size() <= 2000)) &&
+             (!('publicValue' in data) || (data.publicValue is string && data.publicValue.size() <= 2000)) &&
+             (!('publicOutcomes' in data) || (data.publicOutcomes is string && data.publicOutcomes.size() <= 2000)) &&
+             (!('internalComments' in data) || (data.internalComments is string && data.internalComments.size() <= 4000)) &&
+             (!('internalRisks' in data) || (data.internalRisks is string && data.internalRisks.size() <= 4000)) &&
+             (!('internalBlockers' in data) || (data.internalBlockers is string && data.internalBlockers.size() <= 4000)) &&
+             (!('sensitiveDependencies' in data) || (data.sensitiveDependencies is string && data.sensitiveDependencies.size() <= 4000)) &&
+             data.updatedAt is timestamp;
+    }
+
     function isValidComment(data) {
       let allowedFields = [
         'projectId', 'authorId', 'author', 'text', 'timestamp', 'createdAt',
@@ -280,6 +299,12 @@ service cloud.firestore {
       allow read: if canReadProjects() && (!isAuthenticated() || isInternalUser());
       allow create: if isInternalUser() && canEditContent() && isValidProject(request.resource.data);
       allow update: if isInternalUser() && canEditContent() && isValidProject(request.resource.data) && areImmutableFieldsUnchanged(['createdAt']);
+      allow delete: if isInternalUser() && isAdminRole();
+    }
+
+    match /projectPlanning/{projectId} {
+      allow read: if isInternalUser();
+      allow create, update: if isInternalUser() && canEditContent() && isValidProjectPlanning(request.resource.data) && request.resource.data.projectId == projectId;
       allow delete: if isInternalUser() && isAdminRole();
     }
 

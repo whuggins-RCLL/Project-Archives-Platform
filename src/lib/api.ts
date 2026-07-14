@@ -1,6 +1,6 @@
-import { collection, doc, getDocs, getDoc, addDoc, updateDoc, deleteDoc, query, where, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, getDoc, addDoc, updateDoc, setDoc, deleteDoc, query, where, serverTimestamp, orderBy, onSnapshot } from 'firebase/firestore';
 import { db, auth } from './firebase';
-import { AdminAuditEntry, ManagedUser, Project, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
+import { AdminAuditEntry, ManagedUser, Project, ProjectPlanningResponses, Comment, CommentAttachment, Metrics, OperationsDigestReport, AppRole, UserPermissionSet } from '../types';
 import { buildPortfolioMetrics } from './portfolioAnalytics';
 
 enum OperationType {
@@ -448,6 +448,29 @@ export const api = {
       return { id: updatedDoc.id, ...updatedDoc.data() } as Project;
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `projects/${id}`);
+    }
+  },
+
+  getProjectPlanning: async (projectId: string): Promise<ProjectPlanningResponses | null> => {
+    try {
+      const docRef = doc(db, 'projectPlanning', projectId);
+      const snapshot = await getDoc(docRef);
+      if (!snapshot.exists()) return null;
+      return { projectId, ...snapshot.data() } as ProjectPlanningResponses;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, `projectPlanning/${projectId}`);
+    }
+  },
+
+  updateProjectPlanning: async (projectId: string, responses: Omit<ProjectPlanningResponses, 'projectId' | 'updatedAt'>): Promise<ProjectPlanningResponses> => {
+    try {
+      const docRef = doc(db, 'projectPlanning', projectId);
+      const updateData = { ...responses, projectId, updatedAt: serverTimestamp() };
+      await setDoc(docRef, updateData, { merge: true });
+      const updatedDoc = await getDoc(docRef);
+      return { projectId, ...updatedDoc.data() } as ProjectPlanningResponses;
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `projectPlanning/${projectId}`);
     }
   },
 

@@ -1,7 +1,7 @@
 import { Clock, Brain, Map, ShieldCheck, MessageSquare, Send, Link as LinkIcon, FileText, X, AlertTriangle, CheckCircle2, Trash2, Sparkles, Loader2, Plus, Paperclip, SmilePlus, MessageCircleReply, Pencil, CalendarPlus, Globe, Lock } from 'lucide-react';
 import { type ReactElement, type RefObject, useEffect, useRef, useState } from 'react';
 import { api, getErrorMessage, Settings } from '../lib/api';
-import { ApprovalCheckpoint, Milestone, Project, ProjectMember, ProjectArtifactLink, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId } from '../types';
+import { ApprovalCheckpoint, Milestone, Project, ProjectMember, ProjectArtifactLink, Comment, CommentAttachment, Dependency, ProjectStatus, AIDraft, AIDraftRecommendation, AIDuplicateCandidate, ProjectManagementApproach, ProjectManagementApproachId, ProjectPlanningResponses } from '../types';
 import ArtifactLinkIcon from '../components/ArtifactLinkIcon';
 import { ARTIFACT_LINK_TYPE_OPTIONS, detectArtifactType, normalizeArtifactUrl } from '../lib/artifactLinks';
 import { withGovernanceDefaults } from '../lib/projectGovernance';
@@ -84,6 +84,7 @@ function useModalAccessibility(
 export default function RecordView({ projects, loading: projectsLoading, projectId, onBack, isAdmin }: { projects: Project[], loading: boolean, projectId: string | null, onBack: () => void, isAdmin: boolean }) {
   const [project, setProject] = useState<Project | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [planningResponses, setPlanningResponses] = useState<ProjectPlanningResponses | null>(null);
   const [loadingComments, setLoadingComments] = useState(true);
   const [newComment, setNewComment] = useState('');
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
@@ -161,6 +162,18 @@ export default function RecordView({ projects, loading: projectsLoading, project
 
   useEffect(() => {
     if (!projectId) return;
+    let isMounted = true;
+    void api.getProjectPlanning(projectId).then((responses) => {
+      if (isMounted) setPlanningResponses(responses ?? { projectId });
+    }).catch((error) => {
+      console.error(error);
+      if (isMounted) setPlanningResponses({ projectId });
+    });
+    return () => { isMounted = false; };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId) return;
     const unsubscribe = api.subscribeToComments(
       projectId,
       (commentsData) => {
@@ -189,11 +202,39 @@ export default function RecordView({ projects, loading: projectsLoading, project
     }
   }, [selectedProvider, settings]);
 
+  const updatePlanningResponse = (field: keyof Omit<ProjectPlanningResponses, 'projectId' | 'updatedAt'>, value: string) => {
+    if (!projectId) return;
+    setPlanningResponses({ ...(planningResponses ?? { projectId }), [field]: value });
+  };
+
+  const buildPublicNarrative = (responses: ProjectPlanningResponses): string => {
+    const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slice(1);
+    const goal = responses.publicGoal?.trim();
+    const audience = responses.publicAudience?.trim();
+    const value = responses.publicValue?.trim();
+    const outcomes = responses.publicOutcomes?.trim();
+    const sentences = [
+      goal ? `${project?.title ?? 'This project'} ${lowerFirst(goal)}` : undefined,
+      audience || value ? [audience ? `It is designed for ${audience}` : undefined, value ? `with a focus on ${value}` : undefined].filter(Boolean).join(' ') : undefined,
+      outcomes ? `Expected public outcomes include ${outcomes}` : undefined,
+    ].filter((sentence): sentence is string => Boolean(sentence?.trim()));
+    return sentences.length > 0 ? sentences.slice(0, 3).map((sentence) => sentence.trim().replace(/[.!?]*$/, '.')).join(' ') : (project?.description ?? '');
+  };
+
+  const handleGeneratePublicNarrative = () => {
+    if (!isAdmin || !project || !planningResponses) return;
+    setProject({ ...project, description: buildPublicNarrative(planningResponses) });
+  };
+
   const handleSave = async () => {
     if (!isAdmin) return;
     if (!project) return;
     setSavingProject(true);
     try {
+      if (planningResponses) {
+        const { projectId: _projectId, updatedAt: _updatedAt, ...responses } = planningResponses;
+        await api.updateProjectPlanning(project.id, responses);
+      }
       if (settings?.privacyMode === 'public-read' && (project.aiDrafts?.length ?? 0) > 0) {
         const { aiDrafts: _omittedDrafts, ...projectWithoutDrafts } = project;
         await api.updateProject(project.id, projectWithoutDrafts);
@@ -1297,33 +1338,41 @@ Description: ${project.description}`;
           </section>
 
           <section className="bg-surface-container-lowest p-8 rounded-lg shadow-sm">
-            <h2 className="font-headline text-xl font-bold mb-6 flex items-center gap-2">
+            <h2 className="font-headline text-xl font-bold mb-2 flex items-center gap-2">
               <Map className="w-6 h-6 text-primary" />
               Strategic Planning
             </h2>
-            <div className="space-y-6">
+            <p className="mb-6 text-sm text-on-surface-variant" id="strategic-planning-help">
+              Capture public-safe planning answers separately from internal notes. The Public Overview below remains the copy shown on public cards.
+            </p>
+            <div className="space-y-6" aria-describedby="strategic-planning-help">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {([
+                  ['publicGoal', 'What public need does this project address?', 'Describe the project purpose without internal risks or blockers.'],
+                  ['publicAudience', 'Who benefits from this work?', 'Name public audiences, communities, or users.'],
+                  ['publicValue', 'What value will people see?', 'Summarize benefits that are safe to share publicly.'],
+                  ['publicOutcomes', 'What outcomes should the public expect?', 'List deliverables, milestones, or changes suitable for public copy.'],
+                  ['internalComments', 'Internal comments', 'Private team context; never used in generated public copy.'],
+                  ['internalRisks', 'Internal risks and blockers', 'Private risks, blockers, and concerns.'],
+                  ['internalBlockers', 'Internal blockers', 'Private constraints that should not appear in public copy.'],
+                  ['sensitiveDependencies', 'Sensitive dependencies', 'Private vendor, security, funding, or partner dependencies.'],
+                ] as const).map(([field, label, help]) => (
+                  <div key={field} className={field.startsWith('internal') || field === 'sensitiveDependencies' ? 'md:col-span-2' : ''}>
+                    <label htmlFor={`planning-${field}`} className="block text-xs font-bold text-on-surface-variant uppercase mb-1">{label}</label>
+                    <p id={`planning-${field}-help`} className="mb-2 text-xs text-on-surface-variant">{help}</p>
+                    <textarea id={`planning-${field}`} aria-describedby={`planning-${field}-help`} className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none resize-y" rows={field.startsWith('public') ? 3 : 2} value={planningResponses?.[field] ?? ''} onChange={(e) => updatePlanningResponse(field, e.target.value)} disabled={!isAdmin} />
+                  </div>
+                ))}
+              </div>
               <div>
                 <div className="flex justify-between items-end mb-2">
-                  <label htmlFor="record-project-summary" className="block text-xs font-bold text-on-surface-variant uppercase">Executive Summary</label>
-                  {settings?.aiEnabled && settings.aiSummarizeEnabled && isAdmin && (
-                    <button 
-                      onClick={handleSummarize}
-                      disabled={generatingSummary}
-                      className="text-[10px] font-bold flex items-center gap-1 text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors disabled:opacity-50"
-                    >
-                      {generatingSummary ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                      AI Summarize
-                    </button>
-                  )}
+                  <label htmlFor="record-project-summary" className="block text-xs font-bold text-on-surface-variant uppercase">Public Overview</label>
+                  <button type="button" onClick={handleGeneratePublicNarrative} disabled={!isAdmin || !planningResponses} className="text-[10px] font-bold flex items-center gap-1 text-primary hover:bg-primary/10 px-2 py-1 rounded transition-colors disabled:opacity-50">
+                    <Sparkles className="w-3 h-3" /> Generate public narrative
+                  </button>
                 </div>
-                <textarea
-                  id="record-project-summary"
-                  className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none resize-y" 
-                  rows={3} 
-                  value={project.description}
-                  onChange={(e) => setProject({...project, description: e.target.value})}
-                  disabled={!isAdmin}
-                ></textarea>
+                <textarea id="record-project-summary" aria-describedby="record-project-summary-help" className="w-full bg-surface-container-low border-none rounded-lg p-3 focus:ring-2 focus:ring-primary outline-none resize-y" rows={3} value={project.description} onChange={(e) => setProject({...project, description: e.target.value})} disabled={!isAdmin} />
+                <p id="record-project-summary-help" className="mt-2 text-xs text-on-surface-variant">Backward-compatible public overview shown on public cards. Do not include internal comments, risks, blockers, or sensitive dependencies.</p>
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div>
