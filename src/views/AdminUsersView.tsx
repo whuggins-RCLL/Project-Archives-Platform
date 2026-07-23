@@ -91,6 +91,21 @@ export default function AdminUsersView({
     }
   };
 
+  const removeUser = async (user: ManagedUser) => {
+    if (user.uid === auth.currentUser?.uid) {
+      setError('You cannot remove your own account.');
+      return;
+    }
+    if (!window.confirm(`Permanently remove ${user.email || user.uid}? This deletes their sign-in account and cannot be undone. Use "disable" instead if you only want to suspend access.`)) return;
+    try {
+      const message = await api.deleteUser(user.uid);
+      setToast(message);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove user');
+    }
+  };
+
   const mutatePermission = async (user: ManagedUser, key: UserPermissionKey, checked: boolean) => {
     const basePermissions = user.permissions ?? defaultPermissionsForRole(user.role);
     const nextPermissions = { ...basePermissions, [key]: checked };
@@ -178,6 +193,14 @@ export default function AdminUsersView({
                     {user.status === 'active'
                       ? <button className="px-2 py-1 border rounded text-xs" aria-label={`Disable access for ${user.email}`} onClick={() => void mutateStatus(user.uid, 'disable')}>disable</button>
                       : <button className="px-2 py-1 border rounded text-xs" aria-label={`Enable access for ${user.email}`} onClick={() => void mutateStatus(user.uid, 'enable')}>enable</button>}
+                    <button
+                      className="px-2 py-1 border border-error/50 text-error rounded text-xs hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Permanently remove ${user.email}`}
+                      disabled={user.uid === auth.currentUser?.uid}
+                      onClick={() => void removeUser(user)}
+                    >
+                      remove
+                    </button>
                   </div>
                 </td>
                 {PERMISSION_COLUMNS.map((permission) => {

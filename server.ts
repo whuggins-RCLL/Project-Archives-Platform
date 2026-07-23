@@ -1436,6 +1436,38 @@ async function getUserMirrorRoleAndPermissions(uid: string): Promise<{ role: App
   }
 }
 
+type UserPreferences = {
+  siteTourCompleted: boolean;
+  siteTourDismissed: boolean;
+};
+
+/**
+ * Per-user preferences persisted server-side in `userPreferences/{uid}` so that
+ * choices like the onboarding tour's "Do not show this again" survive across
+ * devices and fresh logins (localStorage alone is per-browser and forgets).
+ */
+async function getUserPreferences(uid: string): Promise<UserPreferences> {
+  try {
+    const result = await firestoreCall(`userPreferences/${uid}`);
+    const parsed = parseFirestoreDocument(result as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    return {
+      siteTourCompleted: parsed.siteTourCompleted === true,
+      siteTourDismissed: parsed.siteTourDismissed === true,
+    };
+  } catch {
+    return { siteTourCompleted: false, siteTourDismissed: false };
+  }
+}
+
+async function saveUserPreferences(uid: string, prefs: UserPreferences): Promise<void> {
+  const fields = {
+    siteTourCompleted: { booleanValue: prefs.siteTourCompleted },
+    siteTourDismissed: { booleanValue: prefs.siteTourDismissed },
+    updatedAt: { timestampValue: new Date().toISOString() },
+  };
+  await firestoreCall(`userPreferences/${uid}`, { method: "PATCH", body: { fields } });
+}
+
 function hashPassword(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -2816,6 +2848,102 @@ app.post("/api/admin/users/set-permissions", async (req, res) => {
     return res.json({ success: true, message: "Permissions updated. User should refresh access claims." });
   } catch (error) {
     return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to update permissions" });
+  }
+});
+
+app.post("/api/admin/users/delete", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canManageRoles) return res.status(403).json({ error: "Manage roles permission required" });
+
+    const targetUid = typeof req.body?.uid === "string" ? req.body.uid : "";
+    if (!targetUid) return res.status(400).json({ error: "uid is required" });
+    if (targetUid === verifiedUser.uid) {
+      return res.status(400).json({ error: "You cannot remove your own account." });
+    }
+
+    // Resolve the target's role from Auth claims when available, otherwise from
+    // the Firestore mirror (covers mirror-only orphans with no Auth record).
+    const lookup = await identityToolkitCall("/accounts:lookup", { localId: [targetUid] });
+    const authUser = ((lookup.users as Array<Record<string, unknown>> | undefined) || [])[0];
+    const authClaims = authUser && typeof authUser.customAttributes === "string"
+      ? (JSON.parse(authUser.customAttributes) as Record<string, unknown>)
+      : {};
+    const mirror = await getUserMirrorRoleAndPermissions(targetUid);
+    const targetRole = mirror.role || normalizeRoleFromClaims(authClaims);
+    const email = String(authUser?.email || "");
+
+    if (!authUser && !mirror.role) {
+      return res.status(404).json({ error: "Target user not found" });
+    }
+    if (callerRole !== "owner" && targetRole === "owner") {
+      return res.status(403).json({ error: "Only owners can remove owner accounts" });
+    }
+    if (targetRole === "owner") {
+      const owners = await countOwnersFromUsersMirror();
+      if (owners <= 1) return res.status(400).json({ error: "Cannot remove the last remaining owner" });
+    }
+
+    // Remove the Firebase Auth account (if it exists).
+    if (authUser) {
+      await identityToolkitCall("/accounts:delete", { localId: targetUid });
+    }
+    // Remove the Firestore mirror doc, tolerating an already-missing document.
+    try {
+      await firestoreCall(`users/${targetUid}`, { method: "DELETE" });
+    } catch (mirrorError) {
+      const message = mirrorError instanceof Error ? mirrorError.message : "";
+      if (!/not[_\s]?found/i.test(message)) throw mirrorError;
+    }
+
+    await writeAuditLog({
+      actorUid: verifiedUser.uid,
+      actorEmail: verifiedUser.email || "",
+      targetUid,
+      targetEmail: email,
+      action: "delete-user",
+      oldRole: targetRole,
+    });
+    return res.json({ success: true, message: "User permanently removed." });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to remove user" });
+  }
+});
+
+app.get("/api/user/preferences", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const prefs = await getUserPreferences(verifiedUser.uid);
+    return res.json({ preferences: prefs });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to load preferences" });
+  }
+});
+
+app.post("/api/user/preferences", async (req, res) => {
+  try {
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+
+    const current = await getUserPreferences(verifiedUser.uid);
+    const next = {
+      siteTourCompleted: typeof req.body?.siteTourCompleted === "boolean" ? req.body.siteTourCompleted : current.siteTourCompleted,
+      siteTourDismissed: typeof req.body?.siteTourDismissed === "boolean" ? req.body.siteTourDismissed : current.siteTourDismissed,
+    };
+    await saveUserPreferences(verifiedUser.uid, next);
+    return res.json({ success: true, preferences: next });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to save preferences" });
   }
 });
 
