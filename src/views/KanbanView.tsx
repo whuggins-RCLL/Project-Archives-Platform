@@ -1,11 +1,12 @@
-import { ChevronDown, ChevronRight, Filter, Users, Plus, MoreHorizontal, CheckCircle2, MoveDown, Minimize2, Maximize2, Globe, Lock, Sparkles, Heart } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Filter, Users, Plus, MoreHorizontal, CheckCircle2, MoveDown, Minimize2, Maximize2, Globe, Lock, Sparkles, Heart, GitMerge } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Project, ProjectStatus } from '../types';
 import ProjectFilterBar, { DEFAULT_FILTER_QUERY } from '../components/ProjectFilterBar';
 import { applyProjectFilters, getFilterOptions, ProjectFilterQuery } from '../lib/projectFilters';
 import { useSavedViews } from '../hooks/useSavedViews';
 import Button from '../components/Button';
+import MergeProjectsModal from '../components/MergeProjectsModal';
 
 const COLUMNS: { title: ProjectStatus; color: string; border: string }[] = [
   { title: 'Intake / Proposed', color: 'bg-on-surface-variant/40', border: 'border-slate-300' },
@@ -56,13 +57,34 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
   const [statusMessage, setStatusMessage] = useState<{ type: 'error'; text: string } | null>(null);
   const [isCompactBoard, setIsCompactBoard] = useState(true);
   const [collapsedColumns, setCollapsedColumns] = useState<Set<ProjectStatus>>(new Set());
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [mergeSource, setMergeSource] = useState<Project | null>(null);
+  const [mergeNotice, setMergeNotice] = useState<string | null>(null);
   const { views, saveView, deleteView } = useSavedViews('kanban');
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!statusMessage) return;
     const timeout = window.setTimeout(() => setStatusMessage(null), 3200);
     return () => window.clearTimeout(timeout);
   }, [statusMessage]);
+
+  useEffect(() => {
+    if (!mergeNotice) return;
+    const timeout = window.setTimeout(() => setMergeNotice(null), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [mergeNotice]);
+
+  useEffect(() => {
+    if (!openMenuId) return;
+    const onDocClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [openMenuId]);
 
   const handleDragStart = (e: React.DragEvent, projectId: string) => {
     e.dataTransfer.setData('projectId', projectId);
@@ -237,7 +259,34 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
               </span>
             )}
             {isLaunched && <CheckCircle2 className="w-4 h-4 text-tertiary-fixed-dim" role="img" aria-label="In production" />}
-            <MoreHorizontal className="w-5 h-5 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity" aria-hidden />
+            {isAdmin && (
+              <div className="relative" ref={openMenuId === project.id ? menuRef : undefined}>
+                <button
+                  type="button"
+                  aria-label={`Card actions for ${project.title}`}
+                  aria-haspopup="menu"
+                  aria-expanded={openMenuId === project.id}
+                  onClick={(e) => { e.stopPropagation(); setOpenMenuId((current) => current === project.id ? null : project.id); }}
+                  className="rounded p-0.5 text-on-surface-variant opacity-0 group-hover:opacity-100 group-focus:opacity-100 focus:opacity-100 transition-opacity hover:bg-surface-container-high focus:outline-none focus:ring-2 focus:ring-primary/40"
+                >
+                  <MoreHorizontal className="w-5 h-5" aria-hidden />
+                </button>
+                {openMenuId === project.id && (
+                  <div role="menu" className="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-outline-variant/30 bg-surface-container-lowest py-1 shadow-lg">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={projects.length < 2}
+                      onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); setMergeSource(project); }}
+                      title={projects.length < 2 ? 'Need another project to merge with' : 'Merge this card with another'}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-on-surface hover:bg-surface-container-high disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <GitMerge className="h-4 w-4" aria-hidden /> Merge with…
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
         <h4 className={`font-bold ${isCompactBoard ? 'text-[13px] mb-2' : 'text-sm mb-3'} leading-snug`}>{project.title}</h4>
@@ -361,6 +410,21 @@ export default function KanbanView({ projects, loading, onProjectClick, onNewPro
             {statusMessage.text}
           </div>
         </div>
+      )}
+      {mergeNotice && (
+        <div className="fixed top-6 right-6 z-50">
+          <div role="status" aria-live="polite" className="px-4 py-3 rounded-lg shadow-lg border text-sm font-bold bg-tertiary-container text-on-tertiary-container border-tertiary-fixed-dim/30">
+            {mergeNotice}
+          </div>
+        </div>
+      )}
+      {mergeSource && (
+        <MergeProjectsModal
+          sourceProject={mergeSource}
+          allProjects={projects}
+          onClose={() => setMergeSource(null)}
+          onMerged={(message) => setMergeNotice(message)}
+        />
       )}
       <header className="mb-8 flex flex-col space-y-6">
         <div className="flex justify-between items-end">

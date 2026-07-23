@@ -616,6 +616,90 @@ function parseFirestoreValue(field: Record<string, unknown> | undefined): unknow
   return undefined;
 }
 
+function asObjectArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
+}
+
+/** Union of two string lists (case-insensitive dedup, primary order preserved), capped. */
+function mergeStringList(primary: unknown, secondary: unknown, cap: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const source = [
+    ...(Array.isArray(primary) ? primary : []),
+    ...(Array.isArray(secondary) ? secondary : []),
+  ];
+  for (const item of source) {
+    if (typeof item !== "string") continue;
+    const key = item.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/** Union of two object lists, de-duplicated by a derived key (primary wins), capped. */
+function mergeObjectList(
+  primary: unknown,
+  secondary: unknown,
+  keyOf: (item: Record<string, unknown>) => string,
+  cap: number,
+): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  for (const item of [...asObjectArray(primary), ...asObjectArray(secondary)]) {
+    const key = keyOf(item);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(item);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/**
+ * Concatenate two object lists keeping every entry, but re-id any collision so the
+ * merged list has unique `id`s (milestones/dependencies/checkpoints identify rows by id).
+ */
+function concatWithUniqueIds(primary: unknown, secondary: unknown): Record<string, unknown>[] {
+  const usedIds = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  const add = (item: Record<string, unknown>) => {
+    const next = { ...item };
+    if (typeof next.id === "string") {
+      if (usedIds.has(next.id)) next.id = randomUUID();
+      usedIds.add(next.id as string);
+    }
+    out.push(next);
+  };
+  asObjectArray(primary).forEach(add);
+  asObjectArray(secondary).forEach(add);
+  return out;
+}
+
+/** Encode a plain JS value into a Firestore REST value object (inverse of parseFirestoreValue). */
+function toFirestoreValue(value: unknown): Record<string, unknown> {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map((item) => toFirestoreValue(item)) } };
+  }
+  if (typeof value === "object") {
+    const fields: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (nested === undefined) continue;
+      fields[key] = toFirestoreValue(nested);
+    }
+    return { mapValue: { fields } };
+  }
+  return { nullValue: null };
+}
+
 function parseFirestoreDocument(document: { name?: string; fields?: Record<string, Record<string, unknown>> }): Record<string, unknown> {
   const docId = document.name?.split("/").pop() || "";
   const fields = document.fields || {};
@@ -1264,6 +1348,24 @@ async function firestoreCall(path: string, options: { method?: string; body?: un
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error((data as { error?: { message?: string } }).error?.message || "Firestore admin call failed");
   return data as Record<string, unknown>;
+}
+
+/** Run a Firestore structured query via the REST API and return the matched documents. */
+async function firestoreRunQuery(structuredQuery: Record<string, unknown>): Promise<Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }>> {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
+  const projectId = getFirebaseProjectId();
+  const databasePath = getFirestoreDatabasePathSegment();
+  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databasePath}/documents:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ structuredQuery }),
+  });
+  const data = await response.json().catch(() => ([] as unknown));
+  if (!response.ok) {
+    throw new Error((data as { error?: { message?: string } })?.error?.message || "Firestore query failed");
+  }
+  const rows = Array.isArray(data) ? (data as Array<{ document?: { name?: string; fields?: Record<string, Record<string, unknown>> } }>) : [];
+  return rows.map((row) => row.document).filter((doc): doc is { name?: string; fields?: Record<string, Record<string, unknown>> } => Boolean(doc));
 }
 
 async function fetchFirestoreSettings(): Promise<Partial<AppSettings>> {
@@ -1983,6 +2085,172 @@ app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) =>
   } catch (error) {
     console.error("Suggestion email copy failed:", error instanceof Error ? error.message : error);
     return res.status(500).json({ error: "Unable to send the email copy right now. Please try again later." });
+  }
+});
+
+/**
+ * Merge one project card ("secondary") into another ("primary") and delete the secondary.
+ * Done server-side because it must touch things the browser can't under Firestore rules:
+ * reassign the secondary's comments (their `projectId` is immutable to clients), sum the
+ * server-managed `likeCount`, migrate the planning doc, and delete a project (a rules
+ * admin-only action). Authorized here by canEditContent so any editor can merge.
+ *
+ * Merge policy: the primary's single-value fields win (title, description, status, ...);
+ * list fields (tags, collaborators, artifactLinks, milestones, dependencies, checkpoints)
+ * are combined and de-duplicated; likes are summed; comments and planning notes migrate.
+ *
+ * Not transactional across the individual REST writes: additive migrations run before the
+ * secondary is deleted, so a mid-way failure leaves the secondary intact rather than losing
+ * data. Retrying a run that failed after the primary was updated could double-count likes.
+ */
+app.post("/api/projects/merge", async (req, res) => {
+  try {
+    if (!enforceRequestSizeLimit(req, 4096)) {
+      return res.status(413).json({ error: "Request body too large." });
+    }
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canEditContent) {
+      return res.status(403).json({ error: "Edit-content permission is required to merge projects." });
+    }
+
+    const primaryId = typeof req.body?.primaryId === "string" ? req.body.primaryId : "";
+    const secondaryId = typeof req.body?.secondaryId === "string" ? req.body.secondaryId : "";
+    if (!FIRESTORE_DOC_ID_REGEX.test(primaryId) || !FIRESTORE_DOC_ID_REGEX.test(secondaryId)) {
+      return res.status(400).json({ error: "Valid primaryId and secondaryId are required." });
+    }
+    if (primaryId === secondaryId) {
+      return res.status(400).json({ error: "Cannot merge a project into itself." });
+    }
+
+    const [primaryDoc, secondaryDoc] = await Promise.all([
+      firestoreCall(`projects/${primaryId}`).catch(() => null),
+      firestoreCall(`projects/${secondaryId}`).catch(() => null),
+    ]);
+    if (!primaryDoc?.fields) return res.status(404).json({ error: "The project to keep was not found." });
+    if (!secondaryDoc?.fields) return res.status(404).json({ error: "The project to merge in was not found." });
+
+    const primary = parseFirestoreDocument(primaryDoc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    const secondary = parseFirestoreDocument(secondaryDoc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    const primaryCode = typeof primary.code === "string" ? primary.code : "";
+    const secondaryCode = typeof secondary.code === "string" ? secondary.code : "";
+
+    // --- Build the merged embedded fields (primary scalars are left untouched) ---
+    const mergedFields: Record<string, Record<string, unknown>> = {};
+    const maskPaths: string[] = [];
+    const setField = (name: string, value: unknown) => {
+      mergedFields[name] = toFirestoreValue(value);
+      maskPaths.push(name);
+    };
+
+    setField("tags", mergeStringList(primary.tags, secondary.tags, 20));
+    setField("collaborators", mergeObjectList(primary.collaborators, secondary.collaborators, (item) => String(item.uid || item.name || "").toLowerCase(), 50));
+    setField("artifactLinks", mergeObjectList(primary.artifactLinks, secondary.artifactLinks, (item) => String(item.url || item.id || "").toLowerCase(), 20));
+    setField("milestones", concatWithUniqueIds(primary.milestones, secondary.milestones));
+    setField("approvalCheckpoints", concatWithUniqueIds(primary.approvalCheckpoints, secondary.approvalCheckpoints));
+
+    const mergedDependencies = concatWithUniqueIds(primary.dependencies, secondary.dependencies).map((dep) => {
+      // The secondary code disappears once its card is deleted; repoint any dependency at the survivor.
+      if (secondaryCode && primaryCode && dep.relatedProjectCode === secondaryCode) {
+        return { ...dep, relatedProjectCode: primaryCode };
+      }
+      return dep;
+    });
+    setField("dependencies", mergedDependencies);
+
+    if (Array.isArray(primary.aiDrafts)) {
+      // Keep the primary's AI drafts but drop stale duplicate-candidate rows pointing at the removed card.
+      const cleanedDrafts = primary.aiDrafts.map((draft) => {
+        if (draft && typeof draft === "object" && Array.isArray((draft as Record<string, unknown>).duplicateCandidates)) {
+          const candidates = ((draft as Record<string, unknown>).duplicateCandidates as Array<Record<string, unknown>>).filter(
+            (candidate) => candidate?.projectId !== secondaryId,
+          );
+          return { ...(draft as Record<string, unknown>), duplicateCandidates: candidates };
+        }
+        return draft;
+      });
+      setField("aiDrafts", cleanedDrafts);
+    }
+
+    const primaryLikes = typeof primary.likeCount === "number" ? Math.max(0, Math.floor(primary.likeCount)) : 0;
+    const secondaryLikes = typeof secondary.likeCount === "number" ? Math.max(0, Math.floor(secondary.likeCount)) : 0;
+    setField("likeCount", primaryLikes + secondaryLikes);
+
+    mergedFields.updatedAt = { timestampValue: new Date().toISOString() };
+    maskPaths.push("updatedAt");
+
+    // --- Reassign the secondary's comments to the primary (bypasses the client projectId immutability rule) ---
+    let commentsMoved = 0;
+    const commentDocs = await firestoreRunQuery({
+      from: [{ collectionId: "comments" }],
+      where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: secondaryId } } },
+      limit: 500,
+    });
+    for (const commentDoc of commentDocs) {
+      const commentId = commentDoc.name?.split("/").pop();
+      if (!commentId) continue;
+      await firestoreCall(`comments/${commentId}?updateMask.fieldPaths=projectId`, {
+        method: "PATCH",
+        body: { fields: { projectId: { stringValue: primaryId } } },
+      });
+      commentsMoved += 1;
+    }
+    if (commentDocs.length >= 500) {
+      console.warn(`[projects/merge] comment reassignment capped at 500 for secondary=${secondaryId}; some comments may remain.`);
+    }
+
+    // --- Merge planning notes into the primary (primary-preferred fill), then remove the secondary's ---
+    const planningTextFields = [
+      "publicGoal", "publicAudience", "publicValue", "publicOutcomes",
+      "internalComments", "internalRisks", "internalBlockers", "sensitiveDependencies",
+    ];
+    const [primaryPlanningDoc, secondaryPlanningDoc] = await Promise.all([
+      firestoreCall(`projectPlanning/${primaryId}`).catch(() => null),
+      firestoreCall(`projectPlanning/${secondaryId}`).catch(() => null),
+    ]);
+    if (primaryPlanningDoc?.fields || secondaryPlanningDoc?.fields) {
+      const primaryPlanning = primaryPlanningDoc?.fields ? parseFirestoreDocument(primaryPlanningDoc as { name?: string; fields?: Record<string, Record<string, unknown>> }) : {};
+      const secondaryPlanning = secondaryPlanningDoc?.fields ? parseFirestoreDocument(secondaryPlanningDoc as { name?: string; fields?: Record<string, Record<string, unknown>> }) : {};
+      const planningFields: Record<string, Record<string, unknown>> = {
+        projectId: { stringValue: primaryId },
+        updatedAt: { timestampValue: new Date().toISOString() },
+      };
+      const planningMask = ["projectId", "updatedAt"];
+      for (const field of planningTextFields) {
+        const primaryValue = typeof primaryPlanning[field] === "string" ? (primaryPlanning[field] as string) : "";
+        const secondaryValue = typeof secondaryPlanning[field] === "string" ? (secondaryPlanning[field] as string) : "";
+        const chosen = primaryValue.trim() ? primaryValue : secondaryValue;
+        if (chosen) {
+          planningFields[field] = { stringValue: chosen };
+          planningMask.push(field);
+        }
+      }
+      const planningMaskQuery = planningMask.map((path) => `updateMask.fieldPaths=${encodeURIComponent(path)}`).join("&");
+      await firestoreCall(`projectPlanning/${primaryId}?${planningMaskQuery}`, { method: "PATCH", body: { fields: planningFields } });
+    }
+
+    // --- Persist the merged fields onto the primary project ---
+    const projectMaskQuery = maskPaths.map((path) => `updateMask.fieldPaths=${encodeURIComponent(path)}`).join("&");
+    await firestoreCall(`projects/${primaryId}?${projectMaskQuery}`, { method: "PATCH", body: { fields: mergedFields } });
+
+    // --- Delete the secondary project and its planning doc (best-effort on a missing planning doc) ---
+    await firestoreCall(`projects/${secondaryId}`, { method: "DELETE" });
+    await firestoreCall(`projectPlanning/${secondaryId}`, { method: "DELETE" }).catch(() => undefined);
+
+    auditLog("project_merge", { primaryId, secondaryId, primaryCode, secondaryCode, commentsMoved, actorUid: verifiedUser.uid });
+    return res.json({
+      success: true,
+      mergedId: primaryId,
+      commentsMoved,
+      message: `Merged ${secondaryCode || "the other card"} into ${primaryCode || "the selected card"}.${commentsMoved > 0 ? ` Moved ${commentsMoved} comment${commentsMoved === 1 ? "" : "s"}.` : ""}`,
+    });
+  } catch (error) {
+    console.error("Project merge failed:", error instanceof Error ? error.message : error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to merge projects right now. Please try again later." });
   }
 });
 

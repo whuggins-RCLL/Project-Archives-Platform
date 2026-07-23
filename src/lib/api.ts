@@ -482,6 +482,32 @@ export const api = {
     }
   },
 
+  /**
+   * Merge the `secondaryId` project into `primaryId` (server-side): combines list
+   * fields, sums likes, migrates comments + planning notes, then deletes the
+   * secondary. Requires edit-content access. Returns a human-readable summary.
+   */
+  mergeProjects: async (primaryId: string, secondaryId: string): Promise<{ mergedId: string; commentsMoved: number; message: string }> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to merge projects.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/projects/merge', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ primaryId, secondaryId }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Failed to merge projects');
+    return {
+      mergedId: typeof payload.mergedId === 'string' ? payload.mergedId : primaryId,
+      commentsMoved: typeof payload.commentsMoved === 'number' ? payload.commentsMoved : 0,
+      message: payload.message || 'Projects merged.',
+    };
+  },
+
   subscribeToComments: (projectId: string, callback: (comments: Comment[]) => void, onError: (error: unknown) => void) => {
     const q = query(collection(db, 'comments'), where('projectId', '==', projectId), orderBy('timestamp', 'asc'));
     return onSnapshot(q, (snapshot) => {
