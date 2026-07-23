@@ -616,6 +616,90 @@ function parseFirestoreValue(field: Record<string, unknown> | undefined): unknow
   return undefined;
 }
 
+function asObjectArray(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object") : [];
+}
+
+/** Union of two string lists (case-insensitive dedup, primary order preserved), capped. */
+function mergeStringList(primary: unknown, secondary: unknown, cap: number): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const source = [
+    ...(Array.isArray(primary) ? primary : []),
+    ...(Array.isArray(secondary) ? secondary : []),
+  ];
+  for (const item of source) {
+    if (typeof item !== "string") continue;
+    const key = item.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/** Union of two object lists, de-duplicated by a derived key (primary wins), capped. */
+function mergeObjectList(
+  primary: unknown,
+  secondary: unknown,
+  keyOf: (item: Record<string, unknown>) => string,
+  cap: number,
+): Record<string, unknown>[] {
+  const seen = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  for (const item of [...asObjectArray(primary), ...asObjectArray(secondary)]) {
+    const key = keyOf(item);
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    out.push(item);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/**
+ * Concatenate two object lists keeping every entry, but re-id any collision so the
+ * merged list has unique `id`s (milestones/dependencies/checkpoints identify rows by id).
+ */
+function concatWithUniqueIds(primary: unknown, secondary: unknown): Record<string, unknown>[] {
+  const usedIds = new Set<string>();
+  const out: Record<string, unknown>[] = [];
+  const add = (item: Record<string, unknown>) => {
+    const next = { ...item };
+    if (typeof next.id === "string") {
+      if (usedIds.has(next.id)) next.id = randomUUID();
+      usedIds.add(next.id as string);
+    }
+    out.push(next);
+  };
+  asObjectArray(primary).forEach(add);
+  asObjectArray(secondary).forEach(add);
+  return out;
+}
+
+/** Encode a plain JS value into a Firestore REST value object (inverse of parseFirestoreValue). */
+function toFirestoreValue(value: unknown): Record<string, unknown> {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map((item) => toFirestoreValue(item)) } };
+  }
+  if (typeof value === "object") {
+    const fields: Record<string, unknown> = {};
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (nested === undefined) continue;
+      fields[key] = toFirestoreValue(nested);
+    }
+    return { mapValue: { fields } };
+  }
+  return { nullValue: null };
+}
+
 function parseFirestoreDocument(document: { name?: string; fields?: Record<string, Record<string, unknown>> }): Record<string, unknown> {
   const docId = document.name?.split("/").pop() || "";
   const fields = document.fields || {};
@@ -1266,6 +1350,24 @@ async function firestoreCall(path: string, options: { method?: string; body?: un
   return data as Record<string, unknown>;
 }
 
+/** Run a Firestore structured query via the REST API and return the matched documents. */
+async function firestoreRunQuery(structuredQuery: Record<string, unknown>): Promise<Array<{ name?: string; fields?: Record<string, Record<string, unknown>> }>> {
+  const token = await getGoogleAccessToken("https://www.googleapis.com/auth/datastore");
+  const projectId = getFirebaseProjectId();
+  const databasePath = getFirestoreDatabasePathSegment();
+  const response = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/${databasePath}/documents:runQuery`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ structuredQuery }),
+  });
+  const data = await response.json().catch(() => ([] as unknown));
+  if (!response.ok) {
+    throw new Error((data as { error?: { message?: string } })?.error?.message || "Firestore query failed");
+  }
+  const rows = Array.isArray(data) ? (data as Array<{ document?: { name?: string; fields?: Record<string, Record<string, unknown>> } }>) : [];
+  return rows.map((row) => row.document).filter((doc): doc is { name?: string; fields?: Record<string, Record<string, unknown>> } => Boolean(doc));
+}
+
 async function fetchFirestoreSettings(): Promise<Partial<AppSettings>> {
   try {
     const result = await firestoreCall("settings/global");
@@ -1736,6 +1838,91 @@ function cleanPublicMultilineText(value: unknown, maxLength: number): string {
   return value.replace(/\r\n/g, "\n").trim().slice(0, maxLength);
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Escape for HTML and turn newlines into <br> so multiline text keeps its breaks. */
+function escapeHtmlMultiline(value: string): string {
+  return escapeHtml(value).replace(/\n/g, "<br>");
+}
+
+/**
+ * Builds the confirmation email for a community project suggestion in two forms:
+ * a plain-text `text` (fallback) and a formatted `html`. The HTML version exists
+ * because most email delivery pipelines render the message as HTML, which
+ * collapses the plain-text newlines into spaces and yields one run-on paragraph.
+ */
+function buildSuggestionEmailContent(fields: {
+  code: string;
+  title: string;
+  category: string;
+  submitterName: string;
+  submitterEmail: string;
+  submittedAt: string;
+  description: string;
+  goal: string;
+  audience: string;
+}): { text: string; html: string } {
+  const textLines = [
+    "Thank you for suggesting a project to the Stanford Law School team!",
+    "Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.",
+    "",
+    `Reference code: ${fields.code}`,
+    `Project name: ${fields.title}`,
+    `Category: ${fields.category}`,
+    `Submitted by: ${fields.submitterName} (${fields.submitterEmail})`,
+    `Submitted at: ${fields.submittedAt}`,
+    "",
+    "Description:",
+    fields.description,
+    "",
+    "Goal:",
+    fields.goal,
+  ];
+  if (fields.audience) {
+    textLines.push("", "Who it would help:", fields.audience);
+  }
+
+  const metaRows = [
+    ["Reference code", escapeHtml(fields.code)],
+    ["Project name", escapeHtml(fields.title)],
+    ["Category", escapeHtml(fields.category)],
+    ["Submitted by", `${escapeHtml(fields.submitterName)} (${escapeHtml(fields.submitterEmail)})`],
+    ["Submitted at", escapeHtml(fields.submittedAt)],
+  ]
+    .map(
+      ([label, value]) =>
+        `<tr><td style="padding:6px 16px 6px 0;color:#5f6368;vertical-align:top;white-space:nowrap;font-size:14px;">${label}</td>` +
+        `<td style="padding:6px 0;color:#202124;font-weight:600;font-size:14px;">${value}</td></tr>`,
+    )
+    .join("");
+
+  const section = (heading: string, value: string): string =>
+    `<h3 style="margin:20px 0 6px;font-size:15px;color:#202124;">${heading}</h3>` +
+    `<p style="margin:0;color:#3c4043;font-size:14px;line-height:1.6;">${escapeHtmlMultiline(value)}</p>`;
+
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f5f5f7;">
+  <div style="max-width:600px;margin:0 auto;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <div style="background:#ffffff;border-radius:12px;padding:28px;border:1px solid #e5e5ea;">
+      <p style="margin:0 0 12px;font-size:16px;color:#202124;font-weight:600;">Thank you for suggesting a project to the Stanford Law School team!</p>
+      <p style="margin:0 0 20px;font-size:14px;color:#5f6368;line-height:1.6;">Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;border-top:1px solid #e5e5ea;padding-top:8px;">${metaRows}</table>
+      ${section("Description", fields.description)}
+      ${section("Goal", fields.goal)}
+      ${fields.audience ? section("Who it would help", fields.audience) : ""}
+    </div>
+  </div>
+</body></html>`;
+
+  return { text: textLines.join("\n"), html };
+}
+
 function initialsFromName(name: string): string {
   const parts = name.split(/\s+/).filter(Boolean);
   const initials = parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
@@ -1946,25 +2133,17 @@ app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) =>
     }
 
     const intake = (parsed.intake && typeof parsed.intake === "object" ? parsed.intake : {}) as Record<string, unknown>;
-    const lines = [
-      "Thank you for suggesting a project to the Stanford Law School team!",
-      "Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.",
-      "",
-      `Reference code: ${String(parsed.code || suggestionId)}`,
-      `Project name: ${String(parsed.title || "")}`,
-      `Category: ${String(intake.category || parsed.department || "")}`,
-      `Submitted by: ${String(intake.submitterName || "")} (${String(intake.submitterEmail || "")})`,
-      `Submitted at: ${String(intake.submittedAt || "")}`,
-      "",
-      "Description:",
-      String(parsed.description || ""),
-      "",
-      "Goal:",
-      String(intake.goal || ""),
-    ];
-    if (intake.audience) {
-      lines.push("", "Who it would help:", String(intake.audience));
-    }
+    const emailContent = buildSuggestionEmailContent({
+      code: String(parsed.code || suggestionId),
+      title: String(parsed.title || ""),
+      category: String(intake.category || parsed.department || ""),
+      submitterName: String(intake.submitterName || ""),
+      submitterEmail: String(intake.submitterEmail || ""),
+      submittedAt: String(intake.submittedAt || ""),
+      description: String(parsed.description || ""),
+      goal: String(intake.goal || ""),
+      audience: intake.audience ? String(intake.audience) : "",
+    });
 
     const emailResponse = await fetch(webhookUrl, {
       method: "POST",
@@ -1972,7 +2151,12 @@ app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) =>
       body: JSON.stringify({
         to: email,
         subject: `Copy of your project suggestion (${String(parsed.code || suggestionId)})`,
-        body: lines.join("\n"),
+        // `body` is plain text (fallback). `html` is a formatted version: many
+        // email pipelines render the message as HTML, which collapses the plain
+        // text's newlines into spaces and produces a single run-on paragraph.
+        // Map `html` to the email's HTML body in your webhook to fix that.
+        body: emailContent.text,
+        html: emailContent.html,
       }),
     });
     if (!emailResponse.ok) {
@@ -1983,6 +2167,172 @@ app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) =>
   } catch (error) {
     console.error("Suggestion email copy failed:", error instanceof Error ? error.message : error);
     return res.status(500).json({ error: "Unable to send the email copy right now. Please try again later." });
+  }
+});
+
+/**
+ * Merge one project card ("secondary") into another ("primary") and delete the secondary.
+ * Done server-side because it must touch things the browser can't under Firestore rules:
+ * reassign the secondary's comments (their `projectId` is immutable to clients), sum the
+ * server-managed `likeCount`, migrate the planning doc, and delete a project (a rules
+ * admin-only action). Authorized here by canEditContent so any editor can merge.
+ *
+ * Merge policy: the primary's single-value fields win (title, description, status, ...);
+ * list fields (tags, collaborators, artifactLinks, milestones, dependencies, checkpoints)
+ * are combined and de-duplicated; likes are summed; comments and planning notes migrate.
+ *
+ * Not transactional across the individual REST writes: additive migrations run before the
+ * secondary is deleted, so a mid-way failure leaves the secondary intact rather than losing
+ * data. Retrying a run that failed after the primary was updated could double-count likes.
+ */
+app.post("/api/projects/merge", async (req, res) => {
+  try {
+    if (!enforceRequestSizeLimit(req, 4096)) {
+      return res.status(413).json({ error: "Request body too large." });
+    }
+    const token = getBearerToken(req.headers.authorization);
+    if (!token) return res.status(401).json({ error: "Authentication required" });
+    const verifiedUser = await verifyFirebaseUser(token);
+    if (!verifiedUser) return res.status(401).json({ error: "Invalid or expired auth token" });
+    const callerRole = normalizeRoleFromClaims(verifiedUser.claims);
+    const callerPermissions = sanitizePermissionSet(verifiedUser.claims.permissions, callerRole);
+    if (!callerPermissions.canEditContent) {
+      return res.status(403).json({ error: "Edit-content permission is required to merge projects." });
+    }
+
+    const primaryId = typeof req.body?.primaryId === "string" ? req.body.primaryId : "";
+    const secondaryId = typeof req.body?.secondaryId === "string" ? req.body.secondaryId : "";
+    if (!FIRESTORE_DOC_ID_REGEX.test(primaryId) || !FIRESTORE_DOC_ID_REGEX.test(secondaryId)) {
+      return res.status(400).json({ error: "Valid primaryId and secondaryId are required." });
+    }
+    if (primaryId === secondaryId) {
+      return res.status(400).json({ error: "Cannot merge a project into itself." });
+    }
+
+    const [primaryDoc, secondaryDoc] = await Promise.all([
+      firestoreCall(`projects/${primaryId}`).catch(() => null),
+      firestoreCall(`projects/${secondaryId}`).catch(() => null),
+    ]);
+    if (!primaryDoc?.fields) return res.status(404).json({ error: "The project to keep was not found." });
+    if (!secondaryDoc?.fields) return res.status(404).json({ error: "The project to merge in was not found." });
+
+    const primary = parseFirestoreDocument(primaryDoc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    const secondary = parseFirestoreDocument(secondaryDoc as { name?: string; fields?: Record<string, Record<string, unknown>> });
+    const primaryCode = typeof primary.code === "string" ? primary.code : "";
+    const secondaryCode = typeof secondary.code === "string" ? secondary.code : "";
+
+    // --- Build the merged embedded fields (primary scalars are left untouched) ---
+    const mergedFields: Record<string, Record<string, unknown>> = {};
+    const maskPaths: string[] = [];
+    const setField = (name: string, value: unknown) => {
+      mergedFields[name] = toFirestoreValue(value);
+      maskPaths.push(name);
+    };
+
+    setField("tags", mergeStringList(primary.tags, secondary.tags, 20));
+    setField("collaborators", mergeObjectList(primary.collaborators, secondary.collaborators, (item) => String(item.uid || item.name || "").toLowerCase(), 50));
+    setField("artifactLinks", mergeObjectList(primary.artifactLinks, secondary.artifactLinks, (item) => String(item.url || item.id || "").toLowerCase(), 20));
+    setField("milestones", concatWithUniqueIds(primary.milestones, secondary.milestones));
+    setField("approvalCheckpoints", concatWithUniqueIds(primary.approvalCheckpoints, secondary.approvalCheckpoints));
+
+    const mergedDependencies = concatWithUniqueIds(primary.dependencies, secondary.dependencies).map((dep) => {
+      // The secondary code disappears once its card is deleted; repoint any dependency at the survivor.
+      if (secondaryCode && primaryCode && dep.relatedProjectCode === secondaryCode) {
+        return { ...dep, relatedProjectCode: primaryCode };
+      }
+      return dep;
+    });
+    setField("dependencies", mergedDependencies);
+
+    if (Array.isArray(primary.aiDrafts)) {
+      // Keep the primary's AI drafts but drop stale duplicate-candidate rows pointing at the removed card.
+      const cleanedDrafts = primary.aiDrafts.map((draft) => {
+        if (draft && typeof draft === "object" && Array.isArray((draft as Record<string, unknown>).duplicateCandidates)) {
+          const candidates = ((draft as Record<string, unknown>).duplicateCandidates as Array<Record<string, unknown>>).filter(
+            (candidate) => candidate?.projectId !== secondaryId,
+          );
+          return { ...(draft as Record<string, unknown>), duplicateCandidates: candidates };
+        }
+        return draft;
+      });
+      setField("aiDrafts", cleanedDrafts);
+    }
+
+    const primaryLikes = typeof primary.likeCount === "number" ? Math.max(0, Math.floor(primary.likeCount)) : 0;
+    const secondaryLikes = typeof secondary.likeCount === "number" ? Math.max(0, Math.floor(secondary.likeCount)) : 0;
+    setField("likeCount", primaryLikes + secondaryLikes);
+
+    mergedFields.updatedAt = { timestampValue: new Date().toISOString() };
+    maskPaths.push("updatedAt");
+
+    // --- Reassign the secondary's comments to the primary (bypasses the client projectId immutability rule) ---
+    let commentsMoved = 0;
+    const commentDocs = await firestoreRunQuery({
+      from: [{ collectionId: "comments" }],
+      where: { fieldFilter: { field: { fieldPath: "projectId" }, op: "EQUAL", value: { stringValue: secondaryId } } },
+      limit: 500,
+    });
+    for (const commentDoc of commentDocs) {
+      const commentId = commentDoc.name?.split("/").pop();
+      if (!commentId) continue;
+      await firestoreCall(`comments/${commentId}?updateMask.fieldPaths=projectId`, {
+        method: "PATCH",
+        body: { fields: { projectId: { stringValue: primaryId } } },
+      });
+      commentsMoved += 1;
+    }
+    if (commentDocs.length >= 500) {
+      console.warn(`[projects/merge] comment reassignment capped at 500 for secondary=${secondaryId}; some comments may remain.`);
+    }
+
+    // --- Merge planning notes into the primary (primary-preferred fill), then remove the secondary's ---
+    const planningTextFields = [
+      "publicGoal", "publicAudience", "publicValue", "publicOutcomes",
+      "internalComments", "internalRisks", "internalBlockers", "sensitiveDependencies",
+    ];
+    const [primaryPlanningDoc, secondaryPlanningDoc] = await Promise.all([
+      firestoreCall(`projectPlanning/${primaryId}`).catch(() => null),
+      firestoreCall(`projectPlanning/${secondaryId}`).catch(() => null),
+    ]);
+    if (primaryPlanningDoc?.fields || secondaryPlanningDoc?.fields) {
+      const primaryPlanning = primaryPlanningDoc?.fields ? parseFirestoreDocument(primaryPlanningDoc as { name?: string; fields?: Record<string, Record<string, unknown>> }) : {};
+      const secondaryPlanning = secondaryPlanningDoc?.fields ? parseFirestoreDocument(secondaryPlanningDoc as { name?: string; fields?: Record<string, Record<string, unknown>> }) : {};
+      const planningFields: Record<string, Record<string, unknown>> = {
+        projectId: { stringValue: primaryId },
+        updatedAt: { timestampValue: new Date().toISOString() },
+      };
+      const planningMask = ["projectId", "updatedAt"];
+      for (const field of planningTextFields) {
+        const primaryValue = typeof primaryPlanning[field] === "string" ? (primaryPlanning[field] as string) : "";
+        const secondaryValue = typeof secondaryPlanning[field] === "string" ? (secondaryPlanning[field] as string) : "";
+        const chosen = primaryValue.trim() ? primaryValue : secondaryValue;
+        if (chosen) {
+          planningFields[field] = { stringValue: chosen };
+          planningMask.push(field);
+        }
+      }
+      const planningMaskQuery = planningMask.map((path) => `updateMask.fieldPaths=${encodeURIComponent(path)}`).join("&");
+      await firestoreCall(`projectPlanning/${primaryId}?${planningMaskQuery}`, { method: "PATCH", body: { fields: planningFields } });
+    }
+
+    // --- Persist the merged fields onto the primary project ---
+    const projectMaskQuery = maskPaths.map((path) => `updateMask.fieldPaths=${encodeURIComponent(path)}`).join("&");
+    await firestoreCall(`projects/${primaryId}?${projectMaskQuery}`, { method: "PATCH", body: { fields: mergedFields } });
+
+    // --- Delete the secondary project and its planning doc (best-effort on a missing planning doc) ---
+    await firestoreCall(`projects/${secondaryId}`, { method: "DELETE" });
+    await firestoreCall(`projectPlanning/${secondaryId}`, { method: "DELETE" }).catch(() => undefined);
+
+    auditLog("project_merge", { primaryId, secondaryId, primaryCode, secondaryCode, commentsMoved, actorUid: verifiedUser.uid });
+    return res.json({
+      success: true,
+      mergedId: primaryId,
+      commentsMoved,
+      message: `Merged ${secondaryCode || "the other card"} into ${primaryCode || "the selected card"}.${commentsMoved > 0 ? ` Moved ${commentsMoved} comment${commentsMoved === 1 ? "" : "s"}.` : ""}`,
+    });
+  } catch (error) {
+    console.error("Project merge failed:", error instanceof Error ? error.message : error);
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Unable to merge projects right now. Please try again later." });
   }
 });
 
