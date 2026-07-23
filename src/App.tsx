@@ -79,7 +79,13 @@ function InternalApp() {
   const mainContentRef = useRef<HTMLElement | null>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
   const modalTitleId = 'new-project-modal-title';
-  const isViewerOnly = rawRole === 'viewer';
+  // Treat a user as view-only only when neither their role nor any per-user
+  // permission flag grants elevated access. Firestore rules honor those flags
+  // (mirrorPermissionGranted / tokenPermissionGranted), so gating the app on
+  // rawRole alone left users with granted permissions locked out of everything
+  // but the portfolio -- the "app vs. Firestore" disconnect. Keying off the
+  // effective capabilities keeps the UI in sync with what Firestore permits.
+  const isViewerOnly = rawRole === 'viewer' && !canEditContent && !canManageSettings && !canManageRoles;
   const tourStorageSuffix = auth.currentUser?.uid ?? 'anonymous';
   const completedTourStorageKey = `${SITE_TOUR_COMPLETED_KEY}:${tourStorageSuffix}`;
   const dismissedTourStorageKey = `${SITE_TOUR_DISMISSED_KEY}:${tourStorageSuffix}`;
@@ -90,9 +96,37 @@ function InternalApp() {
       return;
     }
 
+    // Fast path: localStorage acts as a per-device cache to avoid a flash of the
+    // tour before the server responds.
     const hasCompletedTour = window.localStorage.getItem(completedTourStorageKey) === 'true';
     const hasDismissedTour = window.localStorage.getItem(dismissedTourStorageKey) === 'true';
-    setIsSiteTourOpen(!hasCompletedTour && !hasDismissedTour);
+    if (hasCompletedTour || hasDismissedTour) {
+      setIsSiteTourOpen(false);
+      return;
+    }
+
+    // Server preferences are authoritative so the choice persists across devices
+    // and fresh logins (localStorage alone forgets and the tour reappears).
+    let cancelled = false;
+    void (async () => {
+      try {
+        const prefs = await api.getUserPreferences();
+        if (cancelled) return;
+        if (prefs?.siteTourCompleted || prefs?.siteTourDismissed) {
+          if (prefs.siteTourCompleted) window.localStorage.setItem(completedTourStorageKey, 'true');
+          if (prefs.siteTourDismissed) window.localStorage.setItem(dismissedTourStorageKey, 'true');
+          setIsSiteTourOpen(false);
+          return;
+        }
+        setIsSiteTourOpen(true);
+      } catch {
+        if (!cancelled) setIsSiteTourOpen(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [completedTourStorageKey, dismissedTourStorageKey, rawRole]);
 
   useEffect(() => {
@@ -236,6 +270,7 @@ function InternalApp() {
       window.localStorage.removeItem(dismissedTourStorageKey);
     }
     setIsSiteTourOpen(false);
+    void api.setTourPreference({ siteTourCompleted: true, siteTourDismissed: doNotShowAgain });
   };
 
   const handleTourSkip = (doNotShowAgain: boolean) => {
@@ -245,6 +280,9 @@ function InternalApp() {
       window.localStorage.removeItem(dismissedTourStorageKey);
     }
     setIsSiteTourOpen(false);
+    if (doNotShowAgain) {
+      void api.setTourPreference({ siteTourDismissed: true });
+    }
   };
 
   const handleNewProject = async () => {

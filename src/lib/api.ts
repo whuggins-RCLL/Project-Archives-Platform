@@ -781,6 +781,55 @@ export const api = {
     return payload.message || 'Permissions updated';
   },
 
+  deleteUser: async (uid: string): Promise<string> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error('You must be logged in to remove users.');
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/admin/users/delete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ uid }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || 'Failed to remove user');
+    return payload.message || 'User removed';
+  },
+
+  getUserPreferences: async (): Promise<{ siteTourCompleted: boolean; siteTourDismissed: boolean } | null> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return null;
+    const idToken = await currentUser.getIdToken();
+    const response = await fetch('/api/user/preferences', {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${idToken}` },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json().catch(() => ({})) as { preferences?: { siteTourCompleted?: boolean; siteTourDismissed?: boolean } };
+    const prefs = payload.preferences;
+    if (!prefs) return null;
+    return {
+      siteTourCompleted: prefs.siteTourCompleted === true,
+      siteTourDismissed: prefs.siteTourDismissed === true,
+    };
+  },
+
+  setTourPreference: async (update: { siteTourCompleted?: boolean; siteTourDismissed?: boolean }): Promise<void> => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    const idToken = await currentUser.getIdToken();
+    await fetch('/api/user/preferences', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(update),
+    }).catch(() => undefined);
+  },
+
   getOwnerBootstrapStatus: async (): Promise<{ ownerCount: number; configured: boolean; eligible: boolean }> => {
     const currentUser = auth.currentUser;
     if (!currentUser) throw new Error('You must be logged in to view owner bootstrap status.');
