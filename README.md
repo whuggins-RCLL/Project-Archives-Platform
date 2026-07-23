@@ -446,12 +446,18 @@ ship with a built-in mail server.
    {
      "to": "visitor@example.com",
      "subject": "Copy of your project suggestion (SLS-20260711-...)",
-     "body": "Thank you for suggesting a project...\n\nReference code: ..."
+     "body": "Thank you for suggesting a project...\n\nReference code: ...",
+     "html": "<!DOCTYPE html><html>...formatted message...</html>"
    }
    ```
 
-   `body` is plain text. Your webhook must respond with a 2xx status for the
-   send to be reported as successful.
+   `body` is plain text and `html` is a formatted HTML version of the same
+   message. **Map `html` to your email's HTML body.** Most email pipelines
+   (Gmail, Google Groups, help-desk tools) render the message as HTML, which
+   collapses the plain-text newlines in `body` into spaces and produces one
+   run-on paragraph — mapping `html` instead keeps the headings and line
+   breaks. Keep `body` as the plain-text fallback. Your webhook must respond
+   with a 2xx status for the send to be reported as successful.
 
 ### 1. Create the webhook endpoint
 
@@ -459,9 +465,10 @@ Any automation platform that accepts an inbound HTTP request and sends an
 email will work. Common options:
 
 - **Zapier / Make (Integromat)**: Webhook trigger → Email/Gmail/SendGrid action.
-  Map `to`, `subject`, and `body` from the incoming JSON.
+  Map `to` and `subject`, and map `html` to the action's **HTML body / rich
+  text** field (fall back to `body` for a plain-text-only field).
 - **Google Apps Script**: a `doPost(e)` web app that parses the JSON and calls
-  `MailApp.sendEmail(payload.to, payload.subject, payload.body)`.
+  `MailApp.sendEmail(payload.to, payload.subject, payload.body, { htmlBody: payload.html })`.
 - **SendGrid / Postmark / etc.** behind a small serverless function that maps
   the payload to the provider's send API.
 

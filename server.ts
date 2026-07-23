@@ -1838,6 +1838,91 @@ function cleanPublicMultilineText(value: unknown, maxLength: number): string {
   return value.replace(/\r\n/g, "\n").trim().slice(0, maxLength);
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/** Escape for HTML and turn newlines into <br> so multiline text keeps its breaks. */
+function escapeHtmlMultiline(value: string): string {
+  return escapeHtml(value).replace(/\n/g, "<br>");
+}
+
+/**
+ * Builds the confirmation email for a community project suggestion in two forms:
+ * a plain-text `text` (fallback) and a formatted `html`. The HTML version exists
+ * because most email delivery pipelines render the message as HTML, which
+ * collapses the plain-text newlines into spaces and yields one run-on paragraph.
+ */
+function buildSuggestionEmailContent(fields: {
+  code: string;
+  title: string;
+  category: string;
+  submitterName: string;
+  submitterEmail: string;
+  submittedAt: string;
+  description: string;
+  goal: string;
+  audience: string;
+}): { text: string; html: string } {
+  const textLines = [
+    "Thank you for suggesting a project to the Stanford Law School team!",
+    "Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.",
+    "",
+    `Reference code: ${fields.code}`,
+    `Project name: ${fields.title}`,
+    `Category: ${fields.category}`,
+    `Submitted by: ${fields.submitterName} (${fields.submitterEmail})`,
+    `Submitted at: ${fields.submittedAt}`,
+    "",
+    "Description:",
+    fields.description,
+    "",
+    "Goal:",
+    fields.goal,
+  ];
+  if (fields.audience) {
+    textLines.push("", "Who it would help:", fields.audience);
+  }
+
+  const metaRows = [
+    ["Reference code", escapeHtml(fields.code)],
+    ["Project name", escapeHtml(fields.title)],
+    ["Category", escapeHtml(fields.category)],
+    ["Submitted by", `${escapeHtml(fields.submitterName)} (${escapeHtml(fields.submitterEmail)})`],
+    ["Submitted at", escapeHtml(fields.submittedAt)],
+  ]
+    .map(
+      ([label, value]) =>
+        `<tr><td style="padding:6px 16px 6px 0;color:#5f6368;vertical-align:top;white-space:nowrap;font-size:14px;">${label}</td>` +
+        `<td style="padding:6px 0;color:#202124;font-weight:600;font-size:14px;">${value}</td></tr>`,
+    )
+    .join("");
+
+  const section = (heading: string, value: string): string =>
+    `<h3 style="margin:20px 0 6px;font-size:15px;color:#202124;">${heading}</h3>` +
+    `<p style="margin:0;color:#3c4043;font-size:14px;line-height:1.6;">${escapeHtmlMultiline(value)}</p>`;
+
+  const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f5f5f7;">
+  <div style="max-width:600px;margin:0 auto;padding:24px;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+    <div style="background:#ffffff;border-radius:12px;padding:28px;border:1px solid #e5e5ea;">
+      <p style="margin:0 0 12px;font-size:16px;color:#202124;font-weight:600;">Thank you for suggesting a project to the Stanford Law School team!</p>
+      <p style="margin:0 0 20px;font-size:14px;color:#5f6368;line-height:1.6;">Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.</p>
+      <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;border-top:1px solid #e5e5ea;padding-top:8px;">${metaRows}</table>
+      ${section("Description", fields.description)}
+      ${section("Goal", fields.goal)}
+      ${fields.audience ? section("Who it would help", fields.audience) : ""}
+    </div>
+  </div>
+</body></html>`;
+
+  return { text: textLines.join("\n"), html };
+}
+
 function initialsFromName(name: string): string {
   const parts = name.split(/\s+/).filter(Boolean);
   const initials = parts.slice(0, 2).map((part) => part[0]!.toUpperCase()).join("");
@@ -2048,25 +2133,17 @@ app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) =>
     }
 
     const intake = (parsed.intake && typeof parsed.intake === "object" ? parsed.intake : {}) as Record<string, unknown>;
-    const lines = [
-      "Thank you for suggesting a project to the Stanford Law School team!",
-      "Your idea has been added to our project board for consideration. Submitting an idea does not guarantee it will be built, but every suggestion is reviewed for future work.",
-      "",
-      `Reference code: ${String(parsed.code || suggestionId)}`,
-      `Project name: ${String(parsed.title || "")}`,
-      `Category: ${String(intake.category || parsed.department || "")}`,
-      `Submitted by: ${String(intake.submitterName || "")} (${String(intake.submitterEmail || "")})`,
-      `Submitted at: ${String(intake.submittedAt || "")}`,
-      "",
-      "Description:",
-      String(parsed.description || ""),
-      "",
-      "Goal:",
-      String(intake.goal || ""),
-    ];
-    if (intake.audience) {
-      lines.push("", "Who it would help:", String(intake.audience));
-    }
+    const emailContent = buildSuggestionEmailContent({
+      code: String(parsed.code || suggestionId),
+      title: String(parsed.title || ""),
+      category: String(intake.category || parsed.department || ""),
+      submitterName: String(intake.submitterName || ""),
+      submitterEmail: String(intake.submitterEmail || ""),
+      submittedAt: String(intake.submittedAt || ""),
+      description: String(parsed.description || ""),
+      goal: String(intake.goal || ""),
+      audience: intake.audience ? String(intake.audience) : "",
+    });
 
     const emailResponse = await fetch(webhookUrl, {
       method: "POST",
@@ -2074,7 +2151,12 @@ app.post("/api/public/suggestions/:suggestionId/email-copy", async (req, res) =>
       body: JSON.stringify({
         to: email,
         subject: `Copy of your project suggestion (${String(parsed.code || suggestionId)})`,
-        body: lines.join("\n"),
+        // `body` is plain text (fallback). `html` is a formatted version: many
+        // email pipelines render the message as HTML, which collapses the plain
+        // text's newlines into spaces and produces a single run-on paragraph.
+        // Map `html` to the email's HTML body in your webhook to fix that.
+        body: emailContent.text,
+        html: emailContent.html,
       }),
     });
     if (!emailResponse.ok) {
